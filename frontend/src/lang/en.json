@@ -154,6 +154,7 @@
     "changelogLink": "Link to changelog",
     "changelog": "Changelog",
     "ignoreUpdate": "Skip",
+    "ignoreStatus": "Ignore status",
     "recreateNecessary": "The container image is not up to date. Please redeploy the service.",
     "tooltipStackDeploy": "Pull images and deploy the stack",
     "tooltipStackSave": "Save the YAML file and close edit dialog",

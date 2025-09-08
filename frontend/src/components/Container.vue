@@ -195,7 +195,7 @@
                     <ArrayInput :composeArray="composeService.dependsOn" :display-name="$t('dependsOn')" :placeholder="$t(`containerName`)" />
                 </div>
 
-                <!-- Image Updates-->
+                <!-- Dockge specific settings -->
                 <div class="mb-4">
                     <h5>Dockge</h5>
                     <div class="form-check form-switch ms-2 mt-3">
