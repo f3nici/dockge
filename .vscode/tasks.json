@@ -49,9 +49,23 @@
             }
         },
         {
-            "label": "Build & Push Image",
+            "label": "Build & Push Image amd64",
             "type": "shell",
-            "command": "npm run build:frontend && docker build --platform linux/amd64,linux/arm/v7 -f ${workspaceFolder}/docker/Dockerfile -t ${input:imagename} ${workspaceFolder} && docker push ${input:imagename}",
+            "command": "npm run build:frontend && docker build --platform linux/amd64 -f ${workspaceFolder}/docker/Dockerfile -t ${input:imagename} ${workspaceFolder} && docker push ${input:imagename}",
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": true
+            }
+        },
+        {
+            "label": "Build Image Release",
+            "type": "shell",
+            "command": "npm run build:frontend && docker build --platform linux/amd64,linux/arm/v7,linux/arm64 -f ${workspaceFolder}/docker/Dockerfile -t ${input:imagename} ${workspaceFolder}",
             "problemMatcher": [],
             "presentation": {
                 "echo": true,
@@ -65,7 +79,7 @@
         {
            "label": "Build Base Image",
             "type": "shell",
-            "command": "docker build --platform linux/amd64,linux/arm/v7 -f ${workspaceFolder}/docker/Base.Dockerfile -t ${input:baseimagename} ${workspaceFolder}",
+            "command": "docker build --platform linux/amd64,linux/arm/v7,linux/arm64 -f ${workspaceFolder}/docker/Base.Dockerfile -t ${input:baseimagename} ${workspaceFolder}",
             "problemMatcher": [],
             "presentation": {
                 "echo": true,
