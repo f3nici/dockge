@@ -5,7 +5,7 @@
                 <h1 class="mb-3">{{ name }}</h1>
             </div>
 
-            <button class="btn btn-primary mb-3" data-toggle="tooltip" :title="$t('openSystemPruneDialog')" :disabled="processing" @click="showSystemPruneDialog = true">
+            <button class="btn btn-primary mb-3" data-toggle="tooltip" :title="$t('tooltipOpenPruneDialog')" :disabled="processing" @click="showSystemPruneDialog = true">
                 <font-awesome-icon icon="wrench" class="me-1" />
                 <span>{{ $t("systemPrune") }}</span>
             </button>

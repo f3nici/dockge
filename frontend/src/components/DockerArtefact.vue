@@ -1,5 +1,5 @@
 <template>
-    <button class="btn btn-primary btn-sm mb-3" data-toggle="tooltip" :title="$t('openPruneDialog')" :disabled="processing" @click="showPruneDialog = true">
+    <button class="btn btn-primary btn-sm mb-3" data-toggle="tooltip" :title="$t('tooltipOpenPruneDialog')" :disabled="processing" @click="showPruneDialog = true">
         <font-awesome-icon icon="wrench" class="me-1" />
         <span>{{ $t("prune") }}</span>
     </button>

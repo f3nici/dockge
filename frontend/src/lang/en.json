@@ -175,6 +175,7 @@
     "tooltipServiceStart": "Start the service",
     "tooltipServiceStop": "Stop the service",
     "tooltipServiceRestart": "Restart the service",
+    "tooltipOpenPruneDialog": "Open prune dialog",
     "maintenance": "Maintenance",
     "prune": "Prune",
     "systemPrune": "System Prune",
