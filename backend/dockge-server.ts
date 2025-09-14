@@ -37,6 +37,7 @@ import { AgentSocketHandler } from "./agent-socket-handler";
 import { AgentSocket } from "../common/agent-socket";
 import { ManageAgentSocketHandler } from "./socket-handlers/manage-agent-socket-handler";
 import { Terminal } from "./terminal";
+import { AgentMaintenanceSocketHandler } from "./agent-socket-handlers/agent-maintenance-socket-handler";
 
 export class DockgeServer {
     app : Express;
@@ -58,7 +59,7 @@ export class DockgeServer {
      */
     socketHandlerList : SocketHandler[] = [
         new MainSocketHandler(),
-        new ManageAgentSocketHandler(),
+        new ManageAgentSocketHandler()
     ];
 
     agentProxySocketHandler = new AgentProxySocketHandler();
@@ -69,6 +70,7 @@ export class DockgeServer {
     agentSocketHandlerList : AgentSocketHandler[] = [
         new DockerSocketHandler(),
         new TerminalSocketHandler(),
+        new AgentMaintenanceSocketHandler()
     ];
 
     /**

@@ -1,6 +1,6 @@
 import { BeanModel } from "redbean-node/dist/bean-model";
 import { R } from "redbean-node";
-import { LooseObject } from "../../common/util-common";
+import { AgentData } from "../../common/types";
 
 export class Agent extends BeanModel {
 
@@ -8,20 +8,25 @@ export class Agent extends BeanModel {
         let list = await R.findAll("agent") as Agent[];
         let result : Record<string, Agent> = {};
         for (let agent of list) {
-            result[agent.endpoint] = agent;
+            result[agent.url] = agent;
         }
         return result;
     }
 
     get endpoint() : string {
-        let obj = new URL(this.url);
-        return obj.host;
+        if (!!this.url) {
+            let obj = new URL(this.url);
+            return obj.host;
+        } else {
+            return "";
+        }
     }
 
-    toJSON() : LooseObject {
+    toJSON() : AgentData {
         return {
             url: this.url,
             username: this.username,
+            password: "", // password is not published
             endpoint: this.endpoint,
             name: this.name,
         };

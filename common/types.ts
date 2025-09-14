@@ -36,3 +36,20 @@ export type StackData = SimpleStackData & {
     primaryHostname: string,
     services: Record<string, ServiceData>
 }
+
+export type AgentData = {
+    url: string,
+    username: string,
+    password: string,
+    endpoint: string,
+    name: string
+}
+
+export type DockerArtefactData = {
+    header: string[],
+    data: {
+        values: string[],
+        dangling: boolean,
+        danglingLabel: string
+    }[]
+}

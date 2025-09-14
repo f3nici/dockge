@@ -149,6 +149,12 @@ export default {
             }
         },
 
+        clearTerminal() {
+            this.terminal.clear();
+            this.terminalInputBuffer = "";
+            this.cursorPosition = 0;
+        },
+
         removeInput() {
             const backspaceCount = this.terminalInputBuffer.length;
             const backspaces = "\b \b".repeat(backspaceCount);

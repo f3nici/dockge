@@ -68,13 +68,13 @@ export class ManageAgentSocketHandler extends SocketHandler {
         });
 
         // updateAgent
-        socket.on("updateAgent", async (name : string, updatedName : string, callback : unknown) => {
+        socket.on("updateAgent", async (url : string, updatedName : string, callback : unknown) => {
             try {
-                log.debug("manage-agent-socket-handler", "updateAgent");
+                log.debug("manage-agent-socket-handler", "updateAgent url:" + url + "updatedName: " + updatedName);
                 checkLogin(socket);
 
                 let manager = socket.instanceManager;
-                await manager.update(name, updatedName);
+                await manager.update(url, updatedName);
 
                 server.disconnectAllSocketClients(undefined, socket.id);
                 manager.sendAgentList();

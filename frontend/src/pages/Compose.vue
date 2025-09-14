@@ -5,7 +5,7 @@
             <h1 v-else class="mb-3">
                 <Uptime :stack="stack" :pill="true" /> {{ stack.name }}
                 <span v-if="agentCount > 1 && endpoint !== ''" class="agent-name">
-                    ({{ endpointDisplay }})
+                    ({{ agentName }})
                 </span>
             </h1>
 
@@ -68,26 +68,9 @@
                 </a>
             </div>
 
-            <!-- Progress Terminal -->
-            <div v-if="!isEditMode">
-                <div :class="showProgressTerminal ? 'mb-1' : 'mb-3'" @click="showProgressTerminal = !showProgressTerminal">
-                    <font-awesome-icon :icon="showProgressTerminal ? 'chevron-circle-down' : 'chevron-circle-right'" class="me-2" />
-                    {{ $t("terminal") }}
-                </div>
-                <transition name="slide-fade" appear>
-                    <Terminal
-                        v-show="showProgressTerminal"
-                        ref="progressTerminal"
-                        class="mb-3 terminal"
-                        :name="terminalName"
-                        :endpoint="endpoint"
-                        :rows="progressTerminalRows"
-                        @has-data="terminalHasData"
-                    ></Terminal>
-                </transition>
-            </div>
+            <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" />
 
-            <div v-if="stack.isManagedByDockge" class="row">
+            <div v-if="stack.isManagedByDockge" class="row mt-3">
                 <div class="col-lg-6">
                     <!-- General -->
                     <div v-if="isAdd">
@@ -105,7 +88,7 @@
                                 <label for="name" class="form-label">{{ $t("dockgeAgent") }}</label>
                                 <select v-model="stack.endpoint" class="form-select">
                                     <option v-for="(agent, endpoint) in agentList" :key="endpoint" :value="endpoint" :disabled="agentStatusList[endpoint] != 'online'">
-                                        ({{ agentStatusList[endpoint] }}) {{ (agent.name !== '') ? agent.name : agent.url || $t("Controller") }}
+                                        {{ (agent.name !== '') ? agent.name : agent.url || "Master" }} ({{ agentStatusList[endpoint] }})
                                     </option>
                                 </select>
                             </div>
@@ -276,13 +259,13 @@ import {
     COMBINED_TERMINAL_ROWS,
     getCombinedTerminalName,
     getComposeTerminalName,
-    PROGRESS_TERMINAL_ROWS,
     UNKNOWN
 } from "../../../common/util-common";
 import { StackData } from "../../../common/types";
 import { ComposeDocument } from "../../../common/compose-document";
 import { BModal } from "bootstrap-vue-next";
 import NetworkInput from "../components/NetworkInput.vue";
+import ProgressTerminal from "../components/ProgressTerminal.vue";
 
 const template = `
 services:
@@ -298,7 +281,6 @@ const envDefault = "# VARIABLE=value #comment";
 let yamlErrorTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
 let updateStackDataTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
 let updateServiceStatsTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
-let autoHideTerminalTimout: ReturnType<typeof setTimeout> | undefined = undefined;
 
 let prismjsSymbolDefinition = {
     "symbol": {
@@ -311,37 +293,39 @@ export default defineComponent({
         NetworkInput,
         FontAwesomeIcon,
         PrismEditor,
+        ProgressTerminal,
         BModal,
     },
+
     beforeRouteUpdate(to, from, next) {
         this.exitConfirm(next);
     },
+
     beforeRouteLeave(to, from, next) {
         this.exitConfirm(next);
     },
-    data(this: {composeDocument: ComposeDocument, stack: StackData}) {
+
+    data() {
         return {
             editorFocus: false,
             composeDocument: new ComposeDocument(),
             yamlError: "",
-            processing: true,
-            showProgressTerminal: false,
-            progressTerminalRows: PROGRESS_TERMINAL_ROWS,
+            processing: false,
             combinedTerminalRows: COMBINED_TERMINAL_ROWS,
             combinedTerminalCols: COMBINED_TERMINAL_COLS,
             stack: {},
             serviceStats: undefined,
             isEditMode: false,
-            submitted: false,
             showDeleteDialog: false,
             newContainerName: "",
             stopUpdateTimeouts: false,
         };
     },
+
     computed: {
 
-        endpointDisplay(): string {
-            return this.$root.endpointDisplayFunction(this.endpoint);
+        agentName(): string {
+            return this.$root.getAgentName(this.endpoint);
         },
 
         agentCount(): number {
@@ -380,7 +364,7 @@ export default defineComponent({
         },
 
         isAdd(): boolean {
-            return this.$route.path === "/compose" && !this.submitted;
+            return this.$route.path === "/compose";
         },
 
         terminalName(): string {
@@ -388,6 +372,10 @@ export default defineComponent({
                 return "";
             }
             return getComposeTerminalName(this.endpoint, this.stack.name);
+        },
+
+        progressTerminal(): typeof ProgressTerminal {
+            return this.$refs.progressTerminal as typeof ProgressTerminal;
         },
 
         combinedTerminalName(): string {
@@ -415,8 +403,9 @@ export default defineComponent({
 
         hasRunningServices(this: {stack: StackData}): boolean {
             return Object.values(this.stack.services).some(service => service.state === "running");
-        }
+        },
     },
+
     watch: {
         "stack.composeYAML": {
             handler() {
@@ -452,6 +441,7 @@ export default defineComponent({
 
         }
     },
+
     mounted() {
         if (this.isAdd) {
             this.processing = false;
@@ -496,9 +486,11 @@ export default defineComponent({
         this.updateStackData();
         this.startUpdateServiceStatsTimeout();
     },
+
     unmounted() {
 
     },
+
     methods: {
         startUpdateStackDataTimeout() {
             clearTimeout(updateStackDataTimeout);
@@ -570,35 +562,22 @@ export default defineComponent({
             clearTimeout(updateStackDataTimeout);
         },
 
-        bindTerminal() {
-            this.$refs.progressTerminal?.bind(this.endpoint, this.terminalName);
+        startComposeAction() {
+            this.processing = true;
+            this.progressTerminal.show();
         },
 
-        terminalHasData() {
-            this.showProgressTerminal = true;
-            this.submitted = true;
-            this.startTerminalAutoHideTimeout();
-        },
-
-        startTerminalAutoHideTimeout() {
-            clearTimeout(autoHideTerminalTimout);
-            autoHideTerminalTimout = setTimeout(async () => {
-                if (!this.processing) {
-                    this.showProgressTerminal = false;
-                } else {
-                    this.startTerminalAutoHideTimeout();
-                }
-            }, 10000);
+        stopComposeAction() {
+            this.processing = false;
+            this.progressTerminal.hideWithTimeout();
         },
 
         loadStack() {
-            this.processing = true;
             this.$root.emitAgent(this.endpoint, "getStack", this.stack.name, (res) => {
                 if (res.ok) {
                     this.stack = res.stack;
                     this.yamlCodeChange();
                     this.processing = false;
-                    this.bindTerminal();
                 } else {
                     this.$root.toastRes(res);
                 }
@@ -606,11 +585,8 @@ export default defineComponent({
         },
 
         deployStack() {
-            this.processing = true;
-
             if (this.composeDocument.services.isEmpty()) {
                 this.$root.toastError("No services found in compose.yaml");
-                this.processing = false;
                 return;
             }
 
@@ -624,10 +600,10 @@ export default defineComponent({
                 this.stack.name = service.get("container_name", serviceName);
             }
 
-            this.bindTerminal();
+            this.startComposeAction();
 
             this.$root.emitAgent(this.stack.endpoint, "deployStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
-                this.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
 
                 if (res.ok) {
@@ -652,46 +628,47 @@ export default defineComponent({
         },
 
         startStack() {
-            this.processing = true;
+            this.startComposeAction();
+
 
             this.$root.emitAgent(this.endpoint, "startStack", this.stack.name, (res) => {
-                this.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
 
         stopStack() {
-            this.processing = true;
+            this.startComposeAction();
 
             this.$root.emitAgent(this.endpoint, "stopStack", this.stack.name, (res) => {
-                this.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
 
         downStack() {
-            this.processing = true;
+            this.startComposeAction();
 
             this.$root.emitAgent(this.endpoint, "downStack", this.stack.name, (res) => {
-                this.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
 
         restartStack() {
-            this.processing = true;
+            this.startComposeAction();
 
             this.$root.emitAgent(this.endpoint, "restartStack", this.stack.name, (res) => {
-                this.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
 
         updateStack() {
-            this.processing = true;
+            this.startComposeAction();
 
             this.$root.emitAgent(this.endpoint, "updateStack", this.stack.name, (res) => {
-                this.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },

@@ -58,7 +58,7 @@ export default defineComponent({
     },
     computed: {
         endpointDisplay() {
-            return this.$root.endpointDisplayFunction(this.stack.endpoint);
+            return this.$root.getAgentName(this.stack.endpoint);
         },
         agentCount() {
             return this.$root.agentCount;

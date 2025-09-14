@@ -42,13 +42,23 @@ async function initRandomBytes() {
 export const ALL_ENDPOINTS = "##ALL_DOCKGE_ENDPOINTS##";
 
 // Stack Status
-export const UNKNOWN = 0;
-export const CREATED_FILE = 1;
-export const CREATED_STACK = 2;
-export const RUNNING = 3;
-export const EXITED = 4;
-export const RUNNING_AND_EXITED = 5;
-export const UNHEALTHY = 6;
+export enum StackStatus {
+    UNKNOWN = 0,
+    CREATED_FILE = 1,
+    CREATED_STACK = 2,
+    RUNNING = 3,
+    EXITED = 4,
+    RUNNING_AND_EXITED = 5,
+    UNHEALTHY = 6
+}
+
+export const UNKNOWN = StackStatus.UNKNOWN;
+export const CREATED_FILE = StackStatus.CREATED_FILE;
+export const CREATED_STACK = StackStatus.CREATED_STACK;
+export const RUNNING = StackStatus.RUNNING;
+export const EXITED = StackStatus.EXITED;
+export const RUNNING_AND_EXITED = StackStatus.RUNNING_AND_EXITED;
+export const UNHEALTHY = StackStatus.UNHEALTHY;
 
 export function statusName(status : number) : string {
     switch (status) {
@@ -239,6 +249,10 @@ export function getContainerTerminalName(endpoint : string, stackName : string, 
 
 export function getContainerLogName(endpoint : string, stackName : string, container : string, index : number) {
     return "container-log-" + endpoint + "-" + container;
+}
+
+export function getAgentMaintenanceTerminalName(endpoint : string) {
+    return "agent-maintenance-" + endpoint;
 }
 
 /**

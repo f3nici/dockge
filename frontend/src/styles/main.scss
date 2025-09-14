@@ -4,6 +4,7 @@
 
 #app {
     font-family: BlinkMacSystemFont, segoe ui, Roboto, helvetica neue, Arial, noto sans, sans-serif, apple color emoji, segoe ui emoji, segoe ui symbol, noto color emoji;
+    --bs-border-radius: 0.5rem; // Without the radius is 50rem, no idea where it comes from
 }
 
 h1 {

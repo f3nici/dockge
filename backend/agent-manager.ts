@@ -6,6 +6,7 @@ import { isDev, LooseObject, sleep } from "../common/util-common";
 import semver from "semver";
 import { R } from "redbean-node";
 import dayjs, { Dayjs } from "dayjs";
+import { AgentData } from "../common/types";
 
 /**
  * Dockge Instance Manager
@@ -28,6 +29,10 @@ export class AgentManager {
 
     test(url : string, username : string, password : string) : Promise<void> {
         return new Promise((resolve, reject) => {
+            if (url === "") {
+                reject(new Error("Invalid Dockge URL"));
+            }
+
             let obj = new URL(url);
             let endpoint = obj.host;
 
@@ -120,6 +125,14 @@ export class AgentManager {
         if (agent) {
             agent.name = updatedName;
             await R.store(agent);
+        } else if (url === "") {
+            // Master has not yet persisted
+            let master = R.dispense("agent") as Agent;
+            master.url = "";
+            master.username = "";
+            master.password = "";
+            master.name = updatedName;
+            await R.store(master);
         } else {
             throw new Error("Agent not found");
         }
@@ -232,9 +245,11 @@ export class AgentManager {
             log.info("agent-manager", "Connecting to all instance socket server(s)...");
         }
 
-        for (let endpoint in list) {
-            let agent = list[endpoint];
-            this.connect(agent.url, agent.username, agent.password);
+        for (let url in list) {
+            if (url !== "") {
+                let agent = list[url];
+                this.connect(agent.url, agent.username, agent.password);
+            }
         }
     }
 
@@ -290,20 +305,20 @@ export class AgentManager {
 
     async sendAgentList() {
         let list = await Agent.getAgentList();
-        let result : Record<string, LooseObject> = {};
+        let result : Record<string, AgentData> = {};
 
-        // Myself
+        // Master
         result[""] = {
             url: "",
             username: "",
+            password: "",
             endpoint: "",
             name: "",
-            updatedName: "",
         };
 
-        for (let endpoint in list) {
-            let agent = list[endpoint];
-            result[endpoint] = agent.toJSON();
+        for (let url in list) {
+            let agent = list[url];
+            result[agent.endpoint] = agent.toJSON();
         }
 
         this.socket.emit("agentList", {

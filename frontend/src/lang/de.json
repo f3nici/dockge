@@ -38,7 +38,7 @@
     "restartPolicy": "Neustart Richtlinie",
     "containerName": "Container-Name",
     "port": "Port / Ports",
-    "volume": "Volume / Volumes",
+    "volume": "Volume | Volumes",
     "network": "Netzwerk | Netzwerke",
     "dependsOn": "Container-Abhängigkeit/en",
     "addListItem": "{0} hinzufügen",

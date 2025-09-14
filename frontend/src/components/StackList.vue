@@ -47,7 +47,7 @@
             <div v-if="agentStackList[0] && agentStackList[0].stacks.length === 0" class="text-center mt-3">
                 <router-link to="/compose">{{ $t("addFirstStackMsg") }}</router-link>
             </div>
-            <div class="stack-list-inner" v-for="(agent, index) in agentStackList" :key="index">
+            <div v-for="(agent, index) in agentStackList" :key="index" class="stack-list-inner">
                 <div
                     v-if="agentCount > 1" class="p-2 agent-select"
                     @click="closedAgents.set(agent.endpoint, !closedAgents.get(agent.endpoint))"
@@ -56,8 +56,7 @@
                         <font-awesome-icon v-show="closedAgents.get(agent.endpoint)" icon="chevron-circle-right" />
                         <font-awesome-icon v-show="!closedAgents.get(agent.endpoint)" icon="chevron-circle-down" />
                     </span>
-                    <span v-if="agent.endpoint === 'current'">{{ $t("currentEndpoint") }}</span>
-                    <span v-else>{{ endpointDisplay(agent.endpoint) }}</span>
+                    <span>{{ getAgentName(agent.endpoint) }}</span>
                 </div>
                 <StackListItem
                     v-for="(item, index) in agent.stacks"
@@ -220,7 +219,7 @@ export default defineComponent({
             // and the rest are sorted alphabetically
             const resultByEndpoint: {endpoint: string, stacks: SimpleStackData[]}[] = [
                 ...result.reduce((acc, stack) => {
-                    const endpoint = stack.endpoint || "current";
+                    const endpoint = stack.endpoint;
                     let stacks = acc.get(endpoint);
                     if (!stacks) {
                         stacks = [];
@@ -233,9 +232,9 @@ export default defineComponent({
                 endpoint,
                 stacks
             })).sort((a, b) => {
-                if (a.endpoint === "current" && b.endpoint !== "current") {
+                if (a.endpoint === "" && b.endpoint !== "") {
                     return -1;
-                } else if (a.endpoint !== "current" && b.endpoint === "current") {
+                } else if (a.endpoint !== "" && b.endpoint === "") {
                     return 1;
                 }
                 return a.endpoint.localeCompare(b.endpoint);
@@ -401,8 +400,8 @@ export default defineComponent({
             this.cancelSelectMode();
         },
 
-        endpointDisplay(endpoint) {
-            return this.$root.endpointDisplayFunction(endpoint);
+        getAgentName(endpoint: string) {
+            return this.$root.getAgentName(endpoint);
         }
     },
 });

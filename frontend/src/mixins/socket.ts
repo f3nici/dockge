@@ -4,7 +4,7 @@ import { defineComponent } from "vue";
 import jwtDecode from "jwt-decode";
 import { Terminal } from "@xterm/xterm";
 import { AgentSocket } from "../../../common/agent-socket";
-import { SimpleStackData } from "../../../common/types";
+import { AgentData, SimpleStackData } from "../../../common/types";
 
 let socket : Socket;
 
@@ -131,16 +131,17 @@ export default defineComponent({
     },
     methods: {
 
-        endpointDisplayFunction(endpoint : string) {
-            for (const [k, v] of Object.entries(this.$data.agentList)) {
-                if (endpoint) {
-                    if (endpoint === v["endpoint"] && v["name"] !== "") {
-                        return v["name"];
-                    }
-                    if (endpoint === v["endpoint"] && v["name"] === "" ) {
-                        return endpoint;
-                    }
+        getAgentName(endpoint : string) {
+            const agent = this.agentList[endpoint] as AgentData;
+
+            if (agent) {
+                if (endpoint === "" && agent.name === "") {
+                    return "Master";
+                } else {
+                    return !!agent.name ? agent.name : agent.endpoint;
                 }
+            } else {
+                return endpoint;
             }
         },
 

@@ -148,7 +148,7 @@
     "memoryAbbreviated": "Mem",
     "networkIO": "Network I/O",
     "blockIO": "Block I/O",
-    "image": "Image",
+    "image": "Image | Images",
     "imageUpdate": "Image Update | Image Updates",
     "checkImageUpdates": "Check for image updates",
     "changelogLink": "Link to changelog",
@@ -173,5 +173,18 @@
     "tooltipServiceTerminal": "Open terminal inside service container",
     "tooltipServiceStart": "Start the service",
     "tooltipServiceStop": "Stop the service",
-    "tooltipServiceRestart": "Restart the service"
+    "tooltipServiceRestart": "Restart the service",
+    "maintenance": "Maintenance",
+    "prune": "Prune",
+    "systemPrune": "System Prune",
+    "systemPruneMsg": "WARNING! This will remove:<br>  - all stopped containers<br>  - all networks not used by at least one container<br>  - all dangling images<br>  - unused build cache",
+    "systemPruneAll": "Also all images without at least one container associated to them and all build cache",
+    "systemPruneVolumes": "Also all anonymous volumes not used by at least one container",
+    "containerPruneMsg": "WARNING! This will remove all stopped containers.",
+    "imagePruneMsg": "WARNING! This will remove all dangling images.",
+    "imagePruneAll": "Also all images without at least one container associated to them",
+    "networkPruneMsg": "WARNING! This will remove all custom networks not used by at least one container.",
+    "volumePruneMsg": "WARNING! This will remove anonymous local volumes not used by at least one container.",
+    "volumePruneAll": "Also all local volumes not used by at least one container",
+    "fetchingData": "Fetching data ..."
 }

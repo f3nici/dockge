@@ -9,7 +9,7 @@
                     v-if="!isEditMode && service.recreateNecessary"
                     class="btn btn-sm btn-info me-2"
                     data-toggle="tooltip" :title="$t('tooltipServiceRecreate')"
-                    :disabled="isProcessing"
+                    :disabled="processing"
                     @click="recreateService"
                 >
                     <font-awesome-icon icon="rocket" />
@@ -20,7 +20,7 @@
                     v-b-modal="updateModalId"
                     data-toggle="tooltip" :title="$t('tooltipServiceUpdate')"
                     class="btn btn-sm btn-info me-2"
-                    :disabled="isProcessing"
+                    :disabled="processing"
                 >
                     <font-awesome-icon icon="arrow-up" />
                 </button>
@@ -50,15 +50,15 @@
                 </BModal>
 
                 <div v-if="!isEditMode" class="btn-group me-2" role="group">
-                    <router-link v-if="started" class="btn btn-sm btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipServiceLog')" :to="logRouteLink" :disabled="isProcessing"><font-awesome-icon icon="file-text" /></router-link>
-                    <router-link v-if="started" class="btn btn-sm btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipServiceInspect')" :to="inspectRouteLink" :disabled="isProcessing"><font-awesome-icon icon="info-circle" /></router-link>
-                    <router-link v-if="started" class="btn btn-sm btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipServiceTerminal')" :to="terminalRouteLink" :disabled="isProcessing"><font-awesome-icon icon="terminal" /></router-link>
+                    <router-link v-if="started" class="btn btn-sm btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipServiceLog')" :to="logRouteLink" :disabled="processing"><font-awesome-icon icon="file-text" /></router-link>
+                    <router-link v-if="started" class="btn btn-sm btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipServiceInspect')" :to="inspectRouteLink" :disabled="processing"><font-awesome-icon icon="info-circle" /></router-link>
+                    <router-link v-if="started" class="btn btn-sm btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipServiceTerminal')" :to="terminalRouteLink" :disabled="processing"><font-awesome-icon icon="terminal" /></router-link>
                 </div>
 
                 <div v-if="!isEditMode" class="btn-group" role="group">
-                    <button v-if="!started" type="button" class="btn btn-sm btn-success" data-toggle="tooltip" :title="$t('tooltipServiceStart')" :disabled="isProcessing" @click="startService"><font-awesome-icon icon="play" /></button>
-                    <button v-if="started" type="button" class="btn btn-sm btn-danger me-1" data-toggle="tooltip" :title="$t('tooltipServiceStop')" :disabled="isProcessing" @click="stopService"><font-awesome-icon icon="stop" /></button>
-                    <button v-if="started" type="button" class="btn btn-sm btn-warning" data-toggle="tooltip" :title="$t('tooltipServiceRestart')" :disabled="isProcessing" @click="restartService"><font-awesome-icon icon="rotate" /></button>
+                    <button v-if="!started" type="button" class="btn btn-sm btn-success" data-toggle="tooltip" :title="$t('tooltipServiceStart')" :disabled="processing" @click="startService"><font-awesome-icon icon="play" /></button>
+                    <button v-if="started" type="button" class="btn btn-sm btn-danger me-1" data-toggle="tooltip" :title="$t('tooltipServiceStop')" :disabled="processing" @click="stopService"><font-awesome-icon icon="stop" /></button>
+                    <button v-if="started" type="button" class="btn btn-sm btn-warning" data-toggle="tooltip" :title="$t('tooltipServiceRestart')" :disabled="processing" @click="restartService"><font-awesome-icon icon="rotate" /></button>
                 </div>
             </div>
         </div>
@@ -248,6 +248,7 @@ export default defineComponent({
     components: {
         FontAwesomeIcon,
     },
+
     props: {
         name: {
             type: String,
@@ -266,14 +267,17 @@ export default defineComponent({
             default: undefined,
         }
     },
+
     emits: [
     ],
+
     data() {
         return {
             showConfig: false,
             expandedStats: false,
         };
     },
+
     computed: {
 
         status(): string {
@@ -379,7 +383,7 @@ export default defineComponent({
             return this.$parent.$parent.composeDocument;
         },
 
-        composeService(this: {composeDocument: ComposeDocument, name: string}): ComposeService {
+        composeService(this: { composeDocument: ComposeDocument, name: string }): ComposeService {
             return this.composeDocument.services.getService(this.name);
         },
 
@@ -399,13 +403,21 @@ export default defineComponent({
             return this.composeService.labels.get(LABEL_IMAGEUPDATES_CHANGELOG, "");
         },
 
-        isProcessing(): boolean {
+        processing(): boolean {
             return this.$parent.$parent.processing;
         }
     },
     mounted() {
     },
     methods: {
+        startComposeAction() {
+            this.$parent.$parent.startComposeAction();
+        },
+
+        stopComposeAction() {
+            this.$parent.$parent.stopComposeAction();
+        },
+
         parsePort(port: string) {
             if (this.stack.endpoint) {
                 return parseDockerPort(port, this.stack.primaryHostname);
@@ -418,39 +430,39 @@ export default defineComponent({
             this.composeDocument.services.delete(this.name);
         },
         stopService() {
-            this.$parent.$parent.processing = true;
+            this.startComposeAction();
             this.$root.emitAgent(this.endpoint, "stopService", this.stack.name, this.name, (res) => {
-                this.$parent.$parent.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
         startService() {
-            this.$parent.$parent.processing = true;
+            this.startComposeAction();
             this.$root.emitAgent(this.endpoint, "startService", this.stack.name, this.name, (res) => {
-                this.$parent.$parent.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
         restartService() {
-            this.$parent.$parent.processing = true;
+            this.startComposeAction();
             this.$root.emitAgent(this.endpoint, "restartService", this.stack.name, this.name, (res) => {
-                this.$parent.$parent.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
         recreateService() {
-            this.$parent.$parent.processing = true;
+            this.startComposeAction();
             this.$root.emitAgent(this.endpoint, "recreateService", this.stack.name, this.name, (res) => {
-                this.$parent.$parent.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },
         updateService() {
             this.$refs[this.updateModalId].hide();
 
-            this.$parent.$parent.processing = true;
+            this.startComposeAction();
             this.$root.emitAgent(this.endpoint, "updateService", this.stack.name, this.name, (res) => {
-                this.$parent.$parent.processing = false;
+                this.stopComposeAction();
                 this.$root.toastRes(res);
             });
         },

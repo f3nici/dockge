@@ -7,33 +7,105 @@
 
             <div class="row first-row">
                 <!-- Left -->
-                <div class="col-md-7">
+                <div class="col-lg-7">
                     <!-- Stats -->
-                    <div class="shadow-box big-padding text-center mb-4">
+                    <div class="shadow-box big-padding text-center mb-5">
                         <div class="row">
-                            <div v-if="activeNum > 0" class="col">
-                                <h3>{{ $t("active") }}</h3>
-                                <span class="num active">{{ activeNum }}</span>
-                            </div>
-                            <div v-if="partiallyNum > 0" class="col">
-                                <h3>{{ $t("partially") }}</h3>
-                                <span class="num partially">{{ partiallyNum }}</span>
-                            </div>
-                            <div v-if="unhealthyNum > 0" class="col">
-                                <h3>{{ $t("unhealthy") }}</h3>
-                                <span class="num unhealthy">{{ unhealthyNum }}</span>
-                            </div>
-                            <div v-if="exitedNum > 0" class="col">
-                                <h3>{{ $t("exited") }}</h3>
-                                <span class="num exited">{{ exitedNum }}</span>
-                            </div>
-                            <div v-if="inactiveNum > 0" class="col">
-                                <h3>{{ $t("inactive") }}</h3>
-                                <span class="num inactive">{{ inactiveNum }}</span>
-                            </div>
+                            <template v-for="(item, index) in stackStatusList" :key="index">
+                                <div v-if="getStatusCount(item.status) > 0" class="col">
+                                    <h3>{{ item.label }}</h3>
+                                    <span class="num num-lg" :class="item.class">{{ getStatusCount(item.status) }}</span>
+                                </div>
+                            </template>
                         </div>
                     </div>
 
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4>{{ $tc("dockgeAgent", 2) }}</h4>
+                        <button v-if="!showAgentForm" class="btn btn-primary" @click="showAgentForm = !showAgentForm">
+                            <font-awesome-icon icon="plus" /> {{ $t("addAgent") }}
+                        </button>
+                    </div>
+
+                    <!-- Agent list -->
+                    <div v-for="(agent, endpoint) in agentList" :key="endpoint" class="mb-3 agent">
+                        <div class="shadow-box big-padding">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="d-flex align-items-baseline">
+                                    <h4 class="me-2">{{ getAgentName(agent) }}</h4>
+
+                                    <!-- Edit Name  -->
+                                    <font-awesome-icon class="ms-3 action-icon" icon="pen-to-square" @click="editAgentName(agent)" />
+
+                                    <!-- Remove Button -->
+                                    <font-awesome-icon v-if="endpoint !== ''" class="ms-3 action-icon" icon="trash" @click="showRemoveAgentDialog[agent.endpoint] = !showRemoveAgentDialog[agent.endpoint]" />
+                                </div>
+
+                                <router-link v-if="agentStatusList[endpoint] === 'online'" class="btn btn-sm btn-normal" data-toggle="tooltip" :title="$t('tooltipAgentMaintenance')" :to="getAgentRouteLink(agent)">
+                                    <font-awesome-icon icon="wrench" class="me-2" />{{ $t("maintenance") }}
+                                </router-link>
+                            </div>
+
+                            <div class="mb-3">
+                                <span class="url">{{ !!agent.url ? agent.url : "local" }}</span>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-3">
+                                <!-- Agent Status -->
+                                <template v-if="agentStatusList[endpoint]">
+                                    <span v-if="agentStatusList[endpoint] === 'online'" class="badge bg-primary me-2">{{ $t("agentOnline") }}</span>
+                                    <span v-else-if="agentStatusList[endpoint] === 'offline'" class="badge bg-danger me-2">{{ $t("agentOffline") }}</span>
+                                    <span v-else class="badge bg-secondary me-2">{{ $t(agentStatusList[endpoint]) }}</span>
+                                </template>
+                                <template v-if="Object.keys(agentList).length > 1">
+                                    <template v-for="(item, index) in stackStatusList" :key="index">
+                                        <template v-if="getEndpointStatusCount(endpoint, item.status) > 0">
+                                            {{ item.label }}: <span class="num" :class="item.class">{{ getEndpointStatusCount(endpoint, item.status) }}</span>
+                                        </template>
+                                    </template>
+                                </template>
+                            </div>
+
+                            <!-- Edit Dialog -->
+                            <BModal v-model="showEditAgentNameDialog[agent.endpoint]" :title="!!endpoint ? endpoint : 'Master'" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('Update Name')" okVariant="primary" @ok="updateAgentName(agent, editAgentNewName[agent.endpoint])">
+                                <input :id="'nameUpdate' + agent.endpoint" v-model="editAgentNewName[agent.endpoint]" type="text" class="form-control">
+                            </BModal>
+
+                            <!-- Remove Agent Dialog -->
+                            <BModal v-model="showRemoveAgentDialog[agent.endpoint]" :title="getAgentName(agent)" :okTitle="$t('removeAgent')" okVariant="danger" @ok="removeAgent(agent)">
+                                {{ $t("removeAgentMsg") }}
+                            </BModal>
+                        </div>
+                    </div>
+
+                    <!-- Add Agent Form -->
+                    <BModal id="addAgentDialog" v-model="showAgentForm" :title="$t('addAgent')" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="connectingAgent ? $t('connecting') : $t('connect')" okVariant="primary" @ok="addAgent" @show="resetNewAgent" @hidden="resetNewAgent">
+                        <form @submit.prevent>
+                            <div class="mb-3">
+                                <label for="url" class="form-label">{{ $t("dockgeURL") }}</label>
+                                <input id="url" v-model="newAgent.url" type="url" class="form-control" required placeholder="http://">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="username" class="form-label">{{ $t("Username") }}</label>
+                                <input id="username" v-model="newAgent.username" type="text" class="form-control" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="password" class="form-label">{{ $t("Password") }}</label>
+                                <input id="password" v-model="newAgent.password" type="password" class="form-control" required autocomplete="new-password">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="name" class="form-label">{{ $t("Friendly Name") }}</label>
+                                <input id="name" v-model="newAgent.name" type="text" class="form-control" optional>
+                            </div>
+                        </form>
+                    </BModal>
+                </div>
+
+                <!-- Right -->
+                <div class="col-lg-5">
                     <!-- Docker Run -->
                     <h2 class="mb-3">{{ $t("Docker Run") }}</h2>
                     <div class="mb-3">
@@ -41,77 +113,7 @@
                     </div>
 
                     <button class="btn-normal btn mb-4" @click="convertDockerRun">{{ $t("Convert to Compose") }}</button>
-                </div>
-                <!-- Right -->
-                <div class="col-md-5">
                     <!-- Agent List -->
-                    <div class="shadow-box big-padding">
-                        <h4 class="mb-3">{{ $tc("dockgeAgent", 2) }} <span class="badge bg-warning" style="font-size: 12px;">beta</span></h4>
-
-                        <div v-for="(agent, endpoint) in $root.agentList" :key="endpoint" class="mb-3 agent">
-                            <!-- Agent Status -->
-                            <template v-if="$root.agentStatusList[endpoint]">
-                                <span v-if="$root.agentStatusList[endpoint] === 'online'" class="badge bg-primary me-2">{{ $t("agentOnline") }}</span>
-                                <span v-else-if="$root.agentStatusList[endpoint] === 'offline'" class="badge bg-danger me-2">{{ $t("agentOffline") }}</span>
-                                <span v-else class="badge bg-secondary me-2">{{ $t($root.agentStatusList[endpoint]) }}</span>
-                            </template>
-
-                            <!-- Agent Display Name -->
-                            <template v-if="$root.agentStatusList[endpoint]">
-                                <span v-if="endpoint === '' && agent.name === ''" class="badge bg-secondary me-2">Controller</span>
-                                <span v-else-if="agent.name === ''" :href="agent.url" class="me-2">{{ endpoint }}</span>
-                                <span v-else :href="agent.url" class="me-2">{{ agent.name }}</span>
-                            </template>
-
-                            <!-- Edit Name  -->
-                            <font-awesome-icon v-if="endpoint !== ''" class="edit-agent" icon="pen-to-square" @click="showEditAgentNameDialog[agent.name] = !showEditAgentNameDialog[agent.Name]" />
-
-                            <!-- Edit Dialog -->
-                            <BModal v-model="showEditAgentNameDialog[agent.name]" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('Update Name')" okVariant="info" @ok="updateName(agent.url, agent.updatedName)">
-                                <label for="Update Name" class="form-label">Current value: {{ $t(agent.name) }}</label>
-                                <input id="updatedName" v-model="agent.updatedName" type="text" class="form-control" optional>
-                            </BModal>
-
-                            <!-- Remove Button -->
-                            <font-awesome-icon v-if="endpoint !== ''" class="ms-2 remove-agent" icon="trash" @click="showRemoveAgentDialog[agent.url] = !showRemoveAgentDialog[agent.url]" />
-
-                            <!-- Remove Agent Dialog -->
-                            <BModal v-model="showRemoveAgentDialog[agent.url]" :okTitle="$t('removeAgent')" okVariant="danger" @ok="removeAgent(agent.url)">
-                                <p>{{ agent.url }}</p>
-                                {{ $t("removeAgentMsg") }}
-                            </BModal>
-                        </div>
-
-                        <button v-if="!showAgentForm" class="btn btn-normal" @click="showAgentForm = !showAgentForm">{{ $t("addAgent") }}</button>
-
-                        <!-- Add Agent Form -->
-                        <form v-if="showAgentForm" @submit.prevent="addAgent">
-                            <div class="mb-3">
-                                <label for="url" class="form-label">{{ $t("dockgeURL") }}</label>
-                                <input id="url" v-model="agent.url" type="url" class="form-control" required placeholder="http://">
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="username" class="form-label">{{ $t("Username") }}</label>
-                                <input id="username" v-model="agent.username" type="text" class="form-control" required>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="password" class="form-label">{{ $t("Password") }}</label>
-                                <input id="password" v-model="agent.password" type="password" class="form-control" required autocomplete="new-password">
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="name" class="form-label">{{ $t("Friendly Name") }}</label>
-                                <input id="name" v-model="agent.name" type="text" class="form-control" optional>
-                            </div>
-
-                            <button type="submit" class="btn btn-primary" :disabled="connectingAgent">
-                                <template v-if="connectingAgent">{{ $t("connecting") }}</template>
-                                <template v-else>{{ $t("connect") }}</template>
-                            </button>
-                        </form>
-                    </div>
                 </div>
             </div>
         </div>
@@ -119,10 +121,12 @@
     <router-view ref="child" />
 </template>
 
-<script>
-import { statusNameShort } from "../../../common/util-common";
+<script lang="ts">
+import { defineComponent } from "vue";
+import { AgentData, SimpleStackData } from "../../../common/types";
+import { StackStatus, statusNameShort } from "../../../common/util-common";
 
-export default {
+export default defineComponent({
     components: {
 
     },
@@ -132,7 +136,7 @@ export default {
             default: 0
         }
     },
-    data() {
+    data(this: {newAgent: AgentData}) {
         return {
             page: 1,
             perPage: 25,
@@ -147,32 +151,75 @@ export default {
             showAgentForm: false,
             showRemoveAgentDialog: {},
             showEditAgentNameDialog: {},
+            editAgentNewName: {},
             connectingAgent: false,
-            agent: {
-                url: "http://",
-                username: "",
-                password: "",
-                name: "",
-                updatedName: "",
-            }
+            newAgent: {}
         };
     },
 
     computed: {
-        activeNum() {
-            return this.getStatusNum("active");
+        agentList(): Record<string, AgentData> {
+            return this.$root.agentList;
         },
-        partiallyNum() {
-            return this.getStatusNum("partially");
+        agentStatusList(): Record<string, string> {
+            return this.$root.agentStatusList;
         },
-        unhealthyNum() {
-            return this.getStatusNum("unhealthy");
+        stackList(): Record<string, SimpleStackData> {
+            return this.$root.completeStackList;
         },
-        inactiveNum() {
-            return this.getStatusNum("inactive");
+        stackStatusList(): { label: string, class: string, status: StackStatus[] }[] {
+            return [
+                {
+                    label: this.$t("unhealthy"),
+                    class: "unhealthy",
+                    status: [ StackStatus.UNHEALTHY ]
+                },
+                {
+                    label: this.$t("active"),
+                    class: "active",
+                    status: [ StackStatus.RUNNING ]
+                },
+                {
+                    label: this.$t("partially"),
+                    class: "partially",
+                    status: [ StackStatus.RUNNING_AND_EXITED ]
+                },
+                {
+                    label: this.$t("exited"),
+                    class: "exited",
+                    status: [ StackStatus.EXITED ]
+                },
+                {
+                    label: this.$t("inactive"),
+                    class: "inactive",
+                    status: [ StackStatus.CREATED_FILE, StackStatus.CREATED_STACK ]
+                },
+            ];
         },
-        exitedNum() {
-            return this.getStatusNum("exited");
+        stackStatusCountByEndpoint(): Map<string, Map<StackStatus, number>> {
+            const counts = new Map<string, Map<StackStatus, number>>();
+            for (const stackData of Object.values(this.stackList) as SimpleStackData[]) {
+                let endpointCounts = counts.get(stackData.endpoint);
+                if (!endpointCounts) {
+                    endpointCounts = new Map<StackStatus, number>();
+                    counts.set(stackData.endpoint, endpointCounts);
+                }
+
+                endpointCounts.set(stackData.status, (endpointCounts.get(stackData.status) ?? 0) + 1);
+            }
+
+            return counts;
+        },
+        stackStatusCountOverall(): Map<StackStatus, number> {
+            const counts = new Map<StackStatus, number>();
+
+            for (const [ , innerMap ] of this.stackStatusCountByEndpoint) {
+                for (const [ status, value ] of innerMap) {
+                    counts.set(status, (counts.get(status) ?? 0) + value);
+                }
+            }
+
+            return counts;
         },
     },
 
@@ -193,6 +240,8 @@ export default {
 
         window.addEventListener("resize", this.updatePerPage);
         this.updatePerPage();
+
+        this.resetNewAgent();
     },
 
     beforeUnmount() {
@@ -201,61 +250,75 @@ export default {
 
     methods: {
 
-        addAgent() {
+        getAgentName(agent) {
+            return this.$root.getAgentName(agent.endpoint);
+        },
+
+        getAgentRouteLink(agent) {
+            if (!!agent.endpoint) {
+                return `/agent/${agent.endpoint}`;
+            } else {
+                return "/agent";
+            }
+        },
+
+        getStatusCount(status: StackStatus[]): number {
+            return status.reduce((acc, s) => acc + (this.stackStatusCountOverall.get(s) ?? 0), 0);
+        },
+
+        getEndpointStatusCount(endpoint: string, status: StackStatus[]): number {
+            return status.reduce((acc, s) => acc + (this.stackStatusCountByEndpoint.get(endpoint)?.get(s) ?? 0), 0);
+        },
+
+        resetNewAgent() {
+            this.newAgent = {
+                url: "http://",
+                username: "",
+                password: "",
+                name: "",
+            };
+        },
+
+        addAgent(bvModalEvt) {
+            bvModalEvt.preventDefault();
             this.connectingAgent = true;
-            this.$root.getSocket().emit("addAgent", this.agent, (res) => {
+            this.$root.getSocket().emit("addAgent", this.newAgent, (res) => {
                 this.$root.toastRes(res);
 
                 if (res.ok) {
                     this.showAgentForm = false;
-                    this.agent = {
-                        url: "http://",
-                        username: "",
-                        password: "",
-                    };
                 }
 
                 this.connectingAgent = false;
             });
         },
 
-        removeAgent(url) {
-            this.$root.getSocket().emit("removeAgent", url, (res) => {
+        removeAgent(agent: AgentData) {
+            this.$root.getSocket().emit("removeAgent", agent.url, (res) => {
                 if (res.ok) {
                     this.$root.toastRes(res);
 
-                    let urlObj = new URL(url);
-                    let endpoint = urlObj.host;
-
                     // Remove the stack list and status list of the removed agent
-                    delete this.$root.allAgentStackList[endpoint];
+                    delete this.$root.allAgentStackList[agent.endpoint];
                 }
             });
         },
 
-        updateName(url, updatedName) {
-            this.$root.getSocket().emit("updateAgent", url, updatedName, (res) => {
+        editAgentName(agent: AgentData) {
+            this.editAgentNewName[agent.endpoint] = agent.name;
+            this.showEditAgentNameDialog[agent.endpoint] = true;
+        },
+
+        updateAgentName(agent: AgentData, updatedName: string) {
+            this.$root.getSocket().emit("updateAgent", agent.url, updatedName, (res) => {
                 this.$root.toastRes(res);
 
                 if (res.ok) {
-                    this.showAgentForm = false;
                     this.agent = {
                         updatedName: "",
                     };
                 }
             });
-        },
-
-        getStatusNum(statusName) {
-            let num = 0;
-
-            for (let stackName in this.$root.completeStackList) {
-                const stack = this.$root.completeStackList[stackName];
-                if (statusNameShort(stack.status) === statusName) {
-                    num += 1;
-                }
-            }
-            return num;
         },
 
         convertDockerRun() {
@@ -334,17 +397,19 @@ export default {
 
         },
     }
-};
+});
 </script>
 
 <style lang="scss" scoped>
 @import "../styles/vars";
 
-.num {
+.num-lg {
     font-size: 30px;
-
-    font-weight: bold;
     display: block;
+}
+
+.num {
+    font-weight: bold;
 
     &.active {
         color: $primary;
@@ -361,6 +426,11 @@ export default {
     &.exited {
         color: $danger;
     }
+}
+
+.url {
+    font-size: 0.8rem;
+    color: #6c757d;
 }
 
 .shadow-box {
@@ -387,16 +457,7 @@ table {
     font-size: 15px;
 }
 
-.first-row .shadow-box {
-
-}
-
-.remove-agent {
-    cursor: pointer;
-    color: rgba(255, 255, 255, 0.3);
-}
-
-.edit-agent {
+.action-icon {
     cursor: pointer;
     color: rgba(255, 255, 255, 0.3);
 }
