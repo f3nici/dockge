@@ -1,34 +1,17 @@
 <template>
     <div class="container-fluid">
         <div class="row">
-            <!-- original layout. isMobile does not seem to be implemented yet
-
+            <!-- Show stack list as side component only on bigger screens -->
             <div v-if="!$root.isMobile" class="col-12 col-md-4 col-xl-3">
                 <div>
                     <router-link to="/compose" class="btn btn-primary mb-3"><font-awesome-icon icon="plus" /> {{ $t("compose") }}</router-link>
                 </div>
-                <StackList :scrollbar="true" />
-            </div>
-            -->
-
-            <div class="d-none d-md-inline col-12 col-md-4 col-xl-3">
-                <div>
-                    <router-link to="/compose" class="btn btn-primary mb-3"><font-awesome-icon icon="plus" /> {{ $t("compose") }}</router-link>
-                </div>
-                <StackList :scrollbar="true" />
-            </div>
-
-            <!-- temporary hack - show stack list on small screens only in DashboardHome -->
-            <div v-if="showStackListOnSmallScreens" class="d-inline d-md-none col-12 col-md-4 col-xl-3">
-                <div>
-                    <router-link to="/compose" class="btn btn-primary mb-3"><font-awesome-icon icon="plus" /> {{ $t("compose") }}</router-link>
-                </div>
-                <StackList :scrollbar="true" />
+                <StackList :embedded="true" />
             </div>
 
             <div ref="container" class="col-12 col-md-8 col-xl-9 mb-3">
                 <!-- Add :key to disable vue router re-use the same component -->
-                <router-view :key="$route.fullPath" :calculatedHeight="height" />
+                <router-view :key="$route.fullPath" />
             </div>
         </div>
     </div>
@@ -45,14 +28,10 @@ export default {
 
     data() {
         return {
-            height: 0
         };
     },
 
     computed: {
-        showStackListOnSmallScreens() {
-            return this.$route.name === "DashboardHome";
-        }
     },
 
     mounted() {

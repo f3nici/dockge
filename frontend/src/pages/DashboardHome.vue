@@ -131,10 +131,6 @@ export default defineComponent({
 
     },
     props: {
-        calculatedHeight: {
-            type: Number,
-            default: 0
-        }
     },
     data(this: {newAgent: AgentData}) {
         return {

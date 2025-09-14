@@ -1,5 +1,5 @@
 <template>
-    <div class="shadow-box mb-3" :style="boxStyle">
+    <div class="shadow-box mb-3" :class="{ 'sticky-shadow-box': embedded }" :style="boxStyle">
         <div class="list-header">
             <div class="header-top">
                 <!-- TODO -->
@@ -43,7 +43,7 @@
                 </span>
             </div>
         </div>
-        <div ref="stackList" class="stack-list" :class="{ scrollbar: scrollbar }" :style="stackListStyle">
+        <div ref="stackList" class="stack-list" :class="{ scrollbar: embedded }" :style="stackListStyle">
             <div v-if="agentStackList[0] && agentStackList[0].stacks.length === 0" class="text-center mt-3">
                 <router-link to="/compose">{{ $t("addFirstStackMsg") }}</router-link>
             </div>
@@ -86,8 +86,8 @@ export default defineComponent({
         StackListItem,
     },
     props: {
-        /** Should the scrollbar be shown */
-        scrollbar: {
+        /** Is the stack list embedded in a sidebar? */
+        embedded: {
             type: Boolean,
         },
     },
@@ -115,16 +115,19 @@ export default defineComponent({
          * @returns {object} Style for stack list
          */
         boxStyle() {
-            if (window.innerWidth > 550) {
-                return {
-                    height: `calc(100vh - 160px + ${this.windowTop}px)`,
-                };
+            if (this.embedded) {
+                if (window.innerWidth > 550) {
+                    return {
+                        height: `calc(100vh - 160px + ${this.windowTop}px)`,
+                    };
+                } else {
+                    return {
+                        height: "calc(100vh - 160px)",
+                    };
+                }
             } else {
-                return {
-                    height: "calc(100vh - 160px)",
-                };
+                return "";
             }
-
         },
 
         agentCount() {
@@ -305,10 +308,14 @@ export default defineComponent({
         },
     },
     mounted() {
-        window.addEventListener("scroll", this.onScroll);
+        if (this.embedded) {
+            window.addEventListener("scroll", this.onScroll);
+        }
     },
     beforeUnmount() {
-        window.removeEventListener("scroll", this.onScroll);
+        if (this.embedded) {
+            window.removeEventListener("scroll", this.onScroll);
+        }
     },
     methods: {
         /**
@@ -410,7 +417,7 @@ export default defineComponent({
 <style lang="scss" scoped>
 @import "../styles/vars.scss";
 
-.shadow-box {
+.sticky-shadow-box {
     height: calc(100vh - 150px);
     position: sticky;
     top: 10px;
@@ -443,14 +450,6 @@ export default defineComponent({
 .header-filter {
     display: flex;
     align-items: center;
-}
-
-@media (max-width: 770px) {
-    .list-header {
-        margin: -20px;
-        margin-bottom: 10px;
-        padding: 5px;
-    }
 }
 
 .search-wrapper {

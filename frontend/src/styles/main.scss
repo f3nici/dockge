@@ -513,7 +513,7 @@ optgroup {
         overflow-y: auto;
     }
 
-    @media (max-width: 770px) {
+    @media (max-width: 769px) {
         &.scrollbar {
             height: calc(100% - 97px);
         }
@@ -674,7 +674,7 @@ $shadow-box-padding: 20px;
     }
 }
 
-@media (max-width: 770px) {
+@media (max-width: 769px) {
     .toast-container {
         margin-bottom: 100px !important;
     }

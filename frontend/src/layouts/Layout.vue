@@ -10,26 +10,37 @@
         </div>
 
         <!-- Desktop header -->
-        <header v-if="! $root.isMobile" class="d-flex flex-wrap justify-content-center py-3 mb-3 border-bottom">
-            <router-link to="/" class="d-flex align-items-center mb-3 mb-md-0 me-3 me-md-auto text-dark text-decoration-none">
-                <object class="bi me-2 ms-4" width="40" height="40" data="/icon.svg" />
-                <span class="fs-4 title">Dockge</span>
-            </router-link>
+        <header class="d-flex align-items-center py-3 mb-3 border-bottom">
+            <div class="d-flex align-items-center ms-4 me-3">
+                <router-link to="/" class="d-flex align-items-center text-dark text-decoration-none">
+                    <object class="bi me-2" width="40" height="40" data="/icon.svg" />
+                    <span class="d-none d-md-inline fs-4 title">Dockge</span>
+                </router-link>
 
-            <a v-if="hasNewVersion" target="_blank" href="https://github.com/louislam/dockge/releases" class="btn btn-warning me-3">
-                <font-awesome-icon icon="arrow-alt-circle-up" /> {{ $t("newUpdate") }}
-            </a>
+                <a v-if="hasNewVersion" target="_blank" href="https://github.com/louislam/dockge/releases" class="ms-2 me-3">
+                    <font-awesome-icon icon="arrow-up" class="notification-icon" />
+                </a>
+            </div>
 
-            <ul class="nav nav-pills">
-                <li v-if="$root.loggedIn" class="nav-item me-2">
-                    <router-link to="/" class="nav-link">
-                        <font-awesome-icon icon="home" /> {{ $t("home") }}
+            <ul class="d-flex ms-auto nav nav-pills">
+                <li v-if="$root.loggedIn" class="nav-item me-3">
+                    <router-link to="/" class="nav-link" data-toggle="tooltip" :title="$t('home')">
+                        <font-awesome-icon icon="home" />
+                        <div class="d-none d-sm-inline ms-2">{{ $t("home") }}</div>
                     </router-link>
                 </li>
 
-                <li v-if="$root.loggedIn" class="nav-item me-2">
+                <li v-if="$root.loggedIn && $root.isMobile" class="nav-item me-3" data-toggle="tooltip" :title="$tc('stack', 2)">
+                    <router-link to="/stacks" class="nav-link">
+                        <font-awesome-icon icon="list" />
+                        <div class="d-none d-sm-inline ms-2">{{ $tc("stack", 2) }}</div>
+                    </router-link>
+                </li>
+
+                <li v-if="$root.loggedIn" class="nav-item me-3" data-toggle="tooltip" :title="$t('console')">
                     <router-link to="/console" class="nav-link">
-                        <font-awesome-icon icon="terminal" /> {{ $t("console") }}
+                        <font-awesome-icon icon="terminal" />
+                        <div class="d-none d-sm-inline ms-2">{{ $t("console") }}</div>
                     </router-link>
                 </li>
 
@@ -308,5 +319,10 @@ main {
     .bottom-nav {
         background-color: $dark-bg;
     }
+}
+
+.notification-icon {
+    color: $info;
+    font-weight: bold;
 }
 </style>

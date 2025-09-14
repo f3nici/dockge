@@ -49,17 +49,34 @@ function rootApp() {
             lang,
             theme,
         ],
+
         data() {
             return {
                 loggedIn: false,
                 allowLoginDialog: false,
                 username: null,
+                isMobile: false
             };
         },
+
         computed: {
 
         },
+
+        mounted() {
+            this.checkScreenSize();
+            window.addEventListener("resize", this.checkScreenSize);
+        },
+
+        unmounted() {
+            window.removeEventListener("resize", this.checkScreenSize);
+        },
+
         methods: {
+
+            checkScreenSize() {
+                this.isMobile = window.innerWidth < 768;
+            },
 
             /**
              * Show success or error toast dependant on response status code
@@ -82,6 +99,7 @@ function rootApp() {
                     toast.error(msg);
                 }
             },
+
             /**
              * Show a success toast
              * @param {string} msg Message to show
@@ -100,6 +118,7 @@ function rootApp() {
                 toast.error(this.$t(msg));
             },
         },
+
         render: () => h(App),
     });
 }
