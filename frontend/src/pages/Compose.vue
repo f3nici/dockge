@@ -26,7 +26,7 @@
                         <span class="d-none d-xl-inline">{{ $t("editStack") }}</span>
                     </button>
 
-                    <button v-if="!isEditMode && (hasExitedServices || !stack.started)" class="btn btn-primary me-1" data-toggle="tooltip" :title="$t('tooltipStackStart')" :disabled="processing" @click="startStack">
+                    <button v-if="!isEditMode && (hasExitedServices || hasInactiveServices || !stack.started)" class="btn btn-primary me-1" data-toggle="tooltip" :title="$t('tooltipStackStart')" :disabled="processing" @click="startStack">
                         <font-awesome-icon icon="play" class="me-1" />
                         <span class="d-none d-xl-inline">{{ $t("startStack") }}</span>
                     </button>
@@ -404,6 +404,16 @@ export default defineComponent({
         hasRunningServices(this: {stack: StackData}): boolean {
             return Object.values(this.stack.services).some(service => service.state === "running");
         },
+
+        hasInactiveServices(this: { composeDocument: ComposeDocument, stack: StackData }): boolean {
+            for (const service of this.composeDocument.services.names) {
+                if (!this.stack.services[service]) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     },
 
     watch: {

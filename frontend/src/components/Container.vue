@@ -56,7 +56,7 @@
                 </div>
 
                 <div v-if="!isEditMode" class="btn-group" role="group">
-                    <button v-if="!started" type="button" class="btn btn-sm btn-success" data-toggle="tooltip" :title="$t('tooltipServiceStart')" :disabled="processing" @click="startService"><font-awesome-icon icon="play" /></button>
+                    <button v-if="!started && !inactive" type="button" class="btn btn-sm btn-success" data-toggle="tooltip" :title="$t('tooltipServiceStart')" :disabled="processing" @click="startService"><font-awesome-icon icon="play" /></button>
                     <button v-if="started" type="button" class="btn btn-sm btn-danger me-1" data-toggle="tooltip" :title="$t('tooltipServiceStop')" :disabled="processing" @click="stopService"><font-awesome-icon icon="stop" /></button>
                     <button v-if="started" type="button" class="btn btn-sm btn-warning" data-toggle="tooltip" :title="$t('tooltipServiceRestart')" :disabled="processing" @click="restartService"><font-awesome-icon icon="rotate" /></button>
                 </div>
@@ -282,12 +282,7 @@ export default defineComponent({
 
         status(): string {
             const healthStatus = this.service.health;
-
-            if (healthStatus === "") {
-                return this.service.state;
-            } else {
-                return healthStatus;
-            }
+            return !!healthStatus ? healthStatus : (this.inactive ? "inactive" : this.service.state);
         },
 
         bgStyle(): string {
@@ -295,6 +290,8 @@ export default defineComponent({
                 return "bg-primary";
             } else if (this.status === "unhealthy") {
                 return "bg-danger";
+            } else if (this.status === "inactive") {
+                return "bg-dark";
             } else {
                 return "bg-secondary";
             }
@@ -302,6 +299,10 @@ export default defineComponent({
 
         started(): boolean {
             return this.status === "starting" || this.status === "running" || this.status === "healthy" || this.status === "unhealthy" || this.status === "stopping";
+        },
+
+        inactive(): boolean {
+            return Object.keys(this.service).length === 0;
         },
 
         logRouteLink() {
