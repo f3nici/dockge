@@ -10,7 +10,7 @@ import {
     ValidationError
 } from "../util-server";
 import { AgentMaintenance } from "../agent-maintenance";
-import { DockerArtefactData } from "../../common/types";
+import { DockerArtefactAction, DockerArtefactData, DockerArtefactInfos } from "../../common/types";
 
 export class AgentMaintenanceSocketHandler extends AgentSocketHandler {
 
@@ -27,7 +27,7 @@ export class AgentMaintenanceSocketHandler extends AgentSocketHandler {
                 }
 
                 let artefactData: DockerArtefactData = {
-                    header: [],
+                    info: DockerArtefactInfos[artefact],
                     data: []
                 };
 
@@ -39,6 +39,8 @@ export class AgentMaintenanceSocketHandler extends AgentSocketHandler {
                     artefactData = await agentMaintenance.getNetworkData();
                 } else if (artefact === "volume") {
                     artefactData = await agentMaintenance.getVolumeData();
+                } else {
+                    log.error("getDockerArtefactData", `Unknown artefact '${artefact}'`);
                 }
 
                 callbackResult({
@@ -50,22 +52,33 @@ export class AgentMaintenanceSocketHandler extends AgentSocketHandler {
             }
         });
 
-        agentSocket.on("prune", async (artefact: unknown, all: unknown, callback) => {
+        agentSocket.on("executeDockerArtefactAction", async (artefact: unknown, action: unknown, ids: unknown, callback) => {
             try {
                 checkLogin(socket);
 
                 if (typeof(artefact) !== "string") {
                     throw new ValidationError("artefact must be a string");
                 }
-                if (typeof(all) !== "boolean") {
-                    throw new ValidationError("all must be a boolean");
+                if (typeof(action) !== "string") {
+                    throw new ValidationError("action must be a string");
+                }
+                if (!Array.isArray(ids) || ids.some(item => typeof item !== "string")) {
+                    throw new ValidationError("ids must be a string[]");
                 }
 
-                await agentMaintenance.prune(socket, artefact, all);
+                if (action === DockerArtefactAction.Prune || action === DockerArtefactAction.PruneAll) {
+                    await agentMaintenance.prune(socket, artefact, action === DockerArtefactAction.PruneAll);
+                } else if (action === DockerArtefactAction.Remove) {
+                    await agentMaintenance.remove(socket, artefact, ids);
+                } else if (artefact === "image" && action === DockerArtefactAction.Pull) {
+                    await agentMaintenance.pullImages(socket, ids);
+                } else {
+                    log.error("executeDockerArtefactAction", `Unsupport combination: artefact '${artefact}' & action '${action}'`);
+                }
 
                 callbackResult({
                     ok: true,
-                    msg: "Successfully pruned",
+                    msg: "Action executed successfully",
                     msgi18n: true,
                 }, callback);
             } catch (e) {
@@ -73,7 +86,7 @@ export class AgentMaintenanceSocketHandler extends AgentSocketHandler {
             }
         });
 
-        agentSocket.on("systemPrune", async (all: unknown, volumes: unknown, callback) => {
+        agentSocket.on("dockerSystemPrune", async (all: unknown, volumes: unknown, callback) => {
             try {
                 checkLogin(socket);
 

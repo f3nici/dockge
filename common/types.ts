@@ -45,11 +45,44 @@ export type AgentData = {
     name: string
 }
 
+export enum DockerArtefactAction {
+    Prune = "prune",
+    PruneAll = "pruneAll",
+    Remove = "remove",
+    Pull = "pull"
+}
+
+export type DockerArtefactInfo = {
+    name: string,
+    actions: DockerArtefactAction[]
+}
+
+export const DockerArtefactInfos: Record<string, DockerArtefactInfo> = {
+    Container: {
+        name: "container",
+        actions: [ DockerArtefactAction.Prune, DockerArtefactAction.Remove ]
+    },
+    Image: {
+        name: "image",
+        actions: [ DockerArtefactAction.Prune, DockerArtefactAction.PruneAll, DockerArtefactAction.Pull, DockerArtefactAction.Remove ]
+    },
+    Network: {
+        name: "network",
+        actions: [ DockerArtefactAction.Prune, DockerArtefactAction.Remove ]
+    },
+    Volume: {
+        name: "volume",
+        actions: [ DockerArtefactAction.Prune, DockerArtefactAction.PruneAll, DockerArtefactAction.Remove ]
+    }
+};
+
 export type DockerArtefactData = {
-    header: string[],
+    info: DockerArtefactInfo,
     data: {
-        values: string[],
+        id: string,
+        values: Record<string, string>,
         dangling: boolean,
-        danglingLabel: string
+        danglingLabel: string,
+        excludedActions: DockerArtefactAction[]
     }[]
 }

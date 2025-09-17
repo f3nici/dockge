@@ -1,5 +1,5 @@
 import { DockgeServer } from "./dockge-server";
-import { DockerArtefactData } from "../common/types";
+import { DockerArtefactAction, DockerArtefactData, DockerArtefactInfos } from "../common/types";
 import { getAgentMaintenanceTerminalName } from "../common/util-common";
 import { DockgeSocket } from "./util-server";
 import { Terminal } from "./terminal";
@@ -13,7 +13,7 @@ export class AgentMaintenance {
 
     async getContainerData(): Promise<DockerArtefactData> {
         const containerData: DockerArtefactData = {
-            header: [ "Names", "Image", "Created", "Status" ],
+            info: DockerArtefactInfos.Container,
             data: []
         };
 
@@ -33,9 +33,16 @@ export class AgentMaintenance {
                     const containerInfo = JSON.parse(line);
 
                     containerData.data.push({
-                        values: [ containerInfo.Names, containerInfo.Image, containerInfo.CreatedAt, containerInfo.Status ],
+                        id: containerInfo.ID,
+                        values: {
+                            Names: containerInfo.Names,
+                            Image: containerInfo.Image,
+                            Created: containerInfo.CreatedAt,
+                            Status: containerInfo.Status
+                        },
                         dangling: containerInfo.Status.startsWith("Exited"),
-                        danglingLabel: "stopped"
+                        danglingLabel: "stopped",
+                        excludedActions: []
                     });
                 }
             }
@@ -47,8 +54,8 @@ export class AgentMaintenance {
     }
 
     async getImageData(): Promise<DockerArtefactData> {
-        const containerData: DockerArtefactData = {
-            header: [ "Name", "Created", "Size" ],
+        const imageData: DockerArtefactData = {
+            info: DockerArtefactInfos.Image,
             data: []
         };
 
@@ -58,7 +65,7 @@ export class AgentMaintenance {
             });
 
             if (!res.stdout) {
-                return containerData;
+                return imageData;
             }
 
             const lines = res.stdout?.toString().split("\n");
@@ -67,10 +74,19 @@ export class AgentMaintenance {
                 if (line != "") {
                     const imageInfo = JSON.parse(line);
 
-                    containerData.data.push({
-                        values: [ imageInfo.Repository + (imageInfo.Tag === "<none>" ? "" : `:${imageInfo.Tag}`), imageInfo.CreatedSince, imageInfo.Size ],
+                    const noneTag = imageInfo.Tag === "<none>";
+                    const nameWithTag = imageInfo.Repository + (noneTag ? "" : `:${imageInfo.Tag}`);
+
+                    imageData.data.push({
+                        id: nameWithTag,
+                        values: {
+                            Name: nameWithTag,
+                            Created: imageInfo.CreatedSince,
+                            Size: imageInfo.Size
+                        },
                         dangling: imageInfo.Containers === "0",
-                        danglingLabel: imageInfo.Tag === "<none>" ? "dangling" : "unused"
+                        danglingLabel: noneTag ? "dangling" : "unused",
+                        excludedActions: noneTag ? [DockerArtefactAction.Pull] : []
                     });
                 }
             }
@@ -78,12 +94,12 @@ export class AgentMaintenance {
             log.error("getImageData", e);
         }
 
-        return containerData;
+        return imageData;
     }
 
     async getNetworkData(): Promise<DockerArtefactData> {
-        const containerData: DockerArtefactData = {
-            header: [ "Name", "Created", "Driver", "Scope" ],
+        const networkData: DockerArtefactData = {
+            info: DockerArtefactInfos.Network,
             data: []
         };
 
@@ -95,7 +111,7 @@ export class AgentMaintenance {
             });
 
             if (!res.stdout) {
-                return containerData;
+                return networkData;
             }
 
             const lines = res.stdout?.toString().split("\n");
@@ -120,10 +136,17 @@ export class AgentMaintenance {
                         }
                     }
 
-                    containerData.data.push({
-                        values: [ networkInfo.Name, networkInfo.CreatedAt, networkInfo.Driver, networkInfo.Scope ],
+                    networkData.data.push({
+                        id: networkInfo.ID,
+                        values: {
+                            Name: networkInfo.Name,
+                            Created: networkInfo.CreatedAt,
+                            Driver: networkInfo.Driver,
+                            Scope: networkInfo.Scope
+                        },
                         dangling: Object.keys(inspectData.Containers).length === 0,
-                        danglingLabel: "dangling"
+                        danglingLabel: "dangling",
+                        excludedActions: []
                     });
                 }
             }
@@ -131,12 +154,12 @@ export class AgentMaintenance {
             log.error("getNetworkData", e);
         }
 
-        return containerData;
+        return networkData;
     }
 
     async getVolumeData(): Promise<DockerArtefactData> {
-        const containerData: DockerArtefactData = {
-            header: [ "Name", "Created", "Driver", "Scope", "Size" ],
+        const volumeData: DockerArtefactData = {
+            info: DockerArtefactInfos.Volume,
             data: []
         };
 
@@ -161,7 +184,7 @@ export class AgentMaintenance {
             });
 
             if (!res.stdout) {
-                return containerData;
+                return volumeData;
             }
 
             const lines = res.stdout?.toString().split("\n");
@@ -181,10 +204,18 @@ export class AgentMaintenance {
                         inspectData = JSON.parse(inspectRes.stdout.toString())[0];
                     }
 
-                    containerData.data.push({
-                        values: [ volumeInfo.Name, inspectData.CreatedAt, volumeInfo.Driver, volumeInfo.Scope, volumeInfo.Size ],
+                    volumeData.data.push({
+                        id: volumeInfo.Name,
+                        values: {
+                            Name: volumeInfo.Name,
+                            Created: inspectData.CreatedAt,
+                            Driver: volumeInfo.Driver,
+                            Scope: volumeInfo.Scope,
+                            Size: volumeInfo.Size
+                        },
                         dangling: danglingVolumes.has(volumeInfo.Name),
-                        danglingLabel: "dangling"
+                        danglingLabel: "dangling",
+                        excludedActions: []
                     });
                 }
             }
@@ -192,7 +223,7 @@ export class AgentMaintenance {
             log.error("getVolumeData", e);
         }
 
-        return containerData;
+        return volumeData;
     }
 
     async prune(socket: DockgeSocket, artefact: string, all: boolean) {
@@ -210,6 +241,42 @@ export class AgentMaintenance {
         }
 
         return exitCode;
+    }
+
+    async remove(socket: DockgeSocket, artefact: string, ids: string[]) {
+        const terminalName = getAgentMaintenanceTerminalName(socket.endpoint);
+
+        const dockerParams = [ artefact, "rm" ];
+        for (const id of ids) {
+            dockerParams.push(id);
+        }
+
+        let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", dockerParams, "");
+
+        if (exitCode !== 0) {
+            throw new Error("Failed to delete, please check the terminal output for more information.");
+        }
+
+        return exitCode;
+    }
+
+    async pullImages(socket: DockgeSocket, ids: string[]) {
+        const terminalName = getAgentMaintenanceTerminalName(socket.endpoint);
+
+        let overallExitCode = 0;
+        for (const id of ids) {
+            let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "image", "pull", id ], "");
+
+            if (exitCode !== 0) {
+                overallExitCode = exitCode;
+            }
+        }
+
+        if (overallExitCode !== 0) {
+            throw new Error("Failed to update image(s), please check the terminal output for more information.");
+        }
+
+        return overallExitCode;
     }
 
     async systemPrune(socket: DockgeSocket, all: boolean, volumes: boolean) {

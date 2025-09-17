@@ -45,10 +45,10 @@
 
             <div class="shadow-box mt-3">
                 <b-tabs v-model="activeArtefactIndex" pills>
-                    <template v-for="(artefact, index) in artefacts" :key="artefact">
-                        <b-tab active lazy :title="$tc(artefact.name, 2)" :title-link-class="activeArtefactIndex === index ? 'active-artefact' : ''">
+                    <template v-for="(info, index) in Object.values(DockerArtefactInfos)" :key="info.name">
+                        <b-tab active lazy :title="$tc(info.name, 2)" :title-link-class="activeArtefactIndex === index ? 'active-artefact' : ''">
                             <div class="mt-4">
-                                <DockerArtefact :ref="artefact.name" :endpoint="endpoint" :artefact="artefact.name" :hasPruneAll="artefact.hasPruneAll" />
+                                <DockerArtefact :ref="info.name" :endpoint="endpoint" :artefact="info" />
                             </div>
                         </b-tab>
                     </template>
@@ -62,6 +62,7 @@
 import { defineComponent, getCurrentInstance, ref, reactive, computed, onMounted, provide } from "vue";
 import { useRoute } from "vue-router";
 import { getAgentMaintenanceTerminalName } from "../../../common/util-common";
+import { DockerArtefactInfos } from "../../../common/types";
 import DockerArtefact from "../components/DockerArtefact.vue";
 import ProgressTerminal from "../components/ProgressTerminal.vue";
 
@@ -81,30 +82,10 @@ export default defineComponent({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const refs = proxy?.$refs as any;
 
-        const artefacts = [
-            {
-                name: "container",
-                hasPruneAll: false
-            },
-            {
-                name: "image",
-                hasPruneAll: true
-            },
-            {
-                name: "network",
-                hasPruneAll: false
-            },
-            {
-                name: "volume",
-                hasPruneAll: true
-            },
-        ];
-
         // State
         const processing = ref(false);
         const showSystemPruneDialog = ref(false);
         const activeArtefactIndex = ref(0);
-        const artefactsData = reactive<Record<string, any>>({});
         const systemPruneData = reactive({
             all: false,
             volumes: false
@@ -124,27 +105,27 @@ export default defineComponent({
         }
 
         function systemPrune() {
-            startPruneAction();
+            startAction();
 
-            root.emitAgent(endpoint.value, "systemPrune", systemPruneData.all, systemPruneData.volumes, (res) => {
-                stopPruneAction();
+            root.emitAgent(endpoint.value, "dockerSystemPrune", systemPruneData.all, systemPruneData.volumes, (res) => {
+                stopAction();
                 root.toastRes(res);
                 reloadArtefactsData();
             });
         }
 
-        function startPruneAction() {
+        function startAction() {
             processing.value = true;
             progressTerminal.value?.show();
         }
 
-        function stopPruneAction() {
+        function stopAction() {
             processing.value = false;
             progressTerminal.value?.hideWithTimeout();
         }
 
         function reloadArtefactsData() {
-            for (const artefact of artefacts) {
+            for (const artefact of Object.values(DockerArtefactInfos)) {
                 const ref = refs[artefact.name];
 
                 // Check if array
@@ -164,15 +145,14 @@ export default defineComponent({
 
         // Provide
         provide("processing", processing);
-        provide("startPruneAction", startPruneAction);
-        provide("stopPruneAction", stopPruneAction);
+        provide("startAction", startAction);
+        provide("stopAction", stopAction);
 
         return {
+            DockerArtefactInfos,
             processing,
             showSystemPruneDialog,
-            artefacts,
             activeArtefactIndex,
-            artefactsData,
             systemPruneData,
             endpoint,
             name,
@@ -180,8 +160,8 @@ export default defineComponent({
             progressTerminal,
             resetSystemPrune,
             systemPrune,
-            startPruneAction,
-            stopPruneAction,
+            startPruneAction: startAction,
+            stopPruneAction: stopAction,
             reloadArtefactsData
         };
     }

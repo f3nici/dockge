@@ -176,8 +176,12 @@
     "tooltipServiceStop": "Stop the service",
     "tooltipServiceRestart": "Restart the service",
     "tooltipOpenPruneDialog": "Open prune dialog",
+    "tooltipDeleteSelected": "Deletes the selected items",
+    "tooltipPullSelected": "Updates the selected items",
     "maintenance": "Maintenance",
     "prune": "Prune",
+    "pull": "Update",
+    "delete": "Delete",
     "systemPrune": "System Prune",
     "systemPruneMsg": "WARNING! This will remove:<br>  - all stopped containers<br>  - all networks not used by at least one container<br>  - all dangling images<br>  - unused build cache",
     "systemPruneAll": "Also all images without at least one container associated to them and all build cache",
@@ -188,5 +192,10 @@
     "networkPruneMsg": "WARNING! This will remove all custom networks not used by at least one container.",
     "volumePruneMsg": "WARNING! This will remove anonymous local volumes not used by at least one container.",
     "volumePruneAll": "Also all local volumes not used by at least one container",
+    "containerDeleteMsg": "The selected containers will be deleted.",
+    "imageDeleteMsg": "The selected images will be deleted.",
+    "imagePullInfoMsg": "The following dangling images cannot be updated:",
+    "networkDeleteMsg": "The selected networks will be deleted.",
+    "volumeDeleteMsg": "The selected volumes will be deleted.",
     "fetchingData": "Fetching data ..."
 }
