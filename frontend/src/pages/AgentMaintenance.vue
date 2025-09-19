@@ -177,7 +177,7 @@ export default defineComponent({
 }
 
 :deep(.active-artefact) {
-  background: rgba(255, 255, 255, 0.5) !important;
+  background: rgba(255, 255, 255, 0.7) !important;
   color: $dark-font-color2 !important;
   font-weight: bold;
 }

@@ -23,24 +23,24 @@
             </div>
 
             <ul class="d-flex ms-auto nav nav-pills">
-                <li v-if="$root.loggedIn" class="nav-item me-3">
-                    <router-link to="/" class="nav-link" data-toggle="tooltip" :title="$t('home')">
+                <li v-if="$root.loggedIn" class="nav-item me-2">
+                    <router-link to="/" class="nav-link d-flex flex-column flex-sm-row align-items-center" data-toggle="tooltip" :title="$t('home')">
                         <font-awesome-icon icon="home" />
-                        <div class="d-none d-sm-inline ms-2">{{ $t("home") }}</div>
+                        <div class="mt-2 mt-sm-0 ms-sm-2">{{ $t("home") }}</div>
                     </router-link>
                 </li>
 
-                <li v-if="$root.loggedIn && $root.isMobile" class="nav-item me-3" data-toggle="tooltip" :title="$tc('stack', 2)">
-                    <router-link to="/stacks" class="nav-link">
+                <li v-if="$root.loggedIn && $root.isMobile" class="nav-item me-2" data-toggle="tooltip" :title="$tc('stack', 2)">
+                    <router-link to="/stacks" class="nav-link d-flex flex-column flex-sm-row align-items-center">
                         <font-awesome-icon icon="list" />
-                        <div class="d-none d-sm-inline ms-2">{{ $tc("stack", 2) }}</div>
+                        <div class="mt-2 mt-sm-0 ms-sm-2">{{ $tc("stack", 2) }}</div>
                     </router-link>
                 </li>
 
-                <li v-if="$root.loggedIn" class="nav-item me-3" data-toggle="tooltip" :title="$t('console')">
-                    <router-link to="/console" class="nav-link">
+                <li v-if="$root.loggedIn" class="nav-item me-2" data-toggle="tooltip" :title="$t('console')">
+                    <router-link to="/console" class="nav-link d-flex flex-column flex-sm-row align-items-center">
                         <font-awesome-icon icon="terminal" />
-                        <div class="d-none d-sm-inline ms-2">{{ $t("console") }}</div>
+                        <div class="mt-2 mt-sm-0 ms-sm-2">{{ $t("console") }}</div>
                     </router-link>
                 </li>
 

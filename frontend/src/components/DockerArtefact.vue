@@ -1,16 +1,16 @@
 <template>
-    <div class="d-flex gap-3">
-        <button v-if="artefact.actions.includes(DockerArtefactAction.Prune)" class="btn btn-primary btn-sm mb-3" data-toggle="tooltip" :title="$t('tooltipOpenPruneDialog')" :disabled="processing" @click="showPruneDialog = true">
+    <div class="btn-group mb-3" role="group">
+        <button v-if="artefact.actions.includes(DockerArtefactAction.Prune)" class="btn btn-primary btn-sm me-1" data-toggle="tooltip" :title="$t('tooltipOpenPruneDialog')" :disabled="processing" @click="showPruneDialog = true">
             <font-awesome-icon icon="wrench" class="me-1" />
             <span>{{ $t("prune") }}</span>
         </button>
 
-        <button v-if="artefact.actions.includes(DockerArtefactAction.Pull)" class="btn btn-primary btn-sm mb-3" data-toggle="tooltip" :title="$t('tooltipPullSelected')" :disabled="processing || selectedItems.length === 0" @click="checkOpenPullDialog">
+        <button v-if="artefact.actions.includes(DockerArtefactAction.Pull)" class="btn btn-primary btn-sm me-1" data-toggle="tooltip" :title="$t('tooltipPullSelected')" :disabled="processing || selectedItems.length === 0" @click="checkOpenPullDialog">
             <font-awesome-icon icon="cloud-arrow-down" class="me-1" />
             <span>{{ $t("pull") }}</span>
         </button>
 
-        <button v-if="artefact.actions.includes(DockerArtefactAction.Remove)" class="btn btn-danger btn-sm mb-3" data-toggle="tooltip" :title="$t('tooltipDeleteSelected')" :disabled="processing || selectedItems.length === 0" @click="showDeleteDialog = true">
+        <button v-if="artefact.actions.includes(DockerArtefactAction.Remove)" class="btn btn-danger btn-sm" data-toggle="tooltip" :title="$t('tooltipDeleteSelected')" :disabled="processing || selectedItems.length === 0" @click="showDeleteDialog = true">
             <font-awesome-icon icon="trash" class="me-1" />
             <span>{{ $t("delete") }}</span>
         </button>
