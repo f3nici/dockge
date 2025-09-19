@@ -138,7 +138,6 @@ export class TerminalSocketHandler extends AgentSocketHandler {
 
         // Resize Terminal
         agentSocket.on("terminalResize", async (terminalName: unknown, rows: unknown, cols: unknown) => {
-            log.info("terminalResize", `Terminal: ${terminalName}`);
             try {
                 checkLogin(socket);
                 if (typeof terminalName !== "string") {
@@ -163,7 +162,7 @@ export class TerminalSocketHandler extends AgentSocketHandler {
                     throw new Error(`${terminalName} Terminal not found.`);
                 }
             } catch (e) {
-                log.debug("terminalResize",
+                log.warn("terminalResize",
                         // Added to prevent the lint error when adding the type
                         // and ts type checker saying type is unknown.
                         // @ts-ignore
