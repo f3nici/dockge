@@ -34,6 +34,7 @@ export class AgentMaintenance {
 
                     containerData.data.push({
                         id: containerInfo.ID,
+                        actionId: containerInfo.ID,
                         values: {
                             Names: containerInfo.Names,
                             Image: containerInfo.Image,
@@ -78,15 +79,16 @@ export class AgentMaintenance {
                     const nameWithTag = imageInfo.Repository + (noneTag ? "" : `:${imageInfo.Tag}`);
 
                     imageData.data.push({
-                        id: nameWithTag,
+                        id: imageInfo.ID,
+                        actionId: nameWithTag,
                         values: {
                             Name: nameWithTag,
-                            Created: imageInfo.CreatedSince,
-                            Size: imageInfo.Size
+                            Created: [ imageInfo.CreatedSince, imageInfo.CreatedAt ],
+                            Size: [ imageInfo.Size, this.getByteSize(imageInfo.Size) ]
                         },
                         dangling: imageInfo.Containers === "0",
                         danglingLabel: noneTag ? "dangling" : "unused",
-                        excludedActions: noneTag ? [DockerArtefactAction.Pull] : []
+                        excludedActions: noneTag ? [ DockerArtefactAction.Pull ] : []
                     });
                 }
             }
@@ -138,6 +140,7 @@ export class AgentMaintenance {
 
                     networkData.data.push({
                         id: networkInfo.ID,
+                        actionId: networkInfo.ID,
                         values: {
                             Name: networkInfo.Name,
                             Created: networkInfo.CreatedAt,
@@ -206,12 +209,13 @@ export class AgentMaintenance {
 
                     volumeData.data.push({
                         id: volumeInfo.Name,
+                        actionId: volumeInfo.Name,
                         values: {
                             Name: volumeInfo.Name,
                             Created: inspectData.CreatedAt,
                             Driver: volumeInfo.Driver,
                             Scope: volumeInfo.Scope,
-                            Size: volumeInfo.Size
+                            Size: [ volumeInfo.Size, this.getByteSize(volumeInfo.Size) ]
                         },
                         dangling: danglingVolumes.has(volumeInfo.Name),
                         danglingLabel: "dangling",
@@ -297,5 +301,23 @@ export class AgentMaintenance {
         }
 
         return exitCode;
+    }
+
+    private getByteSize(sizeStr: string): number {
+        let byteSize = parseFloat(sizeStr);
+
+        if (byteSize) {
+            if (sizeStr.endsWith("KB")) {
+                byteSize = byteSize * 1024;
+            } else if (sizeStr.endsWith("MB")) {
+                byteSize = byteSize * 1024 * 1024;
+            } else if (sizeStr.endsWith("GB")) {
+                byteSize = byteSize * 1024 * 1024 * 1024;
+            }
+        } else {
+            byteSize = 0;
+        }
+
+        return byteSize;
     }
 }

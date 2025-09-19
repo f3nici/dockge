@@ -53,23 +53,23 @@
             <thead>
                 <tr>
                     <th scope="col"></th>
-                    <th v-for="(title, index) in dataHeader" :key="index" scope="col">{{ title }}</th>
+                    <th v-for="(title, index) in dataHeader" :key="index" class="sortable-header" scope="col" @click="toggleSort(title)">{{ title }} <span class="sort-symbol">{{ sortCol === title ? (sortDir === "UP" ? "&nbsp;▲" : "&nbsp;▼" ) : "&nbsp;&nbsp;" }}</span></th>
                     <th scope="col"></th>
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="(row, rowIndex) in data.data" :key="rowIndex">
+                <tr v-for="(item, itemIndex) in tableData" :key="itemIndex">
                     <td scope="col">
                         <input
                             v-model="selectedItems"
                             class="form-check-input"
                             type="checkbox"
-                            :value="rowIndex"
+                            :value="item.id"
                         />
                     </td>
-                    <td v-for="(value, valueIndex) in row.values" :key="valueIndex" class="artefact-cell">{{ value }}</td>
+                    <td v-for="(value, valueIndex) in item.values" :key="valueIndex" class="artefact-cell">{{ getValue(value) }}</td>
                     <td>
-                        <span v-if="row.dangling" class="badge bg-info">{{ row.danglingLabel }}</span>
+                        <span v-if="item.dangling" class="badge bg-info">{{ item.danglingLabel }}</span>
                     </td>
                 </tr>
             </tbody>
@@ -79,7 +79,7 @@
 
 <script lang="ts" setup>
 import { computed, ref, Ref, reactive, onMounted, inject, getCurrentInstance } from "vue";
-import { DockerArtefactAction, DockerArtefactData, DockerArtefactInfo } from "../../../common/types";
+import { DockerArtefactAction, DockerArtefactData, DockerArtefactInfo, DockerArtefactItem } from "../../../common/types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const root = getCurrentInstance()?.proxy?.$root as any;
@@ -94,13 +94,20 @@ const processing = inject("processing") as Ref<boolean>;
 const startAction = inject("startAction") as () => void;
 const stopAction = inject("stopAction") as () => void;
 
+// Local types
+type SortDir = "UP" | "DOWN";
+
 // Local reactive state
 const fetchingData = ref(true);
 const data = ref<DockerArtefactData>({
     info: props.artefact,
     data: []
 });
-const selectedItems = ref<number[]>([]);
+const dataMap = reactive(new Map<string, DockerArtefactItem>());
+const tableData = ref<DockerArtefactItem[]>([]);
+const sortCol = ref<string>("");
+const sortDir = ref<SortDir>("UP");
+const selectedItems = ref<string[]>([]);
 const showPruneDialog = ref(false);
 const pruneDialogData = reactive({ all: false });
 const showPullDialog = ref(false);
@@ -118,9 +125,58 @@ function loadData() {
 
     root.emitAgent(props.endpoint, "getDockerArtefactData", props.artefact.name, (res) => {
         fetchingData.value = false;
+
         data.value = res.data;
+        dataMap.clear();
+        for (const item of data.value.data) {
+            dataMap.set(item.id, item);
+        }
+
+        if (sortCol.value === "") {
+            sortCol.value = dataHeader.value.length > 0 ? dataHeader.value[0] : "";
+        }
+        sortData();
+
         selectedItems.value = [];
     });
+}
+
+function sortData() {
+    if (sortCol.value !== "") {
+        tableData.value = Array.from(dataMap.values()).sort((i1, i2) => {
+            let v1 = getValue(i1.values[sortCol.value], true);
+            let v2 = getValue(i2.values[sortCol.value], true);
+
+            const upSort = sortDir.value === "UP";
+
+            if (typeof (v1) === "string") {
+                v2 = v2 as string;
+                return (upSort ? v1 : v2).localeCompare(upSort ? v2 : v1);
+            } else {
+                v2 = v2 as number;
+                return (upSort ? v1 : v2) - (upSort ? v2 : v1);
+            }
+        });
+    }
+}
+
+function toggleSort(col: string) {
+    if (sortCol.value != col) {
+        sortCol.value = col;
+        sortDir.value = "UP";
+    } else {
+        sortDir.value = (sortDir.value === "UP" ? "DOWN" : "UP");
+    }
+
+    sortData();
+}
+
+function getValue(value: string | [string, string] | [string, number], sortValue = false): string | number {
+    if (Array.isArray(value)) {
+        return sortValue ? value[1] : value[0];
+    } else {
+        return value;
+    }
 }
 
 function resetPruneDialog() {
@@ -129,17 +185,17 @@ function resetPruneDialog() {
 
 function checkOpenPullDialog() {
     const selectedDanglingImages = selectedItems.value
-        .filter(i => data.value.data[i].excludedActions.includes(DockerArtefactAction.Pull));
+        .filter(id => dataMap.get(id)!.excludedActions.includes(DockerArtefactAction.Pull));
 
     if (selectedDanglingImages.length > 0) {
         const danglingImageList = [ "<ul>" ];
-        for (const i of selectedDanglingImages) {
-            danglingImageList.push(`<li>${data.value.data[i].id}</li>`);
+        for (const id of selectedDanglingImages) {
+            danglingImageList.push(`<li>${dataMap.get(id)!.actionId}</li>`);
         }
         danglingImageList.push("</ul>");
         pullDialogData.danglingImagesList = danglingImageList.join("");
 
-        selectedItems.value = selectedItems.value.filter(i => !selectedDanglingImages.includes(i));
+        selectedItems.value = selectedItems.value.filter(id => !selectedDanglingImages.includes(id));
 
         showPullDialog.value = true;
     } else {
@@ -150,7 +206,7 @@ function checkOpenPullDialog() {
 function executeAction(action: DockerArtefactAction) {
     startAction?.();
 
-    root.emitAgent(props.endpoint, "executeDockerArtefactAction", props.artefact.name, action, selectedItems.value.map(i => data.value.data[i].id), (res) => {
+    root.emitAgent(props.endpoint, "executeDockerArtefactAction", props.artefact.name, action, selectedItems.value.map(id => dataMap.get(id)?.actionId), (res) => {
         stopAction?.();
         root.toastRes(res);
         loadData();
@@ -172,6 +228,15 @@ onMounted(() => {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    .sortable-header {
+        cursor: pointer;
+    }
+
+    .sort-symbol {
+        color: rgba(255, 255, 255, 0.3);
+        font-family: monospace;
     }
 
 </style>
