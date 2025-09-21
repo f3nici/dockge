@@ -6,28 +6,34 @@
 
         <div class="shadow-box shadow-box-settings">
             <div class="row">
-                <div v-if="showSubMenu" class="settings-menu col-lg-3 col-md-5">
-                    <router-link
-                        v-for="(item, key) in subMenus"
-                        :key="key"
-                        :to="`/settings/${key}`"
-                    >
-                        <div class="menu-item">
-                            {{ item.title }}
-                        </div>
-                    </router-link>
+                <div class="settings-menu col-lg-4 col-sm-12">
+                    <div class="d-flex flex-row flex-wrap flex-lg-column align-items-start">
+                        <router-link
+                            v-for="(item, key) in subMenus"
+                            :key="key"
+                            :to="`/settings/${key}`"
+                            class="d-none d-lg-block w-100"
+                        >
+                            <div class="menu-item menu-item-v">
+                                {{ item.title }}
+                            </div>
+                        </router-link>
 
-                    <!-- Logout Button -->
-                    <a v-if="$root.isMobile && $root.loggedIn && $root.socket.token !== 'autoLogin'" class="logout" @click.prevent="$root.logout">
-                        <div class="menu-item">
-                            <font-awesome-icon icon="sign-out-alt" />
-                            {{ $t("Logout") }}
-                        </div>
-                    </a>
+                        <router-link
+                            v-for="(item, key) in subMenus"
+                            :key="key"
+                            :to="`/settings/${key}`"
+                            class="d-inline d-lg-none mb-3"
+                        >
+                            <div class="menu-item menu-item-h">
+                                {{ item.title }}
+                            </div>
+                        </router-link>
+                    </div>
                 </div>
-                <div class="settings-content col-lg-9 col-md-7">
-                    <div v-if="currentPage" class="settings-content-header">
-                        {{ subMenus[currentPage].title }}
+                <div class="settings-content col-lg-8 col-sm-12">
+                    <div class="settings-content-header d-none d-lg-block">
+                        {{ currentPage ? subMenus[currentPage].title : "" }}
                     </div>
                     <div class="mx-3">
                         <router-view v-slot="{ Component }">
@@ -64,14 +70,6 @@ export default {
             return pathEnd;
         },
 
-        showSubMenu() {
-            if (this.$root.isMobile) {
-                return !this.currentPage;
-            } else {
-                return true;
-            }
-        },
-
         subMenus() {
             return {
                 general: {
@@ -90,12 +88,6 @@ export default {
         },
     },
 
-    watch: {
-        "$root.isMobile"() {
-            this.loadGeneralPage();
-        }
-    },
-
     mounted() {
         this.loadSettings();
         this.loadGeneralPage();
@@ -108,8 +100,8 @@ export default {
          * For desktop only, on mobile do nothing
          */
         loadGeneralPage() {
-            if (!this.currentPage && !this.$root.isMobile) {
-                this.$router.push("/settings/appearance");
+            if (!this.currentPage) {
+                this.$router.push("/settings/general");
             }
         },
 
@@ -198,6 +190,7 @@ footer {
         padding: 0.7em 1em;
         cursor: pointer;
         border-left-width: 0;
+        border-bottom-width: 0;
         transition: all ease-in-out 0.1s;
     }
 
@@ -205,18 +198,29 @@ footer {
         background: $highlight-white;
 
         .dark & {
-            background: $dark-header-bg;
+            background: $dark-header-active-bg;
         }
     }
 
-    .active .menu-item {
+    .active .menu-item-v {
         background: $highlight-white;
         border-left: 4px solid $primary;
         border-top-left-radius: 0;
         border-bottom-left-radius: 0;
 
         .dark & {
-            background: $dark-header-bg;
+            background: $dark-header-active-bg;
+        }
+    }
+
+    .active .menu-item-h {
+        background: $highlight-white;
+        border-bottom: 4px solid $primary;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+
+        .dark & {
+            background: $dark-header-active-bg;
         }
     }
 }
@@ -234,14 +238,6 @@ footer {
         .dark & {
             background: $dark-header-bg;
             border-bottom: 0;
-        }
-
-        .mobile & {
-            padding: 15px 0 0 0;
-
-            .dark & {
-                background-color: transparent;
-            }
         }
     }
 }

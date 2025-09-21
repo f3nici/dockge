@@ -10,7 +10,7 @@
         </div>
 
         <!-- Desktop header -->
-        <header class="d-flex align-items-center py-3 mb-3 border-bottom">
+        <header class="d-flex flex-nowrap align-items-center py-3 mb-3 border-bottom">
             <div class="d-flex align-items-center ms-4 me-3">
                 <router-link to="/" class="d-flex align-items-center text-dark text-decoration-none">
                     <object class="bi me-2" width="40" height="40" data="/icon.svg" />
@@ -22,7 +22,7 @@
                 </a>
             </div>
 
-            <ul class="d-flex ms-auto nav nav-pills">
+            <ul class="d-flex flex-nowrap ms-auto nav nav-pills">
                 <li v-if="$root.loggedIn" class="nav-item me-2">
                     <router-link to="/" class="nav-link d-flex flex-column flex-sm-row align-items-center" data-toggle="tooltip" :title="$t('home')">
                         <font-awesome-icon icon="home" />
@@ -47,8 +47,8 @@
                 <li v-if="$root.loggedIn" class="nav-item">
                     <div class="dropdown dropdown-profile-pic">
                         <div class="nav-link" data-bs-toggle="dropdown">
-                            <div class="profile-pic">{{ $root.usernameFirstChar }}</div>
-                            <font-awesome-icon icon="angle-down" />
+                            <div class="profile-pic d-none d-sm-flex">{{ $root.usernameFirstChar }}</div>
+                            <font-awesome-icon icon="ellipsis-v" />
                         </div>
 
                         <!-- Header's Dropdown Menu -->
@@ -78,7 +78,7 @@
                             </li>
 
                             <li>
-                                <router-link to="/settings/general" class="dropdown-item" :class="{ active: $route.path.includes('settings') }">
+                                <router-link to="/settings" class="dropdown-item" :class="{ active: $route.path.includes('settings') }">
                                     <font-awesome-icon icon="cog" /> {{ $t("Settings") }}
                                 </router-link>
                             </li>
@@ -240,12 +240,7 @@ main {
         display: flex;
         gap: 6px;
         align-items: center;
-        background-color: rgba(200, 200, 200, 0.2);
         padding: 0.5rem 0.8rem;
-
-        &:hover {
-            background-color: rgba(255, 255, 255, 0.2);
-        }
     }
 
     .dropdown-menu {

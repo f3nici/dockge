@@ -5,7 +5,7 @@
             <span>{{ $t("prune") }}</span>
         </button>
 
-        <button v-if="artefact.actions.includes(DockerArtefactAction.Pull)" class="btn btn-primary btn-sm me-1" data-toggle="tooltip" :title="$t('tooltipPullSelected')" :disabled="processing || selectedItems.length === 0" @click="checkOpenPullDialog">
+        <button v-if="artefact.actions.includes(DockerArtefactAction.Pull)" class="btn btn-secondary btn-sm me-1" data-toggle="tooltip" :title="$t('tooltipPullSelected')" :disabled="processing || selectedItems.length === 0" @click="checkOpenPullDialog">
             <font-awesome-icon icon="cloud-arrow-down" class="me-1" />
             <span>{{ $t("pull") }}</span>
         </button>
@@ -235,7 +235,7 @@ onMounted(() => {
     }
 
     .sort-symbol {
-        color: rgba(255, 255, 255, 0.3);
+        color: $dark-font-color;
         font-family: monospace;
     }
 

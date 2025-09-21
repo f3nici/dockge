@@ -46,7 +46,7 @@
             <div class="shadow-box mt-3">
                 <b-tabs v-model="activeArtefactIndex" pills>
                     <template v-for="(info, index) in Object.values(DockerArtefactInfos)" :key="info.name">
-                        <b-tab active lazy :title="$tc(info.name, 2)" :title-link-class="activeArtefactIndex === index ? 'active-artefact' : ''">
+                        <b-tab active lazy :title="$tc(info.name, 2)" :title-link-class="'artefact-tab me-2 ' + (activeArtefactIndex === index ? 'active-artefact-tab' : '')">
                             <div class="mt-4">
                                 <DockerArtefact :ref="info.name" :endpoint="endpoint" :artefact="info" />
                             </div>
@@ -171,15 +171,16 @@ export default defineComponent({
 <style scoped lang="scss">
 @import "../styles/vars.scss";
 
-.action-icon {
-    cursor: pointer;
-    color: rgba(255, 255, 255, 0.3);
+:deep(.artefact-tab:hover) {
+    background: $dark-header-active-bg;
 }
 
-:deep(.active-artefact) {
-  background: rgba(255, 255, 255, 0.7) !important;
-  color: $dark-font-color2 !important;
-  font-weight: bold;
+:deep(.active-artefact-tab) {
+    background: $dark-header-active-bg !important;
+    color: $dark-font-color !important;
+    border-bottom: 4px solid $primary;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
 }
 
 </style>

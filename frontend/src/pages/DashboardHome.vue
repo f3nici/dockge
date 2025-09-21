@@ -60,7 +60,7 @@
                                 <template v-if="Object.keys(agentList).length > 1">
                                     <template v-for="(item, index) in stackStatusList" :key="index">
                                         <template v-if="getEndpointStatusCount(endpoint, item.status) > 0">
-                                            {{ item.label }}: <span class="num" :class="item.class">{{ getEndpointStatusCount(endpoint, item.status) }}</span>
+                                            <div>{{ item.label }}: <span class="num" :class="item.class">{{ getEndpointStatusCount(endpoint, item.status) }}</span></div>
                                         </template>
                                     </template>
                                 </template>
