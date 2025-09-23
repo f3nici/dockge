@@ -197,5 +197,8 @@
     "imagePullInfoMsg": "The following dangling images cannot be updated:",
     "networkDeleteMsg": "The selected networks will be deleted.",
     "volumeDeleteMsg": "The selected volumes will be deleted.",
-    "fetchingData": "Fetching data ..."
+    "fetchingData": "Fetching data ...",
+    "clearFilter": "Clear filter",
+    "agent": "Agent | Agents",
+    "status": "Status"
 }

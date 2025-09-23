@@ -1,7 +1,7 @@
 <template>
     <div class="shadow-box mb-3" :class="{ 'sticky-shadow-box': embedded }" :style="boxStyle">
         <div class="list-header">
-            <div class="header-top">
+            <div class="d-flex align-items-center">
                 <!-- TODO -->
                 <button
                     v-if="false" class="btn btn-outline-normal ms-2" :class="{ 'active': selectMode }" type="button"
@@ -10,18 +10,40 @@
                     {{ $t("Select") }}
                 </button>
 
-                <div class="placeholder"></div>
-                <div class="search-wrapper">
+                <div class="d-flex flex-grow-1">
                     <a v-if="searchText == ''" class="search-icon">
                         <font-awesome-icon icon="search" />
                     </a>
                     <a v-if="searchText != ''" class="search-icon" style="cursor: pointer" @click="clearSearchText">
                         <font-awesome-icon icon="times" />
                     </a>
-                    <form>
-                        <input v-model="searchText" class="form-control search-input" autocomplete="off" />
-                    </form>
+                    <input v-model="searchText" class="form-control w-100" autocomplete="off" />
                 </div>
+
+                <!-- Dropdown for filter -->
+                <BDropdown variant="link" right menu-class="filter-dropdown" toggle-class="filter-icon-container" no-caret>
+                    <template #button-content>
+                        <font-awesome-icon class="filter-icon" :class="{ 'filter-icon-active': stackFilter.isFilterSelected() }" icon="filter" />
+                    </template>
+
+                    <BDropdownItemButton :disabled="!stackFilter.isFilterSelected()" button-class="filter-dropdown-clear" @click.stop="stackFilter.clear()">
+                        <font-awesome-icon class="ms-1 me-2" icon="times" />{{ $t("clearFilter") }}
+                    </BDropdownItemButton>
+
+                    <BDropdownDivider></BDropdownDivider>
+
+                    <BDropdownGroup v-if="stackFilter.agents.hasOptions()" :header="$tc('agent', 2)">
+                        <BDropdownForm v-for="(value, key) in stackFilter.agents.options" :key="value" @change="stackFilter.agents.toggleSelected(value)" @click.stop>
+                            <BFormCheckbox :checked="stackFilter.agents.selected.has(value)">{{ key }}</BFormCheckbox>
+                        </BDropdownForm>
+                    </BDropdownGroup>
+
+                    <BDropdownGroup :header="$tc('status', 2)">
+                        <BDropdownForm v-for="(value, key) in stackFilter.status.options" :key="value" @change="stackFilter.status.toggleSelected(value)" @click.stop>
+                            <BFormCheckbox :checked="stackFilter.status.selected.has(value)">{{ key }}</BFormCheckbox>
+                        </BDropdownForm>
+                    </BDropdownGroup>
+                </BDropdown>
             </div>
 
             <!-- TODO -->
@@ -77,7 +99,7 @@
 import { defineComponent } from "vue";
 import Confirm from "./Confirm.vue";
 import StackListItem from "./StackListItem.vue";
-import { CREATED_FILE, CREATED_STACK, EXITED, RUNNING, RUNNING_AND_EXITED, UNHEALTHY, UNKNOWN } from "../../../common/util-common";
+import { CREATED_FILE, CREATED_STACK, EXITED, RUNNING, RUNNING_AND_EXITED, StackFilter, StackStatusInfo, UNHEALTHY, UNKNOWN } from "../../../common/util-common";
 import { SimpleStackData } from "../../../common/types";
 
 export default defineComponent({
@@ -96,14 +118,10 @@ export default defineComponent({
             searchText: "",
             selectMode: false,
             selectAll: false,
+            filterDropdownOpen: false,
             disableSelectAllWatcher: false,
             selectedStacks: {},
             windowTop: 0,
-            filterState: {
-                status: null,
-                active: null,
-                tags: null,
-            },
             closedAgents: new Map(),
         };
     },
@@ -128,6 +146,10 @@ export default defineComponent({
             } else {
                 return "";
             }
+        },
+
+        stackFilter(): StackFilter {
+            return this.$root.stackFilter;
         },
 
         agentCount() {
@@ -155,12 +177,17 @@ export default defineComponent({
                     */
                 }
 
-                // filter by active TODO
-                let activeMatch = true;
-                /**
-                if (this.filterState.active != null && this.filterState.active.length > 0) {
-                    activeMatch = this.filterState.active.includes(stack.active);
-                }*/
+                // filter by agent
+                let agentMatch = true;
+                if (this.stackFilter.agents.isFilterSelected()) {
+                    agentMatch = this.stackFilter.agents.selected.has(stack.endpoint);
+                }
+
+                // filter by status
+                let statusMatch = true;
+                if (this.stackFilter.status.isFilterSelected()) {
+                    statusMatch = this.stackFilter.status.selected.has(StackStatusInfo.get(stack.status).label);
+                }
 
                 // filter by tags TODO
                 let tagsMatch = true;
@@ -171,7 +198,7 @@ export default defineComponent({
                         .length > 0;
                 }*/
 
-                return searchTextMatch && activeMatch && tagsMatch;
+                return searchTextMatch && agentMatch && statusMatch && tagsMatch;
             });
 
             result.sort((m1, m2) => {
@@ -276,6 +303,10 @@ export default defineComponent({
         }
     },
     watch: {
+        $route() {
+            console.log("route changed");
+        },
+
         searchText() {
             for (let stack of this.agentStackList) {
                 if (!this.selectedStacks[stack.id]) {
@@ -441,23 +472,8 @@ export default defineComponent({
     }
 }
 
-.header-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.header-filter {
-    display: flex;
-    align-items: center;
-}
-
-.search-wrapper {
-    display: flex;
-    align-items: center;
-}
-
 .search-icon {
+    width: 40px;
     padding: 10px;
     color: #c0c0c0;
 
@@ -472,8 +488,51 @@ export default defineComponent({
     }
 }
 
-.search-input {
-    max-width: 15em;
+.filter-icon {
+    padding: 10px;
+    color: $dark-font-color3 !important;
+    cursor: pointer;
+}
+
+:deep(.filter-icon-container) {
+    text-decoration: none;
+    padding-right: 0px;
+}
+
+.filter-icon-active {
+    color: $highlight-white !important;
+}
+
+:deep(.filter-dropdown) {
+    background-color: $dark-bg;
+    border-color: $dark-font-color3;
+    color: $dark-font-color;
+
+    // Align right - right attribute in BDropdownMenu doesn't work
+    left: auto !important;
+    right: 0 !important;
+
+    .dropdown-header {
+        color: $dark-font-color;
+        font-weight: bolder;
+    }
+
+    .form-check-input {
+        border-color: $dark-font-color3;
+    }
+}
+
+:deep(.filter-dropdown-clear) {
+    color: $dark-font-color;
+
+    &:disabled {
+        color: $dark-font-color3;
+    }
+
+    &:hover {
+        background-color: $dark-header-active-bg;
+        color: $dark-font-color;
+    }
 }
 
 .stack-item {

@@ -1,10 +1,10 @@
 <template>
-    <span :class="className">{{ statusName }}</span>
+    <span :class="className">{{ info.label }}</span>
 </template>
 
 <script lang="ts">
 import { defineComponent, PropType } from "vue";
-import { statusColor, statusNameShort } from "../../../common/util-common";
+import { StackStatusInfo } from "../../../common/util-common";
 import { SimpleStackData } from "../../../common/types";
 
 export default defineComponent({
@@ -24,16 +24,12 @@ export default defineComponent({
             return this.$t("notAvailableShort");
         },
 
-        color() {
-            return statusColor(this.stack?.status);
-        },
-
-        statusName() {
-            return this.$t(statusNameShort(this.stack?.status));
+        info() {
+            return StackStatusInfo.get(this.stack?.status);
         },
 
         className() {
-            let className = `badge rounded-pill bg-${this.color}`;
+            let className = `badge rounded-pill bg-${this.info.badgeColor}`;
 
             if (this.fixedWidth) {
                 className += " fixed-width";

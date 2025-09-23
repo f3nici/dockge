@@ -5,6 +5,7 @@ import jwtDecode from "jwt-decode";
 import { Terminal } from "@xterm/xterm";
 import { AgentSocket } from "../../../common/agent-socket";
 import { AgentData, SimpleStackData } from "../../../common/types";
+import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 
 let socket : Socket;
 
@@ -33,6 +34,8 @@ export default defineComponent({
             composeTemplate: "",
 
             stackList: {},
+
+            stackFilter: new StackFilter(),
 
             // All stack list from all agents
             allAgentStackList: {} as Record<string, object>,
@@ -109,6 +112,29 @@ export default defineComponent({
             } else {
                 this.agentStatusList[""] = "offline";
             }
+        },
+
+        completeStackList() {
+            const agents = new Set<string>();
+            const status = new Set<string>();
+
+            for (const stackData of Object.values(this.completeStackList)) {
+                agents.add(stackData.endpoint);
+                status.add(StackStatusInfo.get(stackData.status).label);
+            }
+
+            this.stackFilter.agents.options = Object.fromEntries(
+                [ ...agents ]
+                    .map(a => [ this.getAgentName(a), a ])
+                    .sort((a1, a2) => {
+                        return a1[0].localeCompare(a2[0]);
+                    }
+                    )
+            );
+
+            this.stackFilter.status.options = Object.fromEntries(
+                StackStatusInfo.ALL.filter(i => status.has(i.label)).map(i => [ i.label, i.label ])
+            );
         },
 
         remember() {

@@ -1,8 +1,19 @@
 $primary: #74c2ff;
+$secondary: #b1b8c0;
 $info: #c7a6ff;
 $danger: #dc3545;
 $warning: #f8a306;
 $maintenance: #1747f5;
+
+:root {
+    --dockge-primary-color: #{$primary};
+    --dockge-secondary-color: #{$secondary};
+    --dockge-info-color: #{$info};
+    --dockge-danger-color: #{$danger};
+    --dockge-warning-color: #{$warning};
+    --dockge-maintenance-color: #{$maintenance};
+}
+
 $link-color: #111;
 $border-radius: 50rem;
 

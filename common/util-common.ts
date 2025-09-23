@@ -41,79 +41,87 @@ async function initRandomBytes() {
 
 export const ALL_ENDPOINTS = "##ALL_DOCKGE_ENDPOINTS##";
 
+export const UNKNOWN = 0;
+export const CREATED_FILE = 1;
+export const CREATED_STACK = 2;
+export const RUNNING = 3;
+export const EXITED = 4;
+export const RUNNING_AND_EXITED = 5;
+export const UNHEALTHY = 6;
+
 // Stack Status
-export enum StackStatus {
-    UNKNOWN = 0,
-    CREATED_FILE = 1,
-    CREATED_STACK = 2,
-    RUNNING = 3,
-    EXITED = 4,
-    RUNNING_AND_EXITED = 5,
-    UNHEALTHY = 6
+export class StackStatusInfo {
+
+    private static INFOS_BY_ID = new Map<number, StackStatusInfo>();
+    private static DEFAULT = new StackStatusInfo("?", [], "secondary", "secondary");
+    static ALL: StackStatusInfo[] = [];
+
+    static {
+        this.addInfo(new StackStatusInfo("unhealthy", [ UNHEALTHY ], "danger", "danger"));
+        this.addInfo(new StackStatusInfo("active", [ RUNNING ], "primary", "primary"));
+        this.addInfo(new StackStatusInfo("partially", [ RUNNING_AND_EXITED ], "info", "info"));
+        this.addInfo(new StackStatusInfo("exited", [ EXITED ], "warning", "warning"));
+        this.addInfo(new StackStatusInfo("inactive", [ CREATED_FILE, CREATED_STACK ], "dark", "secondary"));
+    }
+
+    private static addInfo(info: StackStatusInfo) {
+        for (const id of info.statusIds) {
+            this.INFOS_BY_ID.set(id, info);
+        }
+        this.ALL.push(info);
+    }
+
+    static get(statusId: number) {
+        return this.INFOS_BY_ID.get(statusId) ?? this.DEFAULT;
+    }
+
+    constructor(readonly label: string, readonly statusIds: number[], readonly badgeColor: string, readonly textColor: string ) {}
 }
 
-export const UNKNOWN = StackStatus.UNKNOWN;
-export const CREATED_FILE = StackStatus.CREATED_FILE;
-export const CREATED_STACK = StackStatus.CREATED_STACK;
-export const RUNNING = StackStatus.RUNNING;
-export const EXITED = StackStatus.EXITED;
-export const RUNNING_AND_EXITED = StackStatus.RUNNING_AND_EXITED;
-export const UNHEALTHY = StackStatus.UNHEALTHY;
+export class StackFilter {
+    agents = new StackFilterCategory<string>("agents");
+    status = new StackFilterCategory<string>("status");
 
-export function statusName(status : number) : string {
-    switch (status) {
-        case CREATED_FILE:
-            return "draft";
-        case CREATED_STACK:
-            return "created_stack";
-        case RUNNING:
-            return "running";
-        case EXITED:
-            return "exited";
-        case RUNNING_AND_EXITED:
-            return "partially";
-        case UNHEALTHY:
-            return "unhealthy";
-        default:
-            return "unknown";
+    isFilterSelected() {
+        return this.agents.isFilterSelected() || this.status.isFilterSelected();
+    }
+
+    clear() {
+        this.agents.selected.clear();
+        this.status.selected.clear();
     }
 }
 
-export function statusNameShort(status : number) : string {
-    switch (status) {
-        case CREATED_FILE:
-            return "inactive";
-        case CREATED_STACK:
-            return "inactive";
-        case RUNNING:
-            return "active";
-        case EXITED:
-            return "exited";
-        case RUNNING_AND_EXITED:
-            return "partially";
-        case UNHEALTHY:
-            return "unhealthy";
-        default:
-            return "?";
-    }
-}
+export class StackFilterCategory<T> {
+    options: Record<string, T> = {};
+    selected: Set<T> = new Set();
 
-export function statusColor(status : number) : string {
-    switch (status) {
-        case CREATED_FILE:
-            return "dark";
-        case CREATED_STACK:
-            return "dark";
-        case RUNNING:
-            return "primary";
-        case EXITED:
-            return "danger";
-        case RUNNING_AND_EXITED:
-            return "info";
-        case UNHEALTHY:
-            return "danger";
-        default:
-            return "secondary";
+    constructor(readonly label: string) { }
+
+    hasOptions() {
+        return Object.keys(this.options).length > 0;
+    }
+
+    isFilterSelected() {
+        if (this.selected.size === 0) {
+            return false;
+        }
+
+        for (const ov of Object.values(this.options)) {
+            if (this.selected.has(ov)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    toggleSelected(value: T) {
+        if (this.selected.has(value)) {
+            this.selected.delete(value);
+        } else {
+            this.selected.add(value);
+        }
     }
 }
 

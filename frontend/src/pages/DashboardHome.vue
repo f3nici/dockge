@@ -1,4 +1,4 @@
-<template>
+stackStatusList<template>
     <transition ref="tableContainer" name="slide-fade" appear>
         <div v-if="$route.name === 'DashboardHome'">
             <h1 class="mb-3">
@@ -11,10 +11,10 @@
                     <!-- Stats -->
                     <div class="shadow-box big-padding text-center mb-5">
                         <div class="row">
-                            <template v-for="(item, index) in stackStatusList" :key="index">
-                                <div v-if="getStatusCount(item.status) > 0" class="col">
-                                    <h3>{{ item.label }}</h3>
-                                    <span class="num num-lg" :class="item.class">{{ getStatusCount(item.status) }}</span>
+                            <template v-for="(info, index) in statusInfos" :key="index">
+                                <div v-if="getStatusCount(info.statusIds) > 0" class="col">
+                                    <h3>{{ info.label }}</h3>
+                                    <span class="num num-lg" :style="getInfoStyle(info)" @click="filterStackList(undefined, info)">{{ getStatusCount(info.statusIds) }}</span>
                                 </div>
                             </template>
                         </div>
@@ -58,9 +58,9 @@
                                     <span v-else class="badge bg-secondary me-2">{{ $t(agentStatusList[endpoint]) }}</span>
                                 </template>
                                 <template v-if="Object.keys(agentList).length > 1">
-                                    <template v-for="(item, index) in stackStatusList" :key="index">
-                                        <template v-if="getEndpointStatusCount(endpoint, item.status) > 0">
-                                            <div>{{ item.label }}: <span class="num" :class="item.class">{{ getEndpointStatusCount(endpoint, item.status) }}</span></div>
+                                    <template v-for="(info, index) in statusInfos" :key="index">
+                                        <template v-if="getEndpointStatusCount(endpoint, info.statusIds) > 0">
+                                            <div>{{ info.label }}: <span class="num" :style="getInfoStyle(info)" @click="filterStackList(endpoint, info)">{{ getEndpointStatusCount(endpoint, info.statusIds) }}</span></div>
                                         </template>
                                     </template>
                                 </template>
@@ -124,7 +124,7 @@
 <script lang="ts">
 import { defineComponent } from "vue";
 import { AgentData, SimpleStackData } from "../../../common/types";
-import { StackStatus, statusNameShort } from "../../../common/util-common";
+import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 
 export default defineComponent({
     components: {
@@ -163,41 +163,15 @@ export default defineComponent({
         stackList(): Record<string, SimpleStackData> {
             return this.$root.completeStackList;
         },
-        stackStatusList(): { label: string, class: string, status: StackStatus[] }[] {
-            return [
-                {
-                    label: this.$t("unhealthy"),
-                    class: "unhealthy",
-                    status: [ StackStatus.UNHEALTHY ]
-                },
-                {
-                    label: this.$t("active"),
-                    class: "active",
-                    status: [ StackStatus.RUNNING ]
-                },
-                {
-                    label: this.$t("partially"),
-                    class: "partially",
-                    status: [ StackStatus.RUNNING_AND_EXITED ]
-                },
-                {
-                    label: this.$t("exited"),
-                    class: "exited",
-                    status: [ StackStatus.EXITED ]
-                },
-                {
-                    label: this.$t("inactive"),
-                    class: "inactive",
-                    status: [ StackStatus.CREATED_FILE, StackStatus.CREATED_STACK ]
-                },
-            ];
+        statusInfos(): StackStatusInfo[] {
+            return StackStatusInfo.ALL;
         },
-        stackStatusCountByEndpoint(): Map<string, Map<StackStatus, number>> {
-            const counts = new Map<string, Map<StackStatus, number>>();
+        stackStatusCountByEndpoint(): Map<string, Map<number, number>> {
+            const counts = new Map<string, Map<number, number>>();
             for (const stackData of Object.values(this.stackList) as SimpleStackData[]) {
                 let endpointCounts = counts.get(stackData.endpoint);
                 if (!endpointCounts) {
-                    endpointCounts = new Map<StackStatus, number>();
+                    endpointCounts = new Map<number, number>();
                     counts.set(stackData.endpoint, endpointCounts);
                 }
 
@@ -206,8 +180,8 @@ export default defineComponent({
 
             return counts;
         },
-        stackStatusCountOverall(): Map<StackStatus, number> {
-            const counts = new Map<StackStatus, number>();
+        stackStatusCountOverall(): Map<number, number> {
+            const counts = new Map<number, number>();
 
             for (const [ , innerMap ] of this.stackStatusCountByEndpoint) {
                 for (const [ status, value ] of innerMap) {
@@ -246,6 +220,10 @@ export default defineComponent({
 
     methods: {
 
+        getInfoStyle(info: StackStatusInfo) {
+            return `color: var(--dockge-${info.textColor}-color);`;
+        },
+
         getAgentName(agent) {
             return this.$root.getAgentName(agent.endpoint);
         },
@@ -258,12 +236,28 @@ export default defineComponent({
             }
         },
 
-        getStatusCount(status: StackStatus[]): number {
+        getStatusCount(status: number[]): number {
             return status.reduce((acc, s) => acc + (this.stackStatusCountOverall.get(s) ?? 0), 0);
         },
 
-        getEndpointStatusCount(endpoint: string, status: StackStatus[]): number {
+        getEndpointStatusCount(endpoint: string, status: number[]): number {
             return status.reduce((acc, s) => acc + (this.stackStatusCountByEndpoint.get(endpoint)?.get(s) ?? 0), 0);
+        },
+
+        filterStackList(endpoint: string | undefined, statusInfo: StackStatusInfo) {
+            const stackFilter = this.$root.stackFilter as StackFilter;
+
+            if (endpoint !== undefined) {
+                stackFilter.agents.selected.clear();
+                stackFilter.agents.selected.add(endpoint);
+            }
+
+            stackFilter.status.selected.clear();
+            stackFilter.status.selected.add(statusInfo.label);
+
+            if (this.$root.isMobile) {
+                this.$router.push("/stacks");
+            }
         },
 
         resetNewAgent() {
@@ -405,23 +399,8 @@ export default defineComponent({
 }
 
 .num {
+    cursor: pointer;
     font-weight: bold;
-
-    &.active {
-        color: $primary;
-    }
-
-    &.partially {
-        color: $info
-    }
-
-    &.unhealthy {
-        color: $danger
-    }
-
-    &.exited {
-        color: $danger;
-    }
 }
 
 .url {
