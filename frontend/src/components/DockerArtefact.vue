@@ -20,19 +20,9 @@
     <BModal v-model="showPruneDialog" :title="$t('prune') + ' ' + $tc(artefact.name, 2)" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('prune')" okVariant="danger" @ok="executeAction(pruneDialogData.all ? DockerArtefactAction.PruneAll : DockerArtefactAction.Prune)" @show="resetPruneDialog" @hidden="resetPruneDialog">
         <p class="mb-3" v-html="$t(artefact.name + 'PruneMsg')"></p>
 
-        <form @submit.prevent>
-            <div v-if="artefact.actions.includes(DockerArtefactAction.PruneAll)" class="form-check form-switch">
-                <input
-                    id="pruneAll"
-                    v-model="pruneDialogData.all"
-                    class="form-check-input"
-                    type="checkbox"
-                />
-                <label class="form-check-label" for="pruneAll">
-                    {{ $t(artefact.name + "PruneAll") }}
-                </label>
-            </div>
-        </form>
+        <BForm v-if="artefact.actions.includes(DockerArtefactAction.PruneAll)">
+            <BFormCheckbox v-model="pruneDialogData.all" switch>{{ $t(artefact.name + "PruneAll") }}</BFormCheckbox>
+        </BForm>
     </BModal>
 
     <!-- Pull dialog -->

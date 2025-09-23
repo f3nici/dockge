@@ -36,14 +36,20 @@
                             <h5>{{ $t("changelog") }}</h5>
                             <a :href="changelogLink" target="_blank">{{ changelogLink }}</a>
                         </div>
+
+                        <BForm class="mt-3">
+                            <BFormCheckbox v-model="updateDialogData.pruneAfterUpdate" switch><span v-html="$t('pruneAfterUpdate')"></span></BFormCheckbox>
+                            <div style="margin-left: 2.5rem;">
+                                <BFormCheckbox v-model="updateDialogData.pruneAllAfterUpdate" :checked="updateDialogData.pruneAfterUpdate && updateDialogData.pruneAllAfterUpdate" :disabled="!updateDialogData.pruneAfterUpdate"><span v-html="$t('pruneAllAfterUpdate')"></span></BFormCheckbox>
+                            </div>
+                        </BForm>
+
                         <div class="d-flex justify-content-end mt-4">
                             <button class="btn btn-normal me-4" data-toggle="tooltip" :title="$t('tooltipServiceUpdateIgnore')" @click="skipCurrentUpdate">
-                                <font-awesome-icon icon="ban" class="me-1" />
-                                <span class="d-none d-xl-inline">{{ $t("ignoreUpdate") }}</span>
+                                <font-awesome-icon icon="ban" class="me-1" />{{ $t("ignoreUpdate") }}
                             </button>
                             <button class="btn btn-primary" data-toggle="tooltip" :title="$t('tooltipDoServiceUpdate')" @click="updateService">
-                                <font-awesome-icon icon="cloud-arrow-down" class="me-1" />
-                                <span class="d-none d-xl-inline">{{ $t("updateStack") }}</span>
+                                <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("updateStack") }}
                             </button>
                         </div>
                     </div>
@@ -275,6 +281,10 @@ export default defineComponent({
         return {
             showConfig: false,
             expandedStats: false,
+            updateDialogData: {
+                pruneAfterUpdate: false,
+                pruneAllAfterUpdate: false
+            }
         };
     },
 
@@ -411,6 +421,13 @@ export default defineComponent({
     mounted() {
     },
     methods: {
+        resetUpdateDialog() {
+            this.updateDialogData = {
+                pruneAfterUpdate: false,
+                pruneAllAfterUpdate: false
+            };
+        },
+
         startComposeAction() {
             this.$parent.$parent.startComposeAction();
         },
@@ -462,7 +479,7 @@ export default defineComponent({
             this.$refs[this.updateModalId].hide();
 
             this.startComposeAction();
-            this.$root.emitAgent(this.endpoint, "updateService", this.stack.name, this.name, (res) => {
+            this.$root.emitAgent(this.endpoint, "updateService", this.stack.name, this.name, this.updateDialogData.pruneAfterUpdate, this.updateDialogData.pruneAllAfterUpdate, (res) => {
                 this.stopComposeAction();
                 this.$root.toastRes(res);
             });

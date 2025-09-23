@@ -175,7 +175,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
         });
 
         // updateStack
-        agentSocket.on("updateStack", async (stackName : unknown, callback) => {
+        agentSocket.on("updateStack", async (stackName: unknown, pruneAfterUpdate: unknown, pruneAllAfterUpdate: unknown, callback) => {
             try {
                 checkLogin(socket);
 
@@ -183,8 +183,16 @@ export class DockerSocketHandler extends AgentSocketHandler {
                     throw new ValidationError("Stack name must be a string");
                 }
 
+                if (typeof(pruneAfterUpdate) !== "boolean") {
+                    throw new ValidationError("pruneAfterUpdate must be a boolean");
+                }
+
+                if (typeof(pruneAllAfterUpdate) !== "boolean") {
+                    throw new ValidationError("pruneAllAfterUpdate must be a boolean");
+                }
+
                 const stack = await Stack.getStack(server, stackName);
-                await stack.update(socket);
+                await stack.update(socket, pruneAfterUpdate, pruneAllAfterUpdate);
                 callbackResult({
                     ok: true,
                     msg: "Updated",
@@ -323,7 +331,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
         });
 
         // restart service
-        agentSocket.on("updateService", async (stackName : unknown, serviceName: unknown, callback) => {
+        agentSocket.on("updateService", async (stackName : unknown, serviceName: unknown, pruneAfterUpdate: unknown, pruneAllAfterUpdate: unknown, callback) => {
             try {
                 checkLogin(socket);
 
@@ -335,11 +343,19 @@ export class DockerSocketHandler extends AgentSocketHandler {
                     throw new ValidationError("Service name must be a string");
                 }
 
+                if (typeof(pruneAfterUpdate) !== "boolean") {
+                    throw new ValidationError("pruneAfterUpdate must be a boolean");
+                }
+
+                if (typeof(pruneAllAfterUpdate) !== "boolean") {
+                    throw new ValidationError("pruneAllAfterUpdate must be a boolean");
+                }
+
                 const stack = await Stack.getStack(server, stackName);
-                await stack.updateService(socket, serviceName);
+                await stack.updateService(socket, serviceName, pruneAfterUpdate, pruneAllAfterUpdate);
                 callbackResult({
                     ok: true,
-                    msg: "Restarted",
+                    msg: "Updated",
                     msgi18n: true,
                 }, callback);
                 server.sendStackList();

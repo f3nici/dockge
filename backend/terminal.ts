@@ -114,6 +114,12 @@ export class Terminal {
         }
 
         try {
+            // Print command
+            for (const socketID in this.socketList) {
+                const socket = this.socketList[socketID];
+                socket.emitAgent("terminalWrite", this.name, this.file + " " + (Array.isArray(this.args) ? this.args.join(" ") : this.args) + "\n\r");
+            }
+
             this._ptyProcess = pty.spawn(this.file, this.args, {
                 name: this.name,
                 cwd: this.cwd,

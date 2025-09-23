@@ -36,10 +36,27 @@
                         <span class="d-none d-xl-inline">{{ $t("restartStack") }}</span>
                     </button>
 
-                    <button v-if="!isEditMode" class="btn me-1" data-toggle="tooltip" :title="$t('tooltipStackUpdate')" :class="stack.imageUpdatesAvailable ? 'btn-info' : 'btn-normal'" :disabled="processing" @click="updateStack">
+                    <button v-if="!isEditMode" class="btn me-1" data-toggle="tooltip" :title="$t('tooltipStackUpdate')" :class="stack.imageUpdatesAvailable ? 'btn-info' : 'btn-normal'" :disabled="processing" @click="showUpdateDialog = true">
                         <font-awesome-icon icon="cloud-arrow-down" class="me-1" />
                         <span class="d-none d-xl-inline">{{ $t("updateStack") }}</span>
                     </button>
+
+                    <BModal v-model="showUpdateDialog" :title="$t('updateStack')" :close-on-esc="true" hide-footer @show="resetUpdateDialog" @hidden="resetUpdateDialog">
+                        <p class="mb-3" v-html="$t('updateStackMsg')"></p>
+
+                        <BForm>
+                            <BFormCheckbox v-model="updateDialogData.pruneAfterUpdate" switch><span v-html="$t('pruneAfterUpdate')"></span></BFormCheckbox>
+                            <div style="margin-left: 2.5rem;">
+                                <BFormCheckbox v-model="updateDialogData.pruneAllAfterUpdate" :checked="updateDialogData.pruneAfterUpdate && updateDialogData.pruneAllAfterUpdate" :disabled="!updateDialogData.pruneAfterUpdate"><span v-html="$t('pruneAllAfterUpdate')"></span></BFormCheckbox>
+                            </div>
+                        </BForm>
+
+                        <div class="d-flex justify-content-end mt-4">
+                            <button class="btn btn-primary" @click="updateStack">
+                                <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("updateStack") }}
+                            </button>
+                        </div>
+                    </BModal>
 
                     <button v-if="!isEditMode && hasRunningServices" class="btn btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipStackStop')" :disabled="processing" @click="stopStack">
                         <font-awesome-icon icon="stop" class="me-1" />
@@ -319,6 +336,11 @@ export default defineComponent({
             showDeleteDialog: false,
             newContainerName: "",
             stopUpdateTimeouts: false,
+            showUpdateDialog: false,
+            updateDialogData: {
+                pruneAfterUpdate: false,
+                pruneAllAfterUpdate: false
+            }
         };
     },
 
@@ -502,6 +524,13 @@ export default defineComponent({
     },
 
     methods: {
+        resetUpdateDialog() {
+            this.updateDialogData = {
+                pruneAfterUpdate: false,
+                pruneAllAfterUpdate: false
+            };
+        },
+
         startUpdateStackDataTimeout() {
             clearTimeout(updateStackDataTimeout);
             updateStackDataTimeout = setTimeout(async () => {
@@ -675,9 +704,10 @@ export default defineComponent({
         },
 
         updateStack() {
+            this.showUpdateDialog = false;
             this.startComposeAction();
 
-            this.$root.emitAgent(this.endpoint, "updateStack", this.stack.name, (res) => {
+            this.$root.emitAgent(this.endpoint, "updateStack", this.stack.name, this.updateDialogData.pruneAfterUpdate, this.updateDialogData.pruneAllAfterUpdate, (res) => {
                 this.stopComposeAction();
                 this.$root.toastRes(res);
             });

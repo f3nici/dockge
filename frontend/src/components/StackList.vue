@@ -66,6 +66,7 @@
             </div>
         </div>
         <div ref="stackList" class="stack-list" :class="{ scrollbar: embedded }" :style="stackListStyle">
+            <div class="d-flex">Filtered ...</div>
             <div v-if="agentStackList[0] && agentStackList[0].stacks.length === 0" class="text-center mt-3">
                 <router-link to="/compose">{{ $t("addFirstStackMsg") }}</router-link>
             </div>
@@ -464,7 +465,7 @@ export default defineComponent({
     border-radius: 10px 10px 0 0;
     margin: -10px;
     margin-bottom: 10px;
-    padding: 10px;
+    padding: 5px;
 
     .dark & {
         background-color: $dark-header-bg;
@@ -488,19 +489,22 @@ export default defineComponent({
     }
 }
 
-.filter-icon {
-    padding: 10px;
-    color: $dark-font-color3 !important;
-    cursor: pointer;
-}
-
 :deep(.filter-icon-container) {
     text-decoration: none;
     padding-right: 0px;
 }
 
+.filter-icon {
+    padding: 10px;
+    color: $dark-font-color3 !important;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
 .filter-icon-active {
-    color: $highlight-white !important;
+    color: $info !important;
+    border: 1px solid $info;
+    border-radius: 5px;
 }
 
 :deep(.filter-dropdown) {

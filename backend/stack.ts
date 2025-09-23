@@ -14,7 +14,8 @@ import {
     getComposeTerminalName, getContainerTerminalName,
     getContainerLogName,
     RUNNING, RUNNING_AND_EXITED, UNHEALTHY,
-    TERMINAL_ROWS, UNKNOWN
+    TERMINAL_ROWS, UNKNOWN,
+    sleep
 } from "../common/util-common";
 import { InteractiveTerminal, Terminal } from "./terminal";
 import childProcessAsync from "promisify-child-process";
@@ -669,38 +670,67 @@ export class Stack {
         return exitCode;
     }
 
-    async update(socket: DockgeSocket) {
+    async update(socket: DockgeSocket, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
         const terminalName = getComposeTerminalName(socket.endpoint, this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to pull, please check the terminal output for more information.");
         }
 
-        // If the stack is not running, we don't need to restart it
+        // If the stack is running, restart it
         await this.updateData();
-        log.debug("update", "Status: " + this.status);
-        if (!this.isStarted) {
-            return exitCode;
+        if (this.isStarted) {
+            sleep(500); // sleep to wait for terminal output finished
+ 
+            exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans" ], this.path);
+            if (exitCode !== 0) {
+                throw new Error("Failed to restart, please check the terminal output for more information.");
+            }
         }
 
-        exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans" ], this.path);
-        if (exitCode !== 0) {
-            throw new Error("Failed to restart, please check the terminal output for more information.");
+        if (pruneAfterUpdate) {
+            sleep(500); // sleep to wait for terminal output finished
+
+            const dockerParams = ["image", "prune", "-f"];
+            if (pruneAllAfterUpdate) {
+                dockerParams.push("-a");
+            }
+
+            exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", dockerParams, "");
+            if (exitCode !== 0) {
+                throw new Error("Failed to prune images, please check the terminal output for more information.");
+            }
         }
 
         return exitCode;
     }
 
-    async updateService(socket: DockgeSocket, service: string) {
+    async updateService(socket: DockgeSocket, service: string, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
         const terminalName = getComposeTerminalName(socket.endpoint, this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull", service ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to pull, please check the terminal output for more information.");
         }
 
+        sleep(500); // sleep to wait for terminal output finished
+
         exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans", service ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to restart, please check the terminal output for more information.");
+        }
+
+        if (pruneAfterUpdate) {
+            sleep(500); // sleep to wait for terminal output finished
+
+            const dockerParams = ["image", "prune", "-f"];
+            if (pruneAllAfterUpdate) {
+                dockerParams.push("-a");
+            }
+
+            exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", dockerParams, "");
+            if (exitCode !== 0) {
+                throw new Error("Failed to prune images, please check the terminal output for more information.");
+            }
         }
 
         return exitCode;
