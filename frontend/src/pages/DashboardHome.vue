@@ -13,7 +13,7 @@ stackStatusList<template>
                         <div class="row">
                             <template v-for="(info, index) in statusInfos" :key="index">
                                 <div v-if="getStatusCount(info.statusIds) > 0" class="col">
-                                    <h3>{{ info.label }}</h3>
+                                    <h3>{{ $t(info.label) }}</h3>
                                     <span class="num num-lg" :style="getInfoStyle(info)" @click="filterStackList(undefined, info)">{{ getStatusCount(info.statusIds) }}</span>
                                 </div>
                             </template>
@@ -60,7 +60,7 @@ stackStatusList<template>
                                 <template v-if="Object.keys(agentList).length > 1">
                                     <template v-for="(info, index) in statusInfos" :key="index">
                                         <template v-if="getEndpointStatusCount(endpoint, info.statusIds) > 0">
-                                            <div>{{ info.label }}: <span class="num" :style="getInfoStyle(info)" @click="filterStackList(endpoint, info)">{{ getEndpointStatusCount(endpoint, info.statusIds) }}</span></div>
+                                            <div>{{ $t(info.label) }}: <span class="num" :style="getInfoStyle(info)" @click="filterStackList(endpoint, info)">{{ getEndpointStatusCount(endpoint, info.statusIds) }}</span></div>
                                         </template>
                                     </template>
                                 </template>
@@ -246,13 +246,12 @@ export default defineComponent({
 
         filterStackList(endpoint: string | undefined, statusInfo: StackStatusInfo) {
             const stackFilter = this.$root.stackFilter as StackFilter;
+            stackFilter.clear();
 
             if (endpoint !== undefined) {
-                stackFilter.agents.selected.clear();
                 stackFilter.agents.selected.add(endpoint);
             }
 
-            stackFilter.status.selected.clear();
             stackFilter.status.selected.add(statusInfo.label);
 
             if (this.$root.isMobile) {

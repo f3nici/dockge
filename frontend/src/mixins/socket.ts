@@ -135,6 +135,8 @@ export default defineComponent({
             this.stackFilter.status.options = Object.fromEntries(
                 StackStatusInfo.ALL.filter(i => status.has(i.label)).map(i => [ i.label, i.label ])
             );
+
+            this.stackFilter.attributes.options = { imageUpdatesAvailable: "imageUpdatesAvailable" };
         },
 
         remember() {

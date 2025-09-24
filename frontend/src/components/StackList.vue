@@ -32,23 +32,14 @@
 
                     <BDropdownDivider></BDropdownDivider>
 
-                    <BDropdownGroup v-if="stackFilter.agents.hasOptions()" :header="$tc('agent', 2)">
-                        <BDropdownForm v-for="(value, key) in stackFilter.agents.options" :key="value" @change="stackFilter.agents.toggleSelected(value)" @click.stop>
-                            <BFormCheckbox :checked="stackFilter.agents.selected.has(value)">{{ key }}</BFormCheckbox>
-                        </BDropdownForm>
-                    </BDropdownGroup>
-
-                    <BDropdownGroup :header="$tc('status', 2)">
-                        <BDropdownForm v-for="(value, key) in stackFilter.status.options" :key="value" @change="stackFilter.status.toggleSelected(value)" @click.stop>
-                            <BFormCheckbox :checked="stackFilter.status.selected.has(value)">{{ key }}</BFormCheckbox>
-                        </BDropdownForm>
-                    </BDropdownGroup>
+                    <template v-for="category in stackFilter.categories" :key="category">
+                        <BDropdownGroup v-if="category.hasOptions()" :header="$tc(category.label, 2)">
+                            <BDropdownForm v-for="(value, key) in category.options" :key="value" form-class="filter-option" @change="category.toggleSelected(value)" @click.stop>
+                                <BFormCheckbox :checked="category.selected.has(value)">{{ $t(key) }}</BFormCheckbox>
+                            </BDropdownForm>
+                        </BDropdownGroup>
+                    </template>
                 </BDropdown>
-            </div>
-
-            <!-- TODO -->
-            <div v-if="false" class="header-filter">
-                <!--<StackListFilter :filterState="filterState" @update-filter="updateFilter" />-->
             </div>
 
             <!-- TODO: Selection Controls -->
@@ -66,7 +57,6 @@
             </div>
         </div>
         <div ref="stackList" class="stack-list" :class="{ scrollbar: embedded }" :style="stackListStyle">
-            <div class="d-flex">Filtered ...</div>
             <div v-if="agentStackList[0] && agentStackList[0].stacks.length === 0" class="text-center mt-3">
                 <router-link to="/compose">{{ $t("addFirstStackMsg") }}</router-link>
             </div>
@@ -190,6 +180,16 @@ export default defineComponent({
                     statusMatch = this.stackFilter.status.selected.has(StackStatusInfo.get(stack.status).label);
                 }
 
+                let attributeMatch = true;
+                if (this.stackFilter.attributes.isFilterSelected()) {
+                    attributeMatch = false;
+                    for (const attribute of this.stackFilter.attributes.selected) {
+                        if ( stack[attribute as keyof SimpleStackData] === true) {
+                            attributeMatch = true;
+                        }
+                    }
+                }
+
                 // filter by tags TODO
                 let tagsMatch = true;
                 /**
@@ -199,7 +199,7 @@ export default defineComponent({
                         .length > 0;
                 }*/
 
-                return searchTextMatch && agentMatch && statusMatch && tagsMatch;
+                return searchTextMatch && agentMatch && statusMatch && attributeMatch && tagsMatch;
             });
 
             result.sort((m1, m2) => {
@@ -370,14 +370,6 @@ export default defineComponent({
             this.searchText = "";
         },
         /**
-         * Update the StackList Filter
-         * @param {object} newFilter Object with new filter
-         * @returns {void}
-         */
-        updateFilter(newFilter) {
-            this.filterState = newFilter;
-        },
-        /**
          * Deselect a stack
          * @param {number} id ID of stack
          * @returns {void}
@@ -537,6 +529,11 @@ export default defineComponent({
         background-color: $dark-header-active-bg;
         color: $dark-font-color;
     }
+}
+
+:deep(.filter-option) {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
 }
 
 .stack-item {

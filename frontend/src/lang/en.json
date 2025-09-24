@@ -155,6 +155,7 @@
     "image": "Image | Images",
     "imageUpdate": "Image Update | Image Updates",
     "checkImageUpdates": "Check for image updates",
+    "imageUpdatesAvailable": "Update available",
     "changelogLink": "Link to changelog",
     "changelog": "Changelog",
     "ignoreUpdate": "Skip",
@@ -203,5 +204,6 @@
     "fetchingData": "Fetching data ...",
     "clearFilter": "Clear filter",
     "agent": "Agent | Agents",
-    "status": "Status"
+    "status": "Status",
+    "attribute": "Attribute | Attributes"    
 }

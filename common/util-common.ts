@@ -79,16 +79,25 @@ export class StackStatusInfo {
 }
 
 export class StackFilter {
-    agents = new StackFilterCategory<string>("agents");
+    agents = new StackFilterCategory<string>("agent");
     status = new StackFilterCategory<string>("status");
+    attributes = new StackFilterCategory<string>("attribute");
+
+    categories = [ this.agents, this.status, this.attributes ];
 
     isFilterSelected() {
-        return this.agents.isFilterSelected() || this.status.isFilterSelected();
+        for (const category of this.categories) {
+            if (category.isFilterSelected()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     clear() {
-        this.agents.selected.clear();
-        this.status.selected.clear();
+        for (const category of this.categories) {
+            category.selected.clear();
+        }
     }
 }
 

@@ -1,5 +1,5 @@
 <template>
-    <span :class="className">{{ info.label }}</span>
+    <span :class="className">{{ $t(info.label) }}</span>
 </template>
 
 <script lang="ts">
