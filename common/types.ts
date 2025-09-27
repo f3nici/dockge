@@ -78,7 +78,7 @@ export const DockerArtefactInfos: Record<string, DockerArtefactInfo> = {
 
 export type DockerArtefactItem = {
     id: string,
-    actionId: string,
+    actionIds: Record<string, string>, // Possibly different Ids for some actions
     values: Record<string, string | [string, string] | [string, number]>, // Array if a second value for sortorder is provided
     dangling: boolean,
     danglingLabel: string,

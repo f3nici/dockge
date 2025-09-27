@@ -180,7 +180,7 @@ function checkOpenPullDialog() {
     if (selectedDanglingImages.length > 0) {
         const danglingImageList = [ "<ul>" ];
         for (const id of selectedDanglingImages) {
-            danglingImageList.push(`<li>${dataMap.get(id)!.actionId}</li>`);
+            danglingImageList.push(`<li>${dataMap.get(id)!.actionIds.pull}</li>`);
         }
         danglingImageList.push("</ul>");
         pullDialogData.danglingImagesList = danglingImageList.join("");
@@ -196,7 +196,7 @@ function checkOpenPullDialog() {
 function executeAction(action: DockerArtefactAction) {
     startAction?.();
 
-    root.emitAgent(props.endpoint, "executeDockerArtefactAction", props.artefact.name, action, selectedItems.value.map(id => dataMap.get(id)?.actionId), (res) => {
+    root.emitAgent(props.endpoint, "executeDockerArtefactAction", props.artefact.name, action, selectedItems.value.map(id => dataMap.get(id)?.actionIds[action] ?? id), (res) => {
         stopAction?.();
         root.toastRes(res);
         loadData();

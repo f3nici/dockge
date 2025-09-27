@@ -34,7 +34,7 @@ export class AgentMaintenance {
 
                     containerData.data.push({
                         id: containerInfo.ID,
-                        actionId: containerInfo.ID,
+                        actionIds: {},
                         values: {
                             Names: containerInfo.Names,
                             Image: containerInfo.Image,
@@ -80,7 +80,7 @@ export class AgentMaintenance {
 
                     imageData.data.push({
                         id: imageInfo.ID,
-                        actionId: nameWithTag,
+                        actionIds: { pull: nameWithTag },
                         values: {
                             Name: nameWithTag,
                             Created: [ imageInfo.CreatedSince, imageInfo.CreatedAt ],
@@ -140,7 +140,7 @@ export class AgentMaintenance {
 
                     networkData.data.push({
                         id: networkInfo.ID,
-                        actionId: networkInfo.ID,
+                        actionIds: {},
                         values: {
                             Name: networkInfo.Name,
                             Created: networkInfo.CreatedAt,
@@ -209,7 +209,7 @@ export class AgentMaintenance {
 
                     volumeData.data.push({
                         id: volumeInfo.Name,
-                        actionId: volumeInfo.Name,
+                        actionIds: {},
                         values: {
                             Name: volumeInfo.Name,
                             Created: inspectData.CreatedAt,
