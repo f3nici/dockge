@@ -18,5 +18,7 @@ services:
       # ⚠️ 2. Left Stacks Path === Right Stacks Path (MUST)
       - /opt/stacks:/opt/stacks
     environment:
+      # Set timezone, if TZ ist not set on your host, set a specific timezone e.g. Europe/Berlin
+      - TZ=${TZ}
       # Tell Dockge where is your stacks directory
       - DOCKGE_STACKS_DIR=/opt/stacks
