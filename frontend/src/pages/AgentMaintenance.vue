@@ -44,9 +44,9 @@
             <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" />
 
             <div class="shadow-box mt-3">
-                <b-tabs v-model="activeArtefactIndex" pills>
+                <b-tabs v-model="activeArtefactIndex" nav-item-class="artefact-tab me-2" active-nav-item-class="active-artefact-tab" pills>
                     <template v-for="(info, index) in Object.values(DockerArtefactInfos)" :key="info.name">
-                        <b-tab active lazy :title="$tc(info.name, 2)" :title-link-class="'artefact-tab me-2 ' + (activeArtefactIndex === index ? 'active-artefact-tab' : '')">
+                        <b-tab active lazy :title="$tc(info.name, 2)">
                             <div class="mt-4">
                                 <DockerArtefact :ref="info.name" :endpoint="endpoint" :artefact="info" />
                             </div>

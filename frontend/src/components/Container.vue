@@ -529,6 +529,8 @@ export default defineComponent({
 @import "../styles/vars";
 
 .container {
+    max-width: 100%;
+
     .image {
         font-size: 0.8rem;
         color: #6c757d;

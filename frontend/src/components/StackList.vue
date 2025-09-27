@@ -21,12 +21,12 @@
                 </div>
 
                 <!-- Dropdown for filter -->
-                <BDropdown variant="link" right menu-class="filter-dropdown" toggle-class="filter-icon-container" no-caret>
+                <BDropdown variant="link" end menu-class="filter-dropdown" toggle-class="filter-icon-container" no-caret>
                     <template #button-content>
                         <font-awesome-icon class="filter-icon" :class="{ 'filter-icon-active': stackFilter.isFilterSelected() }" icon="filter" />
                     </template>
 
-                    <BDropdownItemButton :disabled="!stackFilter.isFilterSelected()" button-class="filter-dropdown-clear" @click.stop="stackFilter.clear()">
+                    <BDropdownItemButton :disabled="!stackFilter.isFilterSelected()" button-class="filter-dropdown-clear" @click="stackFilter.clear()">
                         <font-awesome-icon class="ms-1 me-2" icon="times" />{{ $t("clearFilter") }}
                     </BDropdownItemButton>
 
@@ -504,7 +504,7 @@ export default defineComponent({
     border-color: $dark-font-color3;
     color: $dark-font-color;
 
-    // Align right - right attribute in BDropdownMenu doesn't work
+    // Align end doesn't work
     left: auto !important;
     right: 0 !important;
 

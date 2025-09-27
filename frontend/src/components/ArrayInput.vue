@@ -1,10 +1,12 @@
 <template>
     <div>
         <div v-if="composeArray.isValid() && !composeArray.containsObjects()">
-            <li v-for="(value, index) in array" :key="index" class="list-group-item">
-                <input v-model="array[index]" type="text" class="no-bg domain-input" :placeholder="placeholder" />
-                <font-awesome-icon icon="times" class="action remove ms-2 me-3 text-danger" @click="composeArray.delete(index)" />
-            </li>
+            <ul class="list-group">
+                <li v-for="(value, index) in array" :key="index" class="list-group-item">
+                    <input v-model="array[index]" type="text" class="no-bg array-input" :placeholder="placeholder" />
+                    <font-awesome-icon icon="times" class="action remove ms-2 me-3 text-danger" @click="composeArray.delete(index)" />
+                </li>
+            </ul>
 
             <button class="btn btn-normal btn-sm mt-3" @click="composeArray.add('')">{{ $t("addListItem", [ displayName ]) }}</button>
         </div>
@@ -62,16 +64,12 @@ export default defineComponent({
         align-items: center;
         padding: 10px 0 10px 10px;
 
-        .domain-input {
+        .array-input {
             flex-grow: 1;
             background-color: $dark-bg2;
             border: none;
             color: $dark-font-color;
             outline: none;
-
-            &::placeholder {
-                color: #1d2634;
-            }
         }
     }
 }

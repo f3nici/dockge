@@ -218,10 +218,6 @@ export default defineComponent({
             border: none;
             color: $dark-font-color;
             outline: none;
-
-            &::placeholder {
-                color: #1d2634;
-            }
         }
     }
 }

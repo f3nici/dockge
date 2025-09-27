@@ -234,6 +234,16 @@ optgroup {
     }
 }
 
+// New Bootstrap dark theme
+[data-bs-theme="dark"] {
+  --bs-body-color: $dark-font-color;
+  --bs-body-bg: #090c10;
+
+  .form-control::placeholder {
+    color: $dark-font-color3;
+  }
+}
+
 // Dark Theme override here
 .dark {
     background-color: #090c10;

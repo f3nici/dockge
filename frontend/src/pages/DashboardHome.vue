@@ -7,7 +7,7 @@ stackStatusList<template>
 
             <div class="row first-row">
                 <!-- Left -->
-                <div class="col-lg-7">
+                <div class="col-xl-7">
                     <!-- Stats -->
                     <div class="shadow-box big-padding text-center mb-5">
                         <div class="row">
@@ -105,7 +105,7 @@ stackStatusList<template>
                 </div>
 
                 <!-- Right -->
-                <div class="col-lg-5">
+                <div class="col-xl-5">
                     <!-- Docker Run -->
                     <h2 class="mb-3">{{ $t("Docker Run") }}</h2>
                     <div class="mb-3">

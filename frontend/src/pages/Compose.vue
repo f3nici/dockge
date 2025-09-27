@@ -10,7 +10,7 @@
             </h1>
 
             <div v-if="stack.isManagedByDockge" class="mb-3">
-                <div class="btn-group me-2" role="group">
+                <BButtonGroup class="me-2">
                     <button v-if="isEditMode" class="btn btn-primary me-1" data-toggle="tooltip" :title="$t('tooltipStackDeploy')" :disabled="processing" @click="deployStack">
                         <font-awesome-icon icon="rocket" class="me-1" />
                         {{ $t("deployStack") }}
@@ -73,7 +73,7 @@
                             <span>{{ $t("deleteStack") }}</span>
                         </BDropdownItem>
                     </BDropdown>
-                </div>
+                </BButtonGroup>
 
                 <button v-if="isEditMode && !isAdd" class="btn btn-normal" data-toggle="tooltip" :title="$t('tooltipStackDiscard')" :disabled="processing" @click="discardStack">{{ $t("discardStack") }}</button>
             </div>
@@ -88,7 +88,7 @@
             <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" />
 
             <div v-if="stack.isManagedByDockge" class="row mt-3">
-                <div class="col-lg-6">
+                <div class="col-xl-6">
                     <!-- General -->
                     <div v-if="isAdd">
                         <h4 class="mb-3">{{ $t("general") }}</h4>
@@ -166,7 +166,7 @@
                         ></Terminal>
                     </div>
                 </div>
-                <div class="col-lg-6">
+                <div class="col-xl-6">
                     <h4 class="mb-3">{{ stack.composeFileName }}</h4>
 
                     <!-- YAML editor -->

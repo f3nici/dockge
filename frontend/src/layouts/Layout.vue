@@ -13,7 +13,8 @@
         <header class="d-flex flex-nowrap align-items-center py-3 mb-3 border-bottom">
             <div class="d-flex align-items-center ms-4 me-3">
                 <router-link to="/" class="d-flex align-items-center text-dark text-decoration-none">
-                    <object class="bi me-2" width="40" height="40" data="/icon.svg" />
+                    <img src="/icon.svg" class="me-2" width="40" height="40" />
+                    <!--object class="bi me-2" width="40" height="40" data="/icon.svg" /-->
                     <span class="d-none d-md-inline fs-4 title">Dockge</span>
                 </router-link>
 

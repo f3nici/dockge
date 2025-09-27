@@ -1,9 +1,12 @@
 <template>
-    <router-view />
+    <BApp>
+        <router-view />
+    </BApp>
 </template>
 
 <script>
-export default {
+import { BApp } from "bootstrap-vue-next";
 
+export default {
 };
 </script>
