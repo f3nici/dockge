@@ -26,33 +26,31 @@
                 </button>
 
                 <!-- Image update modal -->
-                <BModal :id="updateModalId" :ref="updateModalId" :title="$tc('imageUpdate', 1)" hide-footer>
-                    <div class="shadow-box mb-3">
-                        <div>
-                            <h5>{{ $t("image") }}</h5>
-                            <span>{{ composeService.image }}</span>
-                        </div>
-                        <div v-if="changelogLink" class="mt-3">
-                            <h5>{{ $t("changelog") }}</h5>
-                            <a :href="changelogLink" target="_blank">{{ changelogLink }}</a>
-                        </div>
-
-                        <BForm class="mt-3">
-                            <BFormCheckbox v-model="updateDialogData.pruneAfterUpdate" switch><span v-html="$t('pruneAfterUpdate')"></span></BFormCheckbox>
-                            <div style="margin-left: 2.5rem;">
-                                <BFormCheckbox v-model="updateDialogData.pruneAllAfterUpdate" :checked="updateDialogData.pruneAfterUpdate && updateDialogData.pruneAllAfterUpdate" :disabled="!updateDialogData.pruneAfterUpdate"><span v-html="$t('pruneAllAfterUpdate')"></span></BFormCheckbox>
-                            </div>
-                        </BForm>
-
-                        <div class="d-flex justify-content-end mt-4">
-                            <button class="btn btn-normal me-4" data-toggle="tooltip" :title="$t('tooltipServiceUpdateIgnore')" @click="skipCurrentUpdate">
-                                <font-awesome-icon icon="ban" class="me-1" />{{ $t("ignoreUpdate") }}
-                            </button>
-                            <button class="btn btn-primary" data-toggle="tooltip" :title="$t('tooltipDoServiceUpdate')" @click="updateService">
-                                <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("updateStack") }}
-                            </button>
-                        </div>
+                <BModal :id="updateModalId" :ref="updateModalId" :title="$tc('imageUpdate', 1)">
+                    <div>
+                        <h5>{{ $t("image") }}</h5>
+                        <span>{{ composeService.image }}</span>
                     </div>
+                    <div v-if="changelogLink" class="mt-3">
+                        <h5>{{ $t("changelog") }}</h5>
+                        <a :href="changelogLink" target="_blank">{{ changelogLink }}</a>
+                    </div>
+
+                    <BForm class="mt-3">
+                        <BFormCheckbox v-model="updateDialogData.pruneAfterUpdate" switch><span v-html="$t('pruneAfterUpdate')"></span></BFormCheckbox>
+                        <div style="margin-left: 2.5rem;">
+                            <BFormCheckbox v-model="updateDialogData.pruneAllAfterUpdate" :checked="updateDialogData.pruneAfterUpdate && updateDialogData.pruneAllAfterUpdate" :disabled="!updateDialogData.pruneAfterUpdate"><span v-html="$t('pruneAllAfterUpdate')"></span></BFormCheckbox>
+                        </div>
+                    </BForm>
+
+                    <template #footer>
+                        <button class="btn btn-normal" data-toggle="tooltip" :title="$t('tooltipServiceUpdateIgnore')" @click="skipCurrentUpdate">
+                            <font-awesome-icon icon="ban" class="me-1" />{{ $t("ignoreUpdate") }}
+                        </button>
+                        <button class="btn btn-primary" data-toggle="tooltip" :title="$t('tooltipDoServiceUpdate')" @click="updateService">
+                            <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("updateStack") }}
+                        </button>
+                    </template>
                 </BModal>
 
                 <div v-if="!isEditMode" class="btn-group me-2" role="group">

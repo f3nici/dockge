@@ -41,7 +41,7 @@
                         <span class="d-none d-xl-inline">{{ $t("updateStack") }}</span>
                     </button>
 
-                    <BModal v-model="showUpdateDialog" :title="$t('updateStack')" :close-on-esc="true" hide-footer @show="resetUpdateDialog" @hidden="resetUpdateDialog">
+                    <BModal v-model="showUpdateDialog" :title="$t('updateStack')" :close-on-esc="true" @show="resetUpdateDialog" @hidden="resetUpdateDialog">
                         <p class="mb-3" v-html="$t('updateStackMsg')"></p>
 
                         <BForm>
@@ -51,11 +51,11 @@
                             </div>
                         </BForm>
 
-                        <div class="d-flex justify-content-end mt-4">
+                        <template #footer>
                             <button class="btn btn-primary" @click="updateStack">
                                 <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("updateStack") }}
                             </button>
-                        </div>
+                        </template>
                     </BModal>
 
                     <button v-if="!isEditMode && hasRunningServices" class="btn btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipStackStop')" :disabled="processing" @click="stopStack">
@@ -81,7 +81,7 @@
             <!-- URLs -->
             <div v-if="urls.length > 0" class="mb-3">
                 <a v-for="(url, index) in urls" :key="index" target="_blank" :href="url.url">
-                    <span class="badge bg-secondary me-2">{{ url.display }}</span>
+                    <span class="badge bg-secondary text-truncate me-2" style="max-width: 100%;">{{ url.display }}</span>
                 </a>
             </div>
 
@@ -190,7 +190,7 @@
                     </div>
 
                     <!-- YAML modal fullscreen editor -->
-                    <BModal id="compose-editor-modal" :title="stack.composeFileName" scrollable size="xl" hide-footer>
+                    <BModal id="compose-editor-modal" :title="stack.composeFileName" scrollable size="xl" no-footer>
                         <div class="shadow-box mb-3 editor-box" :class="{'edit-mode' : isEditMode}">
                             <prism-editor
                                 ref="editor"
