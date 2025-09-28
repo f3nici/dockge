@@ -21,7 +21,7 @@
                 </div>
 
                 <!-- Dropdown for filter -->
-                <BDropdown variant="link" end menu-class="filter-dropdown" toggle-class="filter-icon-container" no-caret>
+                <BDropdown variant="link" placement="bottom-end" menu-class="filter-dropdown" toggle-class="filter-icon-container" no-caret>
                     <template #button-content>
                         <font-awesome-icon class="filter-icon" :class="{ 'filter-icon-active': stackFilter.isFilterSelected() }" icon="filter" />
                     </template>
@@ -503,10 +503,6 @@ export default defineComponent({
     background-color: $dark-bg;
     border-color: $dark-font-color3;
     color: $dark-font-color;
-
-    // Align end doesn't work
-    left: auto !important;
-    right: 0 !important;
 
     .dropdown-header {
         color: $dark-font-color;
