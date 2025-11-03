@@ -1,0 +1,14 @@
+docker pull golang:1.21.4-bookworm
+
+# 1. Build the base image first
+docker build -f docker/Base.Dockerfile -t louislam/dockge:base .
+
+# 2. Build the healthcheck
+docker build -f docker/BuildHealthCheck.Dockerfile -t louislam/dockge:build-healthcheck .
+
+# 3. Then build your main image
+docker build -f docker/Dockerfile -t f3nici/dockge .
+
+docker login
+
+docker push f3nici/dockge
