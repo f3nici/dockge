@@ -231,26 +231,36 @@ export class Stack {
      * @param isAdd
      */
     async save(isAdd : boolean) {
-        let dir = this.path;
+    let dir = this.path;
 
-        // Check if the name is used if isAdd
-        if (isAdd) {
-            if (await fileExists(dir)) {
-                throw new ValidationError("Stack name already exists");
-            }
-
-            // Create the stack folder
-            await fsAsync.mkdir(dir);
-        } else {
-            if (!await fileExists(dir)) {
-                throw new ValidationError("Stack not found");
-            }
+    // Check if the name is used if isAdd
+    if (isAdd) {
+        if (await fileExists(dir)) {
+            throw new ValidationError("Stack name already exists");
         }
 
-        await this.validate();
+        // Create temporary directory for validation
+        await fsAsync.mkdir(dir);
 
-        // Everthing is good, writing the main files
-        await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
+        try {
+            // Validate the compose file
+            await this.validate();
+        } catch (error) {
+            // If validation fails, clean up the directory we just created
+            await fsAsync.rm(dir, { recursive: true, force: true });
+            throw error;
+        }
+    } else {
+        if (!await fileExists(dir)) {
+            throw new ValidationError("Stack not found");
+        }
+        
+        // For updates, validate before writing
+        await this.validate();
+    }
+
+    // Everything is good, writing the main files
+    await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
     }
 
     private async saveFiles(yamlPath: string, envPath: string) {
