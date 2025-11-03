@@ -12,7 +12,7 @@ Details about my changes are available in the [release notes](https://github.com
 
 ## Usage
 
-To use this fork, replace `louislam/dockge:1` with `hamphh/dockge` in the [Dockge compose file](https://github.com/hamphh/dockge/blob/master/compose.yaml).  
+To use this fork, replace `louislam/dockge:1` with `f3nici/dockge` in the [Dockge compose file](https://github.com/hamphh/dockge/blob/master/compose.yaml).  
 The new image must be used on all endpoints.
 
 ⚠️ **Important:** Make a backup of your Dockge data folder beforehand or use a different one, as this image modifies the database.  
