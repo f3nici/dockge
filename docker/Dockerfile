@@ -1,4 +1,17 @@
 ############################################
+# Frontend Build
+############################################
+FROM node:22-bookworm-slim AS frontend-build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY frontend ./frontend
+COPY backend ./backend
+COPY common ./common
+COPY tsconfig.json ./
+RUN npm run build:frontend
+
+############################################
 # Healthcheck Binary
 ############################################
 FROM louislam/dockge:build-healthcheck AS build_healthcheck
@@ -17,9 +30,19 @@ RUN npm ci --omit=dev
 ############################################
 FROM louislam/dockge:base AS release
 WORKDIR /app
+# Copy healthcheck
 COPY --chown=node:node --from=build_healthcheck /app/extra/healthcheck /app/extra/healthcheck
+
+# Copy node modules
 COPY --from=build /app/node_modules /app/node_modules
-COPY --chown=node:node  . .
+
+# Copy frontend build
+COPY --chown=node:node --from=frontend-build /app/frontend-dist /app/frontend-dist
+
+# Copy backend source
+COPY --chown=node:node ./backend ./backend
+COPY --chown=node:node ./common ./common
+COPY --chown=node:node ./package.json ./
 RUN mkdir ./data
 
 
@@ -38,5 +61,5 @@ CMD ["tsx", "./backend/index.ts"]
 ############################################
 # Mark as Nightly
 ############################################
-FROM release AS nightly
-RUN npm run mark-as-nightly
+#FROM release AS nightly
+#RUN npm run mark-as-nightly
