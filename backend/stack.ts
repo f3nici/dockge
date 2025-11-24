@@ -226,11 +226,11 @@ export class Stack {
         return fullPathDir;
     }
 
-    /**
-     * Save the stack to the disk
-     * @param isAdd
-     */
-    async save(isAdd : boolean) {
+/**
+ * Save the stack to the disk
+ * @param isAdd
+ */
+async save(isAdd : boolean) {
     let dir = this.path;
 
     // Check if the name is used if isAdd
@@ -245,6 +245,9 @@ export class Stack {
         try {
             // Validate the compose file
             await this.validate();
+            
+            // Everything is good, writing the main files
+            await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
         } catch (error) {
             // If validation fails, clean up the directory we just created
             await fsAsync.rm(dir, { recursive: true, force: true });
@@ -257,11 +260,11 @@ export class Stack {
         
         // For updates, validate before writing
         await this.validate();
+        
+        // Everything is good, writing the main files
+        await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
     }
-
-    // Everything is good, writing the main files
-    await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
-    }
+}
 
     private async saveFiles(yamlPath: string, envPath: string) {
         // Write or overwrite the compose.yaml
