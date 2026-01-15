@@ -297,7 +297,8 @@ export class NotificationManager {
             return false;
         }
 
-        const url = new URL(this.settings.ntfyTopic, this.settings.ntfyServerUrl);
+        // For JSON publishing, POST to the server root URL, not to the topic path
+        const url = new URL(this.settings.ntfyServerUrl);
         const isHttps = url.protocol === "https:";
         const httpModule = isHttps ? https : http;
 
@@ -313,7 +314,7 @@ export class NotificationManager {
             const options: http.RequestOptions = {
                 hostname: url.hostname,
                 port: url.port || (isHttps ? 443 : 80),
-                path: url.pathname,
+                path: "/",  // Always POST to root for JSON publishing
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
