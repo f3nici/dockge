@@ -316,6 +316,7 @@ export class NotificationManager {
                 port: url.port || (isHttps ? 443 : 80),
                 path: "/",  // Always POST to root for JSON publishing
                 method: "POST",
+                family: 4,  // Force IPv4
                 headers: {
                     "Content-Type": "application/json",
                     "Content-Length": Buffer.byteLength(postData)
