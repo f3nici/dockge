@@ -40,6 +40,7 @@ export class Stack {
     protected _recreateNecessary: boolean = false;
     protected _services: Map<string, ServiceData> = new Map();
     protected server: DockgeServer;
+    protected _firstUpdate: boolean = true;
 
     protected combinedTerminal? : Terminal;
 
@@ -467,8 +468,12 @@ async save(isAdd : boolean) {
 
             this._services = services;
 
-            // Detect and notify status changes
-            await this.detectAndNotifyChanges(oldStatus, oldUnhealthy, oldServices);
+            // Detect and notify status changes (skip on first update to avoid spam)
+            if (!this._firstUpdate) {
+                await this.detectAndNotifyChanges(oldStatus, oldUnhealthy, oldServices);
+            }
+
+            this._firstUpdate = false;
         } catch (e) {
             log.error("updateStackData", e);
         }
