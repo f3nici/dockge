@@ -89,3 +89,22 @@ export type DockerArtefactData = {
     info: DockerArtefactInfo,
     data: DockerArtefactItem[]
 }
+
+export enum NotificationEvent {
+    ServiceDown = "serviceDown",
+    ServiceUp = "serviceUp",
+    ServiceUnhealthy = "serviceUnhealthy",
+    ServiceHealthy = "serviceHealthy",
+    StackExited = "stackExited",
+    StackRunning = "stackRunning"
+}
+
+export type NotificationSettings = {
+    enabled: boolean,
+    ntfyServerUrl: string,
+    ntfyTopic: string,
+    ntfyToken?: string,
+    ntfyUsername?: string,
+    ntfyPassword?: string,
+    enabledEvents: NotificationEvent[]
+}

@@ -16,6 +16,7 @@ const Settings = () => import("./pages/Settings.vue");
 // Settings - Sub Pages
 import Appearance from "./components/settings/Appearance.vue";
 import General from "./components/settings/General.vue";
+import Notifications from "./components/settings/Notifications.vue";
 const Security = () => import("./components/settings/Security.vue");
 import About from "./components/settings/About.vue";
 import MobileStackList from "./pages/MobileStackList.vue";
@@ -109,6 +110,10 @@ const routes = [
                             {
                                 path: "appearance",
                                 component: Appearance,
+                            },
+                            {
+                                path: "notifications",
+                                component: Notifications,
                             },
                             {
                                 path: "security",
