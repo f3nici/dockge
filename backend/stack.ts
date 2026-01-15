@@ -21,9 +21,10 @@ import { InteractiveTerminal, Terminal } from "./terminal";
 import childProcessAsync from "promisify-child-process";
 import { Settings } from "./settings";
 import { ImageRepository } from "./image-repository";
-import { SimpleStackData, StackData, ServiceData, StatsData } from "../common/types";
+import { SimpleStackData, StackData, ServiceData, StatsData, NotificationEvent } from "../common/types";
 import { ComposeDocument } from "../common/compose-document";
 import { LABEL_STATUS_IGNORE, LABEL_IMAGEUPDATES_CHECK, LABEL_IMAGEUPDATES_IGNORE } from "../common/compose-labels";
+import { NotificationManager } from "./notification-manager";
 
 export class Stack {
 
@@ -39,12 +40,15 @@ export class Stack {
     protected _recreateNecessary: boolean = false;
     protected _services: Map<string, ServiceData> = new Map();
     protected server: DockgeServer;
+    protected _firstUpdate: boolean = true;
 
     protected combinedTerminal? : Terminal;
 
     protected static managedStackList: Map<string, Stack> = new Map();
 
     protected static imageRepository : ImageRepository = new ImageRepository();
+
+    static notificationManager: NotificationManager = new NotificationManager();
 
     constructor(server: DockgeServer, name: string, composeYAML?: string, composeENV?: string) {
         this.name = name;
@@ -226,11 +230,11 @@ export class Stack {
         return fullPathDir;
     }
 
-    /**
-     * Save the stack to the disk
-     * @param isAdd
-     */
-    async save(isAdd : boolean) {
+/**
+ * Save the stack to the disk
+ * @param isAdd
+ */
+async save(isAdd : boolean) {
     let dir = this.path;
 
     // Check if the name is used if isAdd
@@ -245,6 +249,9 @@ export class Stack {
         try {
             // Validate the compose file
             await this.validate();
+            
+            // Everything is good, writing the main files
+            await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
         } catch (error) {
             // If validation fails, clean up the directory we just created
             await fsAsync.rm(dir, { recursive: true, force: true });
@@ -257,11 +264,11 @@ export class Stack {
         
         // For updates, validate before writing
         await this.validate();
+        
+        // Everything is good, writing the main files
+        await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
     }
-
-    // Everything is good, writing the main files
-    await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
-    }
+}
 
     private async saveFiles(yamlPath: string, envPath: string) {
         // Write or overwrite the compose.yaml
@@ -337,6 +344,11 @@ export class Stack {
     async updateData() {
         const services = new Map<string, ServiceData>();
         const composeDocument = this.composeDocument;
+
+        // Store previous state for change detection
+        const oldStatus = this._status;
+        const oldUnhealthy = this._unhealthy;
+        const oldServices = new Map(this._services);
 
         try {
             const res = await childProcessAsync.spawn("docker", [ "compose", "ps", "--all", "--format", "json" ], {
@@ -455,8 +467,128 @@ export class Stack {
             }
 
             this._services = services;
+
+            // Detect and notify status changes (skip on first update to avoid spam)
+            if (!this._firstUpdate) {
+                await this.detectAndNotifyChanges(oldStatus, oldUnhealthy, oldServices);
+            }
+
+            this._firstUpdate = false;
         } catch (e) {
             log.error("updateStackData", e);
+        }
+    }
+
+    /**
+     * Detect status changes and send notifications
+     */
+    private async detectAndNotifyChanges(
+        oldStatus: number,
+        oldUnhealthy: boolean,
+        oldServices: Map<string, ServiceData>
+    ): Promise<void> {
+        try {
+            // Stack-level status changes
+            if (oldStatus !== this._status) {
+                if (oldStatus === RUNNING && this._status === EXITED) {
+                    await Stack.notificationManager.notifyStackChange(
+                        this.name,
+                        NotificationEvent.StackExited,
+                        "Stack has stopped running"
+                    );
+                } else if ((oldStatus === EXITED || oldStatus === UNKNOWN || oldStatus === CREATED_STACK) && this._status === RUNNING) {
+                    await Stack.notificationManager.notifyStackChange(
+                        this.name,
+                        NotificationEvent.StackRunning,
+                        "Stack is now running"
+                    );
+                }
+            }
+
+            // Check for health status changes
+            if (!oldUnhealthy && this._unhealthy) {
+                await Stack.notificationManager.notifyStackChange(
+                    this.name,
+                    NotificationEvent.ServiceUnhealthy,
+                    "One or more services are unhealthy"
+                );
+            } else if (oldUnhealthy && !this._unhealthy) {
+                await Stack.notificationManager.notifyStackChange(
+                    this.name,
+                    NotificationEvent.ServiceHealthy,
+                    "All services are healthy"
+                );
+            }
+
+            // Service-level changes
+            for (const [serviceName, newServiceData] of this._services.entries()) {
+                const oldServiceData = oldServices.get(serviceName);
+
+                if (!oldServiceData) {
+                    // New service detected
+                    if (newServiceData.state === "running") {
+                        await Stack.notificationManager.notifyServiceChange(
+                            this.name,
+                            serviceName,
+                            NotificationEvent.ServiceUp,
+                            "Service started"
+                        );
+                    }
+                    continue;
+                }
+
+                // Check for state changes
+                if (oldServiceData.state !== newServiceData.state) {
+                    if (oldServiceData.state === "running" && newServiceData.state === "exited") {
+                        await Stack.notificationManager.notifyServiceChange(
+                            this.name,
+                            serviceName,
+                            NotificationEvent.ServiceDown,
+                            `Service exited with status: ${newServiceData.status}`
+                        );
+                    } else if (oldServiceData.state === "exited" && newServiceData.state === "running") {
+                        await Stack.notificationManager.notifyServiceChange(
+                            this.name,
+                            serviceName,
+                            NotificationEvent.ServiceUp,
+                            "Service is now running"
+                        );
+                    }
+                }
+
+                // Check for health changes
+                if (oldServiceData.health !== newServiceData.health) {
+                    if (newServiceData.health === "unhealthy") {
+                        await Stack.notificationManager.notifyServiceChange(
+                            this.name,
+                            serviceName,
+                            NotificationEvent.ServiceUnhealthy,
+                            `Service health check failed: ${newServiceData.status}`
+                        );
+                    } else if (oldServiceData.health === "unhealthy" && newServiceData.health !== "unhealthy") {
+                        await Stack.notificationManager.notifyServiceChange(
+                            this.name,
+                            serviceName,
+                            NotificationEvent.ServiceHealthy,
+                            "Service is now healthy"
+                        );
+                    }
+                }
+            }
+
+            // Check for removed services
+            for (const [serviceName, oldServiceData] of oldServices.entries()) {
+                if (!this._services.has(serviceName) && oldServiceData.state === "running") {
+                    await Stack.notificationManager.notifyServiceChange(
+                        this.name,
+                        serviceName,
+                        NotificationEvent.ServiceDown,
+                        "Service removed or stopped"
+                    );
+                }
+            }
+        } catch (e) {
+            log.error("detectAndNotifyChanges", `Error sending notifications for stack ${this.name}: ${e}`);
         }
     }
 

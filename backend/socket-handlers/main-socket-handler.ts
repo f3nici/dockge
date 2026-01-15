@@ -18,6 +18,7 @@ import {
 import { passwordStrength } from "check-password-strength";
 import jwt from "jsonwebtoken";
 import { Settings } from "../settings";
+import { Stack } from "../stack";
 
 export class MainSocketHandler extends SocketHandler {
     create(socket : DockgeSocket, server : DockgeServer) {
@@ -279,6 +280,81 @@ export class MainSocketHandler extends SocketHandler {
                 });
 
                 server.sendInfo(socket);
+
+            } catch (e) {
+                if (e instanceof Error) {
+                    callback({
+                        ok: false,
+                        msg: e.message,
+                    });
+                }
+            }
+        });
+
+        // Get notification settings
+        socket.on("getNotificationSettings", async (callback) => {
+            try {
+                checkLogin(socket);
+                const settings = Stack.notificationManager.getSettings();
+
+                callback({
+                    ok: true,
+                    data: settings || {
+                        enabled: false,
+                        ntfyServerUrl: "https://ntfy.sh",
+                        ntfyTopic: "",
+                        enabledEvents: []
+                    },
+                });
+
+            } catch (e) {
+                if (e instanceof Error) {
+                    callback({
+                        ok: false,
+                        msg: e.message,
+                    });
+                }
+            }
+        });
+
+        // Save notification settings
+        socket.on("saveNotificationSettings", async (data, callback) => {
+            try {
+                checkLogin(socket);
+                await Stack.notificationManager.saveSettings(data);
+
+                callback({
+                    ok: true,
+                    msg: "Notification settings saved successfully"
+                });
+
+            } catch (e) {
+                if (e instanceof Error) {
+                    callback({
+                        ok: false,
+                        msg: e.message,
+                    });
+                }
+            }
+        });
+
+        // Test notification
+        socket.on("testNotification", async (callback) => {
+            try {
+                checkLogin(socket);
+                const success = await Stack.notificationManager.testNotification();
+
+                if (success) {
+                    callback({
+                        ok: true,
+                        msg: "Test notification sent successfully! Check your NTFY app."
+                    });
+                } else {
+                    callback({
+                        ok: false,
+                        msg: "Failed to send test notification. Please check your settings."
+                    });
+                }
 
             } catch (e) {
                 if (e instanceof Error) {
