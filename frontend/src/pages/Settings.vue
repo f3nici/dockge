@@ -78,6 +78,9 @@ export default {
                 appearance: {
                     title: this.$t("Appearance"),
                 },
+                notifications: {
+                    title: "Notifications",
+                },
                 security: {
                     title: this.$t("Security"),
                 },

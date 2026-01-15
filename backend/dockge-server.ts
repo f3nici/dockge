@@ -366,6 +366,10 @@ export class DockgeServer {
             process.exit(1);
         }
 
+        // Initialize notification manager
+        log.info("server", "Initializing notification manager...");
+        await Stack.notificationManager.loadSettings();
+
         // First time setup if needed
         let jwtSecretBean = await R.findOne("setting", " `key` = ? ", [
             "jwtSecret",
