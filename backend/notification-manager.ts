@@ -175,43 +175,49 @@ export class NotificationManager {
         event: NotificationEvent,
         details?: string
     ): NtfyMessage {
-        const eventMap: Record<NotificationEvent, { title: string, emoji: string, priority: number }> = {
+        const eventMap: Record<NotificationEvent, { title: string, message: string, emoji: string, priority: number }> = {
             [NotificationEvent.ServiceDown]: {
                 title: "Service Down",
+                message: "has stopped",
                 emoji: "red_circle",
                 priority: 4
             },
             [NotificationEvent.ServiceUp]: {
                 title: "Service Up",
+                message: "is now running",
                 emoji: "green_circle",
                 priority: 3
             },
             [NotificationEvent.ServiceUnhealthy]: {
                 title: "Service Unhealthy",
+                message: "health check failed",
                 emoji: "warning",
                 priority: 4
             },
             [NotificationEvent.ServiceHealthy]: {
                 title: "Service Healthy",
+                message: "is now healthy",
                 emoji: "white_check_mark",
                 priority: 3
             },
             [NotificationEvent.StackExited]: {
                 title: "Stack Exited",
+                message: "has stopped",
                 emoji: "x",
                 priority: 4
             },
             [NotificationEvent.StackRunning]: {
                 title: "Stack Running",
+                message: "is now running",
                 emoji: "rocket",
                 priority: 3
             }
         };
 
         const eventInfo = eventMap[event];
-        let message = `Service "${serviceName}" in stack "${stackName}" is ${event}`;
+        let message = `Service "${serviceName}" in stack "${stackName}" ${eventInfo.message}`;
         if (details) {
-            message += `\n${details}`;
+            message += `\n\n${details}`;
         }
 
         return {
@@ -230,43 +236,49 @@ export class NotificationManager {
         event: NotificationEvent,
         details?: string
     ): NtfyMessage {
-        const eventMap: Record<NotificationEvent, { title: string, emoji: string, priority: number }> = {
+        const eventMap: Record<NotificationEvent, { title: string, message: string, emoji: string, priority: number }> = {
             [NotificationEvent.ServiceDown]: {
                 title: "Service Down",
+                message: "has services that stopped",
                 emoji: "red_circle",
                 priority: 4
             },
             [NotificationEvent.ServiceUp]: {
                 title: "Service Up",
+                message: "has services running",
                 emoji: "green_circle",
                 priority: 3
             },
             [NotificationEvent.ServiceUnhealthy]: {
                 title: "Service Unhealthy",
+                message: "has unhealthy services",
                 emoji: "warning",
                 priority: 4
             },
             [NotificationEvent.ServiceHealthy]: {
                 title: "Service Healthy",
+                message: "all services are healthy",
                 emoji: "white_check_mark",
                 priority: 3
             },
             [NotificationEvent.StackExited]: {
                 title: "Stack Exited",
+                message: "has stopped",
                 emoji: "x",
                 priority: 4
             },
             [NotificationEvent.StackRunning]: {
                 title: "Stack Running",
+                message: "is now running",
                 emoji: "rocket",
                 priority: 3
             }
         };
 
         const eventInfo = eventMap[event];
-        let message = `Stack "${stackName}" is ${event}`;
+        let message = `Stack "${stackName}" ${eventInfo.message}`;
         if (details) {
-            message += `\n${details}`;
+            message += `\n\n${details}`;
         }
 
         return {
