@@ -79,11 +79,11 @@
                         <div
                             v-if="tagGroup.tag !== ''"
                             class="p-2 tag-folder"
-                            @click="closedTags.set(agent.endpoint + '_' + tagGroup.tag, !closedTags.get(agent.endpoint + '_' + tagGroup.tag))"
+                            @click="toggleTagFolder(agent.endpoint + '_' + tagGroup.tag)"
                         >
                             <span class="me-1">
-                                <font-awesome-icon v-show="closedTags.get(agent.endpoint + '_' + tagGroup.tag)" icon="chevron-right" />
-                                <font-awesome-icon v-show="!closedTags.get(agent.endpoint + '_' + tagGroup.tag)" icon="chevron-down" />
+                                <font-awesome-icon v-show="closedTags.get(agent.endpoint + '_' + tagGroup.tag) !== false" icon="chevron-right" />
+                                <font-awesome-icon v-show="closedTags.get(agent.endpoint + '_' + tagGroup.tag) === false" icon="chevron-down" />
                             </span>
                             <font-awesome-icon icon="folder" class="me-1" />
                             <span>{{ tagGroup.tag }}</span>
@@ -92,7 +92,7 @@
                         <!-- Stacks in this tag group -->
                         <StackListItem
                             v-for="(item, stackIndex) in tagGroup.stacks"
-                            v-show="tagGroup.tag === '' || !closedTags.get(agent.endpoint + '_' + tagGroup.tag)"
+                            v-show="tagGroup.tag === '' || closedTags.get(agent.endpoint + '_' + tagGroup.tag) === false"
                             :key="stackIndex"
                             :stack="item"
                             :isSelectMode="selectMode"
@@ -465,6 +465,17 @@ export default defineComponent({
 
         getAgentName(endpoint: string) {
             return this.$root.getAgentName(endpoint);
+        },
+
+        /**
+         * Toggle tag folder open/closed state
+         * @param {string} tagKey Tag identifier
+         * @returns {void}
+         */
+        toggleTagFolder(tagKey: string) {
+            const currentState = this.closedTags.get(tagKey);
+            // Toggle between false (open) and true/undefined (closed)
+            this.closedTags.set(tagKey, currentState === false ? true : false);
         },
 
         /**
