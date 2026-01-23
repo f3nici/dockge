@@ -4,8 +4,7 @@
 
 # Dockge Fork with NTFY Notifications
 
-This is a fork of the excellent [Dockge](https://github.com/louislam/dockge) by [@louislam](https://github.com/louislam).
-Since I was missing some features and the project doesn't seem to be actively maintained at the moment, I have implemented these features here in my fork.
+This is a fork of [hamphh/dockge](https://github.com/hamphh/dockge), which is a fork of the excellent [Dockge](https://github.com/louislam/dockge) by [@louislam](https://github.com/louislam).
 
 For general information about Dockge, please refer to the [original project](https://github.com/louislam/dockge).
 
@@ -15,7 +14,7 @@ For general information about Dockge, please refer to the [original project](htt
 
 1. Create a directory for Dockge:
 ```bash
-mkdir -p /opt/dockge /opt/stacks
+mkdir -p /opt/dockge
 cd /opt/dockge
 ```
 
@@ -31,7 +30,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/app/data
-      - /opt/stacks:/opt/stacks
+      - ./stacks:/opt/stacks
     environment:
       - DOCKGE_STACKS_DIR=/opt/stacks
       # - DOCKGE_ENABLE_CONSOLE=true
@@ -44,9 +43,7 @@ docker compose up -d
 
 4. Access Dockge at `http://localhost:5001`
 
-⚠️ **Important:**
-- Make a backup of your Dockge data folder before migrating from the original version, as this image modifies the database.
-- The stacks directory path must be the same on both host and container (e.g., `/opt/stacks:/opt/stacks`)
+⚠️ **Important:** Make a backup of your Dockge data folder before migrating from the original or hamphh's version, as this image modifies the database.
 
 ### Supported Platforms
 
@@ -55,41 +52,38 @@ Currently, the image is built for:
 - **linux/arm/v7**
 - **linux/arm64**
 
-Additional platforms can be added if needed.
+## ✨ Features
 
-## ✨ Differences from Original Dockge
+This fork includes all features from [hamphh/dockge](https://github.com/hamphh/dockge) plus additional enhancements.
 
-This fork adds the following features not available in the original Dockge:
+### From hamphh/dockge
 
-### 1. **NTFY Notification Support** 🔔
+- **Enhanced Dashboard** - Agent renaming, agent maintenance, and stack list filtering
+- **Agent Maintenance** - List and prune containers, images, networks, and volumes
+- **Update Management** - Enhanced update notifications with changelogs and skip options
+- **Service Controls** - Disable update checks, add changelog links, ignore service status
+- **Health Monitoring** - Unhealthy status display (updated within 5 minutes)
+- **UI Improvements** - Fullscreen YAML editor, collapsible terminal, button tooltips
+- **Mobile Optimized** - Responsive layout with separate views for home and stack list
+- **Container Controls** - Direct container management from the interface
+- **Image Updates** - Notifications via skopeo integration with option to prune after updates
+
+### Additional Features in This Fork
+
+**NTFY Notification Support** 🔔
 
 Get real-time push notifications for your Docker services and stacks via [NTFY](https://ntfy.sh).
 
-**Supported Events:**
-- 🔴 **Service Down** - When a service stops or exits
-- 🟢 **Service Up** - When a service starts running
-- 🟡 **Service Unhealthy** - When a health check fails
-- ✅ **Service Healthy** - When a service becomes healthy again
-- 🛑 **Stack Exited** - When an entire stack stops
-- ▶️ **Stack Running** - When an entire stack starts
+- Monitor service and stack status changes (up/down, healthy/unhealthy)
+- Custom NTFY server support with multiple authentication methods
+- Granular event selection and smart rate limiting
+- Configure at: **Settings → Notifications**
 
-**Features:**
-- Custom NTFY server support (defaults to https://ntfy.sh)
-- Multiple authentication methods:
-  - Public (no auth)
-  - Access Token (Bearer token)
-  - Basic Auth (username/password)
-- Granular event selection - choose which events trigger notifications
-- Smart rate limiting to prevent notification spam (1-minute cooldown per event)
-- Test notification button to validate configuration
-- Detailed messages with priority levels and emoji tags
+## 🔮 Planned Features
 
-**Configuration:**
-Access notification settings in Dockge at: **Settings → Notifications**
-
-### 2. **IPv4 Network Family Option**
-
-Forces IPv4 for NTFY server connections, useful in environments with IPv6 issues or IPv4-only networks.
+- Additional notification providers
+- More monitoring and alerting options
+- Further UI/UX improvements
 
 ## 📖 Usage
 
