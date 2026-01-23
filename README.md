@@ -2,9 +2,9 @@
     <img src="./frontend/public/icon.svg" width="128" alt="" />
 </div>
 
-# Dockge Fork with NTFY Notifications
+# Dockge Fork
 
-This is a fork of [hamphh/dockge](https://github.com/hamphh/dockge), which is a fork of the excellent [Dockge](https://github.com/louislam/dockge) by [@louislam](https://github.com/louislam).
+This is a fork of [hamphh/dockge](https://github.com/hamphh/dockge), which is a fork of the excellent [louislam/dockge](https://github.com/louislam/dockge).
 
 For general information about Dockge, please refer to the [original project](https://github.com/louislam/dockge).
 
@@ -12,7 +12,7 @@ For general information about Dockge, please refer to the [original project](htt
 
 ### Quick Start with Docker Compose
 
-1. Navigate to a directory where you want to store your Dockge setup (recommended: a faster drive):
+1. Navigate to a directory where you want to store your Dockge setup (recommende to use a fast drive):
 ```bash
 cd /path/to/your/docker/setup
 ```
@@ -57,55 +57,24 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 ### From f3nici/dockge (this fork)
 
 - **Terminal Copy/Paste** - Copy and paste support in the terminal interface
-
-**NTFY Notification Support** 🔔
-
-Get real-time push notifications for your Docker services and stacks via [NTFY](https://ntfy.sh).
-
+- **[NTFY](https://ntfy.sh) Notification Support**
 - Monitor service and stack status changes (up/down, healthy/unhealthy)
 - Custom NTFY server support with multiple authentication methods
 - Granular event selection and smart rate limiting
-- Configure at: **Settings → Notifications**
 
 ## 🔮 Planned Features
 
-- Additional notification providers
-- More monitoring and alerting options
 - Further UI/UX improvements
+- Folders for Stacks
 
 ## 📖 Usage
 
 For general information about using Dockge, please refer to the [original project documentation](https://github.com/louislam/dockge).
 
-### Migrating from Original Dockge
-
-To migrate from the original Dockge to this fork:
-
-1. **Backup your data:**
-   ```bash
-   cp -r /opt/dockge/data /opt/dockge/data.backup
-   ```
-
-2. **Update your compose.yaml:**
-   - Replace `louislam/dockge:1` with `f3nici/dockge:latest`
-   - Update to match the compose file format above
-
-3. **Restart the container:**
-   ```bash
-   docker compose down
-   docker compose up -d
-   ```
-
-4. The database will be automatically migrated on first start
-
-### Multi-Server Setup
+## Multi-Server Setup
 
 If you're using Dockge with multiple agents, update the image to `f3nici/dockge:latest` on **all endpoints**.
 
 ## 📋 Release Notes
 
 For detailed information about changes and updates, see the [releases page](https://github.com/f3nici/dockge/releases).
-
-## 📄 License
-
-Same as the original Dockge project.
