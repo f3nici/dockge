@@ -49,12 +49,14 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **Update Management** - Enhanced update notifications with changelogs and skip options
 - **Service Controls** - Disable update checks, add changelog links, ignore service status
 - **Health Monitoring** - Unhealthy status display (updated within 5 minutes)
-- **UI Improvements** - Fullscreen YAML editor, collapsible terminal, button tooltips, copy/paste in terminal
+- **UI Improvements** - Fullscreen YAML editor, collapsible terminal, button tooltips
 - **Mobile Optimized** - Responsive layout with separate views for home and stack list
 - **Container Controls** - Direct container management from the interface
 - **Image Updates** - Notifications via skopeo integration with option to prune after updates
 
-### Additional Features in This Fork
+### From f3nici/dockge (this fork)
+
+- **Terminal Copy/Paste** - Copy and paste support in the terminal interface
 
 **NTFY Notification Support** 🔔
 
