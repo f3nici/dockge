@@ -12,28 +12,14 @@ For general information about Dockge, please refer to the [original project](htt
 
 ### Quick Start with Docker Compose
 
-1. Create a directory for Dockge:
+1. Navigate to a directory where you want to store your Dockge setup (recommended: a faster drive):
 ```bash
-mkdir -p /opt/dockge
-cd /opt/dockge
+cd /path/to/your/docker/setup
 ```
 
-2. Create a `compose.yaml` file:
-```yaml
-services:
-  dockge:
-    image: f3nici/dockge:latest
-    container_name: dockge
-    restart: unless-stopped
-    ports:
-      - 5001:5001
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./data:/app/data
-      - ./stacks:/opt/stacks
-    environment:
-      - DOCKGE_STACKS_DIR=/opt/stacks
-      # - DOCKGE_ENABLE_CONSOLE=true
+2. Download the compose file:
+```bash
+curl -o compose.yaml https://raw.githubusercontent.com/f3nici/dockge/master/compose.yaml
 ```
 
 3. Start Dockge:
@@ -63,7 +49,7 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **Update Management** - Enhanced update notifications with changelogs and skip options
 - **Service Controls** - Disable update checks, add changelog links, ignore service status
 - **Health Monitoring** - Unhealthy status display (updated within 5 minutes)
-- **UI Improvements** - Fullscreen YAML editor, collapsible terminal, button tooltips
+- **UI Improvements** - Fullscreen YAML editor, collapsible terminal, button tooltips, copy/paste in terminal
 - **Mobile Optimized** - Responsive layout with separate views for home and stack list
 - **Container Controls** - Direct container management from the interface
 - **Image Updates** - Notifications via skopeo integration with option to prune after updates
