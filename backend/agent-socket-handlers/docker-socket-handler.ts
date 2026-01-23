@@ -105,6 +105,34 @@ export class DockerSocketHandler extends AgentSocketHandler {
             }
         });
 
+        // updateStackTags
+        agentSocket.on("updateStackTags", async (stackName : unknown, tags : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                if (typeof(stackName) !== "string") {
+                    throw new ValidationError("Stack name must be a string");
+                }
+
+                if (!Array.isArray(tags)) {
+                    throw new ValidationError("Tags must be an array");
+                }
+
+                const stack = await Stack.getStack(server, stackName);
+                await stack.updateTags(tags);
+
+                callbackResult({
+                    ok: true,
+                    msg: "Tags updated",
+                    msgi18n: true,
+                }, callback);
+
+                server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
         // startStack
         agentSocket.on("startStack", async (stackName : unknown, callback) => {
             try {

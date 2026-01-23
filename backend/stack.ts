@@ -41,6 +41,8 @@ export class Stack {
     protected _services: Map<string, ServiceData> = new Map();
     protected server: DockgeServer;
     protected _firstUpdate: boolean = true;
+    protected _tags: string[] = [];
+    protected _tagsLoaded: boolean = false;
 
     protected combinedTerminal? : Terminal;
 
@@ -100,7 +102,7 @@ export class Stack {
             started: this.isStarted,
             recreateNecessary: this._recreateNecessary,
             imageUpdatesAvailable: this._imageUpdatesAvailable,
-            tags: [],
+            tags: this.tags,
             isManagedByDockge: this.isManagedByDockge,
             composeFileName: this._composeFileName,
             endpoint
@@ -213,6 +215,73 @@ export class Stack {
 
     get path() : string {
         return path.join(this.server.stacksDir, this.name);
+    }
+
+    get metadataPath() : string {
+        return path.join(this.path, "dockge.json");
+    }
+
+    get tags() : string[] {
+        if (!this._tagsLoaded) {
+            this.loadMetadata();
+        }
+        return this._tags;
+    }
+
+    /**
+     * Load metadata from dockge.json file
+     */
+    protected loadMetadata() : void {
+        try {
+            if (fs.existsSync(this.metadataPath)) {
+                const metadata = JSON.parse(fs.readFileSync(this.metadataPath, "utf-8"));
+                this._tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+            } else {
+                this._tags = [];
+            }
+        } catch (e) {
+            log.error("loadMetadata", `Failed to load metadata for stack ${this.name}: ${e}`);
+            this._tags = [];
+        }
+        this._tagsLoaded = true;
+    }
+
+    /**
+     * Save metadata to dockge.json file
+     */
+    protected async saveMetadata() : Promise<void> {
+        try {
+            // Only save if the stack directory exists
+            if (!this.isManagedByDockge) {
+                return;
+            }
+
+            const metadata = {
+                tags: this._tags
+            };
+            await fsAsync.writeFile(this.metadataPath, JSON.stringify(metadata, null, 2));
+        } catch (e) {
+            log.error("saveMetadata", `Failed to save metadata for stack ${this.name}: ${e}`);
+            throw e;
+        }
+    }
+
+    /**
+     * Update tags for this stack
+     */
+    async updateTags(tags: string[]) : Promise<void> {
+        // Validate tags
+        if (!Array.isArray(tags)) {
+            throw new ValidationError("Tags must be an array");
+        }
+
+        // Filter out empty tags and trim whitespace
+        this._tags = tags
+            .map(tag => tag.trim())
+            .filter(tag => tag.length > 0);
+
+        this._tagsLoaded = true;
+        await this.saveMetadata();
     }
 
     get fullPath() : string {
