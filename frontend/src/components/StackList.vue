@@ -71,12 +71,38 @@
                     </span>
                     <span>{{ getAgentName(agent.endpoint) }}</span>
                 </div>
-                <StackListItem
-                    v-for="(item, index) in agent.stacks"
-                    v-show="agentCount === 1 || !closedAgents.get(agent.endpoint)"
-                    :key="index" :stack="item" :isSelectMode="selectMode"
-                    :isSelected="isSelected" :select="select" :deselect="deselect"
-                />
+
+                <!-- Tag groups -->
+                <div v-show="agentCount === 1 || !closedAgents.get(agent.endpoint)">
+                    <div v-for="(tagGroup, tagIndex) in agent.tagGroups" :key="tagIndex">
+                        <!-- Tag header (collapsible) -->
+                        <div
+                            v-if="tagGroup.tag !== ''"
+                            class="p-2 tag-folder"
+                            @click="closedTags.set(agent.endpoint + '_' + tagGroup.tag, !closedTags.get(agent.endpoint + '_' + tagGroup.tag))"
+                        >
+                            <span class="me-1">
+                                <font-awesome-icon v-show="closedTags.get(agent.endpoint + '_' + tagGroup.tag)" icon="chevron-right" />
+                                <font-awesome-icon v-show="!closedTags.get(agent.endpoint + '_' + tagGroup.tag)" icon="chevron-down" />
+                            </span>
+                            <font-awesome-icon icon="folder" class="me-1" />
+                            <span>{{ tagGroup.tag }}</span>
+                        </div>
+
+                        <!-- Stacks in this tag group -->
+                        <StackListItem
+                            v-for="(item, stackIndex) in tagGroup.stacks"
+                            v-show="tagGroup.tag === '' || !closedTags.get(agent.endpoint + '_' + tagGroup.tag)"
+                            :key="stackIndex"
+                            :stack="item"
+                            :isSelectMode="selectMode"
+                            :isSelected="isSelected"
+                            :select="select"
+                            :deselect="deselect"
+                            :style="tagGroup.tag !== '' ? 'padding-left: 20px;' : ''"
+                        />
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -114,6 +140,7 @@ export default defineComponent({
             selectedStacks: {},
             windowTop: 0,
             closedAgents: new Map(),
+            closedTags: new Map(),
         };
     },
     computed: {
@@ -248,7 +275,7 @@ export default defineComponent({
 
             // Group stacks by endpoint, sorting them so the local endpoint is first
             // and the rest are sorted alphabetically
-            const resultByEndpoint: {endpoint: string, stacks: SimpleStackData[]}[] = [
+            const resultByEndpoint: {endpoint: string, stacks: SimpleStackData[], tagGroups?: {tag: string, stacks: SimpleStackData[]}[]}[] = [
                 ...result.reduce((acc, stack) => {
                     const endpoint = stack.endpoint;
                     let stacks = acc.get(endpoint);
@@ -259,10 +286,15 @@ export default defineComponent({
                     stacks.push(stack);
                     return acc;
                 }, new Map<string, SimpleStackData[]>()).entries()
-            ].map(([ endpoint, stacks ]) => ({
-                endpoint,
-                stacks
-            })).sort((a, b) => {
+            ].map(([ endpoint, stacks ]) => {
+                // Group stacks by tags within each endpoint
+                const tagGroups = this.groupStacksByTags(stacks);
+                return {
+                    endpoint,
+                    stacks,
+                    tagGroups
+                };
+            }).sort((a, b) => {
                 if (a.endpoint === "" && b.endpoint !== "") {
                     return -1;
                 } else if (a.endpoint !== "" && b.endpoint === "") {
@@ -433,6 +465,43 @@ export default defineComponent({
 
         getAgentName(endpoint: string) {
             return this.$root.getAgentName(endpoint);
+        },
+
+        /**
+         * Group stacks by tags
+         * @param {SimpleStackData[]} stacks Array of stacks
+         * @returns {Array} Tag groups with stacks
+         */
+        groupStacksByTags(stacks: SimpleStackData[]): {tag: string, stacks: SimpleStackData[]}[] {
+            // Collect all unique tags
+            const tagMap = new Map<string, SimpleStackData[]>();
+            const untaggedStacks: SimpleStackData[] = [];
+
+            stacks.forEach(stack => {
+                if (stack.tags && stack.tags.length > 0) {
+                    // Add stack to each of its tags
+                    stack.tags.forEach(tag => {
+                        if (!tagMap.has(tag)) {
+                            tagMap.set(tag, []);
+                        }
+                        tagMap.get(tag)!.push(stack);
+                    });
+                } else {
+                    untaggedStacks.push(stack);
+                }
+            });
+
+            // Convert map to array and sort by tag name
+            const tagGroups = Array.from(tagMap.entries())
+                .map(([tag, stacks]) => ({ tag, stacks }))
+                .sort((a, b) => a.tag.localeCompare(b.tag));
+
+            // Add untagged stacks at the end if there are any
+            if (untaggedStacks.length > 0) {
+                tagGroups.push({ tag: '', stacks: untaggedStacks });
+            }
+
+            return tagGroups;
         }
     },
 });
@@ -566,5 +635,28 @@ export default defineComponent({
     display: flex;
     align-items: center;
     user-select: none;
+}
+
+.tag-folder {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: $dark-font-color;
+    padding-left: 15px;
+    padding-right: 10px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    display: flex;
+    align-items: center;
+    user-select: none;
+    transition: background-color 0.1s ease-in-out;
+
+    &:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+
+    svg[data-icon="folder"] {
+        color: #f0ad4e;
+    }
 }
 </style>
