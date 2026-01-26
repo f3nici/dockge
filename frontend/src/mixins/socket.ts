@@ -279,6 +279,14 @@ export default defineComponent({
                 terminal.write(data);
             });
 
+            // Handle terminal exit events - log for debugging but don't show toast
+            // (error toasts are handled through the operation callbacks)
+            agentSocket.on("terminalExit", (terminalName, exitCode) => {
+                console.debug(`Terminal ${terminalName} exited with code ${exitCode}`);
+                // Remove terminal from map when it exits
+                terminalMap.delete(terminalName);
+            });
+
             agentSocket.on("stackList", (res) => {
                 if (res.ok) {
                     if (!res.endpoint) {
