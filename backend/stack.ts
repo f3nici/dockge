@@ -744,38 +744,44 @@ async save(isAdd : boolean) {
         }
 
         // Get status from docker compose ls
-        let res = await childProcessAsync.spawn("docker", [ "compose", "ls", "--all", "--format", "json" ], {
-            encoding: "utf-8",
-        });
+        try {
+            let res = await childProcessAsync.spawn("docker", [ "compose", "ls", "--all", "--format", "json" ], {
+                encoding: "utf-8",
+            });
 
-        if (!res.stdout) {
-            return stackList;
-        }
+            if (!res.stdout) {
+                return stackList;
+            }
 
-        let composeList = JSON.parse(res.stdout.toString());
+            let composeList = JSON.parse(res.stdout.toString());
 
-        for (let composeStack of composeList) {
-            let stack = stackList.get(composeStack.Name);
+            for (let composeStack of composeList) {
+                let stack = stackList.get(composeStack.Name);
 
-            // This stack probably is not managed by Dockge, but we still want to show it
-            if (!stack) {
-                // Skip the dockge stack if it is not managed by Dockge
-                if (composeStack.Name === "dockge") {
-                    continue;
+                // This stack probably is not managed by Dockge, but we still want to show it
+                if (!stack) {
+                    // Skip the dockge stack if it is not managed by Dockge
+                    if (composeStack.Name === "dockge") {
+                        continue;
+                    }
+                    stack = new Stack(server, composeStack.Name);
+                    stackList.set(composeStack.Name, stack);
                 }
-                stack = new Stack(server, composeStack.Name);
-                stackList.set(composeStack.Name, stack);
-            }
 
-            stack._configFilePath = composeStack.ConfigFiles;
+                stack._configFilePath = composeStack.ConfigFiles;
 
-            if (composeStack.Status.startsWith("running")) {
-                // Only running containers, nothing more to check
-                stack._status = stack._unhealthy ? UNHEALTHY : RUNNING;
-            } else {
-                // We have to check the stack data, to get the correct status
-                await stack.updateData();
+                if (composeStack.Status.startsWith("running")) {
+                    // Only running containers, nothing more to check
+                    stack._status = stack._unhealthy ? UNHEALTHY : RUNNING;
+                } else {
+                    // We have to check the stack data, to get the correct status
+                    await stack.updateData();
+                }
             }
+        } catch (e) {
+            // docker compose ls failed - log but don't throw
+            // This can happen if docker isn't available or compose isn't installed
+            log.error("getStackList", "Failed to get docker compose list: " + e);
         }
 
         return stackList;
