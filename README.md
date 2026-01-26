@@ -61,11 +61,12 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - Monitor service and stack status changes (up/down, healthy/unhealthy)
 - Custom NTFY server support with multiple authentication methods
 - Granular event selection and smart rate limiting
+- **Tagging with folders** - Add tags to stacks to place them into folders
 
 ## 🔮 Planned Features
 
 - Further UI/UX improvements
-- Folders for Stacks
+- Bug fixes
 
 ## 📖 Usage
 
