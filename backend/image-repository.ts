@@ -11,10 +11,20 @@ export class ImageRepository {
         this.imageInfos.delete(stack);
     }
 
+    /**
+     * Check if an image reference is pinned to a specific digest.
+     * Images with @sha256: are pinned and don't need update checks.
+     */
+    private isDigestPinned(image: string): boolean {
+        return image.startsWith("sha256:") || image.includes("@sha256:");
+    }
+
     async update(stack: string, service: string, image: string): Promise<ImageInfo> {
         let imageInfo = await this.updateLocal(stack, service, image);
 
-        if (!!imageInfo.localDigest && !image.startsWith("sha256:")) {
+        // Skip remote digest check for digest-pinned images
+        // (they're explicitly pinned to a specific version, no update possible)
+        if (!!imageInfo.localDigest && !this.isDigestPinned(image)) {
             const resRemote = await childProcessAsync.spawn("skopeo", [ "inspect", "--no-tags", "--format", "{{ .Digest }}", "docker://" + image ], {
                 encoding: "utf-8",
             });
