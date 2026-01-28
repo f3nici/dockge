@@ -57,15 +57,13 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 ### From f3nici/dockge (this fork)
 
 - **Terminal Copy/Paste** - Copy and paste support in the terminal interface
-- **[NTFY](https://ntfy.sh) Notification Support**
-- Monitor service and stack status changes (up/down, healthy/unhealthy)
-- Custom NTFY server support with multiple authentication methods
-- Granular event selection and smart rate limiting
+- **[NTFY](https://ntfy.sh) Notification Support** - Monitor service and stack status changes
+- **Tagging with folders** - Add tags to stacks to place them into folders
+- **Bug Fixes** - Fixes for any issues i've encountered as i've used dockge.
 
 ## 🔮 Planned Features
 
 - Further UI/UX improvements
-- Folders for Stacks
 
 ## 📖 Usage
 

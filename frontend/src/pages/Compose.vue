@@ -78,6 +78,37 @@
                 <button v-if="isEditMode && !isAdd" class="btn btn-normal" data-toggle="tooltip" :title="$t('tooltipStackDiscard')" :disabled="processing" @click="discardStack">{{ $t("discardStack") }}</button>
             </div>
 
+            <!-- Tags -->
+            <div v-if="!isAdd" class="mb-3 tags-container">
+                <label class="form-label mb-1" style="font-size: 12px; font-weight: 500; color: #888;">
+                    <font-awesome-icon icon="folder" class="me-1" />Tags
+                </label>
+                <div class="d-flex align-items-start gap-2">
+                    <div class="d-flex flex-wrap gap-1 flex-grow-1">
+                        <span v-for="(tag, index) in stack.tags" :key="index" class="badge bg-info d-flex align-items-center gap-1">
+                            {{ tag }}
+                            <font-awesome-icon icon="times" class="tag-remove" @click="removeTag(index)" />
+                        </span>
+                        <span v-if="!stack.tags || stack.tags.length === 0" class="text-muted" style="font-size: 12px;">No tags</span>
+                    </div>
+                    <button class="btn btn-sm btn-outline-secondary" @click="showTagInput = !showTagInput">
+                        <font-awesome-icon :icon="showTagInput ? 'times' : 'plus'" />
+                    </button>
+                </div>
+                <div v-if="showTagInput" class="mt-2">
+                    <div class="input-group input-group-sm">
+                        <input
+                            v-model="newTag"
+                            type="text"
+                            class="form-control"
+                            placeholder="Enter tag name..."
+                            @keyup.enter="addTag"
+                        />
+                        <button class="btn btn-primary" @click="addTag">Add</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- URLs -->
             <div v-if="urls.length > 0" class="mb-3">
                 <a v-for="(url, index) in urls" :key="index" target="_blank" :href="url.url">
@@ -340,7 +371,9 @@ export default defineComponent({
             updateDialogData: {
                 pruneAfterUpdate: false,
                 pruneAllAfterUpdate: false
-            }
+            },
+            showTagInput: false,
+            newTag: ""
         };
     },
 
@@ -529,6 +562,43 @@ export default defineComponent({
                 pruneAfterUpdate: false,
                 pruneAllAfterUpdate: false
             };
+        },
+
+        addTag() {
+            if (this.newTag.trim() === "") {
+                return;
+            }
+
+            if (!this.stack.tags) {
+                this.stack.tags = [];
+            }
+
+            // Check if tag already exists
+            if (this.stack.tags.includes(this.newTag.trim())) {
+                alert("Tag already exists");
+                return;
+            }
+
+            this.stack.tags.push(this.newTag.trim());
+            this.newTag = "";
+            this.saveTags();
+        },
+
+        removeTag(index) {
+            this.stack.tags.splice(index, 1);
+            this.saveTags();
+        },
+
+        saveTags() {
+            this.$root.emitAgent(this.endpoint, "updateStackTags", this.stack.name, this.stack.tags, (res) => {
+                if (res.ok) {
+                    this.$root.toastSuccess(res.msg);
+                    // Refresh stack list to update the UI
+                    this.$root.emitAgent(this.endpoint, "requestStackList");
+                } else {
+                    this.$root.toastError(res.msg);
+                }
+            });
         },
 
         startUpdateStackDataTimeout() {
@@ -901,6 +971,23 @@ export default defineComponent({
     &:hover {
         background-color: darken($bg-color, 8%);
         color: $fg-color;
+    }
+}
+
+.tags-container {
+    .tag-remove {
+        cursor: pointer;
+        font-size: 10px;
+        opacity: 0.7;
+        transition: opacity 0.1s ease-in-out;
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+
+    .badge {
+        cursor: default;
     }
 }
 

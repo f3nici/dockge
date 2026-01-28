@@ -41,6 +41,8 @@ export class Stack {
     protected _services: Map<string, ServiceData> = new Map();
     protected server: DockgeServer;
     protected _firstUpdate: boolean = true;
+    protected _tags: string[] = [];
+    protected _tagsLoaded: boolean = false;
 
     protected combinedTerminal? : Terminal;
 
@@ -100,7 +102,7 @@ export class Stack {
             started: this.isStarted,
             recreateNecessary: this._recreateNecessary,
             imageUpdatesAvailable: this._imageUpdatesAvailable,
-            tags: [],
+            tags: this.tags,
             isManagedByDockge: this.isManagedByDockge,
             composeFileName: this._composeFileName,
             endpoint
@@ -143,8 +145,16 @@ export class Stack {
 
         const tempYamlPath = path.join(this.path, tempYamlName);
         const tempEnvPath = path.join(this.path, tempEnvName);
+        const realEnvPath = path.join(this.path, ".env");
 
         await this.saveFiles(tempYamlPath, tempEnvPath);
+
+        // Also ensure the real .env file exists for validation
+        // This is needed because compose.yaml may contain env_file: .env references
+        const realEnvExistedBefore = await fileExists(realEnvPath);
+        if (!realEnvExistedBefore) {
+            await fsAsync.writeFile(realEnvPath, this.composeENV);
+        }
 
         const hasEnvFile = this.composeENV.trim() !== "";
 
@@ -164,20 +174,35 @@ export class Stack {
         } catch (e) {
             log.warn("validate", e);
 
-            let valMsg = (e as { stderr: string }).stderr?.trim();
+            // Extract error information from the spawn error
+            const spawnError = e as { stderr?: string; stdout?: string; code?: number; message?: string };
+            let valMsg = spawnError.stderr?.trim() || spawnError.stdout?.trim();
+
             if (valMsg) {
                 // remove prefix
                 valMsg = valMsg.replace(/^validating .*?: /, "");
+            } else {
+                // If no stderr/stdout, provide a meaningful default message
+                // This handles cases where the process fails without output (e.g., ENOENT)
+                if (spawnError.code !== undefined && spawnError.code !== null) {
+                    valMsg = `Docker compose validation failed with exit code ${spawnError.code}`;
+                } else if (spawnError.message) {
+                    valMsg = spawnError.message;
+                } else {
+                    valMsg = "Docker compose validation failed. Please check that docker is installed and accessible.";
+                }
             }
 
             throw new ValidationError(valMsg);
         } finally {
             // delete the temporary files
-
             await fsAsync.unlink(tempYamlPath);
             if (hasEnvFile) {
                 await fsAsync.unlink(tempEnvPath);
             }
+            // Note: We don't delete the real .env file we created because:
+            // - On success, saveFiles() will overwrite it with the final version
+            // - On failure for new stacks, save() deletes the entire directory
         }
     }
 
@@ -213,6 +238,73 @@ export class Stack {
 
     get path() : string {
         return path.join(this.server.stacksDir, this.name);
+    }
+
+    get metadataPath() : string {
+        return path.join(this.path, "dockge.json");
+    }
+
+    get tags() : string[] {
+        if (!this._tagsLoaded) {
+            this.loadMetadata();
+        }
+        return this._tags;
+    }
+
+    /**
+     * Load metadata from dockge.json file
+     */
+    protected loadMetadata() : void {
+        try {
+            if (fs.existsSync(this.metadataPath)) {
+                const metadata = JSON.parse(fs.readFileSync(this.metadataPath, "utf-8"));
+                this._tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+            } else {
+                this._tags = [];
+            }
+        } catch (e) {
+            log.error("loadMetadata", `Failed to load metadata for stack ${this.name}: ${e}`);
+            this._tags = [];
+        }
+        this._tagsLoaded = true;
+    }
+
+    /**
+     * Save metadata to dockge.json file
+     */
+    protected async saveMetadata() : Promise<void> {
+        try {
+            // Only save if the stack directory exists
+            if (!this.isManagedByDockge) {
+                return;
+            }
+
+            const metadata = {
+                tags: this._tags
+            };
+            await fsAsync.writeFile(this.metadataPath, JSON.stringify(metadata, null, 2));
+        } catch (e) {
+            log.error("saveMetadata", `Failed to save metadata for stack ${this.name}: ${e}`);
+            throw e;
+        }
+    }
+
+    /**
+     * Update tags for this stack
+     */
+    async updateTags(tags: string[]) : Promise<void> {
+        // Validate tags
+        if (!Array.isArray(tags)) {
+            throw new ValidationError("Tags must be an array");
+        }
+
+        // Filter out empty tags and trim whitespace
+        this._tags = tags
+            .map(tag => tag.trim())
+            .filter(tag => tag.length > 0);
+
+        this._tagsLoaded = true;
+        await this.saveMetadata();
     }
 
     get fullPath() : string {
@@ -274,11 +366,9 @@ async save(isAdd : boolean) {
         // Write or overwrite the compose.yaml
         await fsAsync.writeFile(yamlPath, this.composeYAML);
 
-        // Write or overwrite the .env
-        // If .env is not existing and the composeENV is empty, we don't need to write it
-        if (await fileExists(envPath) || this.composeENV.trim() !== "") {
-            await fsAsync.writeFile(envPath, this.composeENV);
-        }
+        // Always write the .env file, even if empty
+        // This ensures that any env_file references in compose.yaml will work
+        await fsAsync.writeFile(envPath, this.composeENV);
     }
 
     async deploy(socket : DockgeSocket) : Promise<number> {

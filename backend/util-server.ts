@@ -57,16 +57,17 @@ export function callbackError(error : unknown, callback : unknown) {
         return;
     }
 
-    if (error instanceof Error) {
-        callback({
-            ok: false,
-            msg: error.message,
-            msgi18n: true,
-        });
-    } else if (error instanceof ValidationError) {
+    // Check ValidationError first since it extends Error
+    if (error instanceof ValidationError) {
         callback({
             ok: false,
             type: ERROR_TYPE_VALIDATION,
+            msg: error.message,
+            msgi18n: true,
+        });
+    } else if (error instanceof Error) {
+        callback({
+            ok: false,
             msg: error.message,
             msgi18n: true,
         });

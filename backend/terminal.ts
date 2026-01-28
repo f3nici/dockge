@@ -144,7 +144,27 @@ export class Terminal {
                 clearInterval(this.keepAliveInterval);
 
                 log.error("Terminal", "Failed to start terminal: " + error.message);
-                const exitCode = Number(error.message.split(" ").pop());
+
+                // Try to extract exit code from error, default to 1 if not found
+                // ENOENT errors don't have a numeric exit code in the message
+                let exitCode = 1;
+                const errorCode = (error as NodeJS.ErrnoException).code;
+                if (errorCode === "ENOENT") {
+                    // Command not found - write helpful error to terminal
+                    const errorMsg = `\r\nError: Command '${this.file}' not found. Please ensure it is installed and in the PATH.\r\n`;
+                    for (const socketID in this.socketList) {
+                        const socket = this.socketList[socketID];
+                        socket.emitAgent("terminalWrite", this.name, errorMsg);
+                    }
+                    exitCode = 127; // Standard exit code for command not found
+                } else {
+                    // Try to parse exit code from error message
+                    const parsedCode = Number(error.message.split(" ").pop());
+                    if (!isNaN(parsedCode)) {
+                        exitCode = parsedCode;
+                    }
+                }
+
                 this.exit({
                     exitCode,
                 });
