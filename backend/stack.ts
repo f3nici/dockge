@@ -145,8 +145,16 @@ export class Stack {
 
         const tempYamlPath = path.join(this.path, tempYamlName);
         const tempEnvPath = path.join(this.path, tempEnvName);
+        const realEnvPath = path.join(this.path, ".env");
 
         await this.saveFiles(tempYamlPath, tempEnvPath);
+
+        // Also ensure the real .env file exists for validation
+        // This is needed because compose.yaml may contain env_file: .env references
+        const realEnvExistedBefore = await fileExists(realEnvPath);
+        if (!realEnvExistedBefore) {
+            await fsAsync.writeFile(realEnvPath, this.composeENV);
+        }
 
         const hasEnvFile = this.composeENV.trim() !== "";
 
@@ -188,11 +196,13 @@ export class Stack {
             throw new ValidationError(valMsg);
         } finally {
             // delete the temporary files
-
             await fsAsync.unlink(tempYamlPath);
             if (hasEnvFile) {
                 await fsAsync.unlink(tempEnvPath);
             }
+            // Note: We don't delete the real .env file we created because:
+            // - On success, saveFiles() will overwrite it with the final version
+            // - On failure for new stacks, save() deletes the entire directory
         }
     }
 
@@ -356,11 +366,9 @@ async save(isAdd : boolean) {
         // Write or overwrite the compose.yaml
         await fsAsync.writeFile(yamlPath, this.composeYAML);
 
-        // Write or overwrite the .env
-        // If .env is not existing and the composeENV is empty, we don't need to write it
-        if (await fileExists(envPath) || this.composeENV.trim() !== "") {
-            await fsAsync.writeFile(envPath, this.composeENV);
-        }
+        // Always write the .env file, even if empty
+        // This ensures that any env_file references in compose.yaml will work
+        await fsAsync.writeFile(envPath, this.composeENV);
     }
 
     async deploy(socket : DockgeSocket) : Promise<number> {
