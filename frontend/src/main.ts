@@ -96,6 +96,11 @@ function rootApp() {
                 if (res.ok) {
                     toast.success(msg);
                 } else {
+                    // Skip unhelpful generic error messages
+                    if (typeof msg === "string" && /^Process exited with code \d+$/.test(msg)) {
+                        console.debug("Suppressed unhelpful error toast:", msg);
+                        return;
+                    }
                     toast.error(msg);
                 }
             },

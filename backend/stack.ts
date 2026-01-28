@@ -166,10 +166,23 @@ export class Stack {
         } catch (e) {
             log.warn("validate", e);
 
-            let valMsg = (e as { stderr: string }).stderr?.trim();
+            // Extract error information from the spawn error
+            const spawnError = e as { stderr?: string; stdout?: string; code?: number; message?: string };
+            let valMsg = spawnError.stderr?.trim() || spawnError.stdout?.trim();
+
             if (valMsg) {
                 // remove prefix
                 valMsg = valMsg.replace(/^validating .*?: /, "");
+            } else {
+                // If no stderr/stdout, provide a meaningful default message
+                // This handles cases where the process fails without output (e.g., ENOENT)
+                if (spawnError.code !== undefined && spawnError.code !== null) {
+                    valMsg = `Docker compose validation failed with exit code ${spawnError.code}`;
+                } else if (spawnError.message) {
+                    valMsg = spawnError.message;
+                } else {
+                    valMsg = "Docker compose validation failed. Please check that docker is installed and accessible.";
+                }
             }
 
             throw new ValidationError(valMsg);
