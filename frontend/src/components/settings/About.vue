@@ -2,25 +2,11 @@
     <div class="d-flex justify-content-center align-items-center">
         <div class="logo d-flex flex-column justify-content-center align-items-center">
             <img class="my-4" width="200" height="200" src="/icon.svg" />
-            <div class="fs-4 fw-bold">Dockge</div>
-            <div>{{ $t("Version") }}: {{ $root.info.version }}</div>
-            <div class="frontend-version">{{ $t("Frontend Version") }}: {{ $root.frontendVersion }}</div>
+            <div class="fs-4 fw-bold">Dockge (f3nici-edition)</div>
+            <div>{{ $t("Version") }}: V1.2</div>
+            <div class="fork-info">Fork of <a href="https://github.com/louislam/dockge" target="_blank" rel="noopener">louislam/dockge</a></div>
 
-            <div v-if="!$root.isFrontendBackendVersionMatched" class="alert alert-warning mt-4" role="alert">
-                ⚠️ {{ $t("Frontend Version do not match backend version!") }}
-            </div>
-
-            <div class="my-3 update-link"><a href="https://github.com/louislam/dockge/releases" target="_blank" rel="noopener">{{ $t("Check Update On GitHub") }}</a></div>
-
-            <div class="mt-1">
-                <div class="form-check">
-                    <label><input v-model="settings.checkUpdate" type="checkbox" @change="saveSettings()" /> {{ $t("Show update if available") }}</label>
-                </div>
-
-                <div class="form-check">
-                    <label><input v-model="settings.checkBeta" type="checkbox" :disabled="!settings.checkUpdate" @change="saveSettings()" /> {{ $t("Also check beta release") }}</label>
-                </div>
-            </div>
+            <div class="my-3 update-link"><a href="https://github.com/f3nici/dockge/releases" target="_blank" rel="noopener">{{ $t("Check Update On GitHub") }}</a></div>
         </div>
     </div>
 </template>
@@ -28,15 +14,7 @@
 <script>
 export default {
     computed: {
-        settings() {
-            return this.$parent.$parent.$parent.settings;
-        },
-        saveSettings() {
-            return this.$parent.$parent.$parent.saveSettings;
-        },
-        settingsLoaded() {
-            return this.$parent.$parent.$parent.settingsLoaded;
-        },
+
     },
 
     watch: {
@@ -54,12 +32,18 @@ export default {
     font-size: 0.8em;
 }
 
-.frontend-version {
+.fork-info {
     font-size: 0.9em;
-    color: #cccccc;
+    color: #666666;
+    margin-top: 0.5em;
 
     .dark & {
-        color: #333333;
+        color: #999999;
+    }
+
+    a {
+        color: inherit;
+        text-decoration: underline;
     }
 }
 

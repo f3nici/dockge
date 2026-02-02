@@ -15,10 +15,10 @@
                 <router-link to="/" class="d-flex align-items-center text-dark text-decoration-none">
                     <img src="/icon.svg" class="me-2" width="40" height="40" />
                     <!--object class="bi me-2" width="40" height="40" data="/icon.svg" /-->
-                    <span class="d-none d-md-inline fs-4 title">Dockge</span>
+                    <span class="d-none d-md-inline fs-4 title">Dockge (f3nici-edition)</span>
                 </router-link>
 
-                <a v-if="hasNewVersion" target="_blank" href="https://github.com/louislam/dockge/releases" class="ms-2 me-3">
+                <a v-if="hasNewVersion" target="_blank" href="https://github.com/f3nici/dockge/releases" class="ms-2 me-3">
                     <font-awesome-icon icon="arrow-up" class="notification-icon" />
                 </a>
             </div>

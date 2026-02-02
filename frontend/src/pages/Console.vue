@@ -1,9 +1,14 @@
 <template>
     <transition name="slide-fade" appear>
         <div v-if="!processing">
-            <h1 class="mb-3">{{ $t("console") }}</h1>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h1 class="mb-0">{{ $t("console") }}</h1>
+                <button v-if="enableConsole" class="btn btn-outline-secondary" @click="clearConsole">
+                    <font-awesome-icon icon="trash" class="me-1" /> Clear
+                </button>
+            </div>
 
-            <Terminal v-if="enableConsole" class="terminal" :rows="20" mode="mainTerminal" name="console" :endpoint="endpoint"></Terminal>
+            <Terminal v-if="enableConsole" ref="terminal" class="terminal" :rows="20" mode="mainTerminal" name="console" :endpoint="endpoint"></Terminal>
 
             <div v-else class="alert alert-warning shadow-box" role="alert">
                 <h4 class="alert-heading">{{ $t("Console is not enabled") }}</h4>
@@ -37,7 +42,11 @@ export default {
         });
     },
     methods: {
-        
+        clearConsole() {
+            if (this.$refs.terminal) {
+                this.$refs.terminal.clearTerminal();
+            }
+        }
     }
 };
 </script>
