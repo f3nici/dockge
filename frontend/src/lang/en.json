@@ -205,5 +205,8 @@
     "clearFilter": "Clear filter",
     "agent": "Agent | Agents",
     "status": "Status",
-    "attribute": "Attribute | Attributes"    
+    "attribute": "Attribute | Attributes",
+    "generatePassword": "Generate Password",
+    "passwordCopied": "Password copied to clipboard",
+    "passwordCopyFailed": "Failed to copy password to clipboard"
 }
