@@ -241,7 +241,13 @@
 
                     <!-- ENV editor -->
                     <div v-if="isEditMode">
-                        <h4 class="mb-3">.env</h4>
+                        <div class="d-flex align-items-center mb-3">
+                            <h4 class="mb-0">.env</h4>
+                            <button class="btn btn-outline-secondary btn-sm ms-2" @click="generateAndCopyPassword" :title="$t('generatePassword')">
+                                <font-awesome-icon icon="key" class="me-1" />
+                                {{ $t("generatePassword") }}
+                            </button>
+                        </div>
                         <div class="shadow-box mb-3 editor-box" :class="{'edit-mode' : isEditMode}">
                             <prism-editor
                                 ref="editor"
@@ -895,6 +901,28 @@ export default defineComponent({
 
         stackNameToLowercase() {
             this.stack.name = this.stack?.name?.toLowerCase();
+        },
+
+        generatePassword(length = 32) {
+            const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+            let password = "";
+            const randomValues = new Uint32Array(length);
+            crypto.getRandomValues(randomValues);
+            for (let i = 0; i < length; i++) {
+                password += chars[randomValues[i] % chars.length];
+            }
+            return password;
+        },
+
+        async generateAndCopyPassword() {
+            const password = this.generatePassword(32);
+            try {
+                await navigator.clipboard.writeText(password);
+                this.$root.toastSuccess(this.$t("passwordCopied"));
+            } catch (error) {
+                console.error("Failed to copy password to clipboard:", error);
+                this.$root.toastError(this.$t("passwordCopyFailed"));
+            }
         },
 
     }
