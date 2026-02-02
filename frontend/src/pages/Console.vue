@@ -43,6 +43,9 @@ export default {
     },
     methods: {
         clearConsole() {
+            // Clear the server-side buffer
+            this.$root.emitAgent(this.endpoint, "clearTerminal", "console", () => {});
+            // Clear the local terminal display
             if (this.$refs.terminal) {
                 this.$refs.terminal.clearTerminal();
             }
