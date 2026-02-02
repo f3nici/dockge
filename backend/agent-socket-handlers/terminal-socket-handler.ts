@@ -82,6 +82,28 @@ export class TerminalSocketHandler extends AgentSocketHandler {
             }
         });
 
+        // Clear terminal buffer
+        agentSocket.on("clearTerminal", async (terminalName : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                if (typeof(terminalName) !== "string") {
+                    throw new ValidationError("Terminal name must be a string.");
+                }
+
+                const terminal = Terminal.getTerminal(terminalName);
+                if (terminal) {
+                    terminal.clearBuffer();
+                }
+
+                callbackResult({
+                    ok: true,
+                }, callback);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
         // Join Output Terminal
         agentSocket.on("terminalJoin", async (terminalName : unknown, callback) => {
             if (typeof(callback) !== "function") {

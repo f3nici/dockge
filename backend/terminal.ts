@@ -232,6 +232,13 @@ export class Terminal {
         return this.buffer.join("");
     }
 
+    /**
+     * Clear the terminal buffer
+     */
+    clearBuffer() {
+        this.buffer.length = 0;
+    }
+
     close() {
         clearInterval(this.keepAliveInterval);
         // Send Ctrl+C to the terminal

@@ -59,11 +59,10 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **Terminal Copy/Paste** - Copy and paste support in the terminal interface
 - **[NTFY](https://ntfy.sh) Notification Support** - Monitor service and stack status changes
 - **Tagging with folders** - Add tags to stacks to place them into folders
-- **Bug Fixes** - Fixes for any issues i've encountered as i've used dockge.
-
-## 🔮 Planned Features
-
-- Further UI/UX improvements
+- **Bug Fixes** - Fixes for any issues i've encountered as i've used dockge
+- **UI/UX Improvements** - Adjusted about page & updated title
+- **Dockge Update Checker** - Now checks for updates to dockge
+- **Clear Console Button** - Button to clear the console
 
 ## 📖 Usage
 
