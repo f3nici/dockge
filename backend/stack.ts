@@ -50,6 +50,15 @@ export class Stack {
 
     protected static imageRepository : ImageRepository = new ImageRepository();
 
+    /**
+     * Invalidate a stack from the cache.
+     * This forces the stack to be re-read from disk on next access.
+     * @param stackName The name of the stack to invalidate
+     */
+    static invalidateCache(stackName: string) : void {
+        this.managedStackList.delete(stackName);
+    }
+
     static notificationManager: NotificationManager = new NotificationManager();
 
     constructor(server: DockgeServer, name: string, composeYAML?: string, composeENV?: string) {

@@ -535,6 +535,10 @@ export class DockerSocketHandler extends AgentSocketHandler {
 
         const stack = new Stack(server, name, composeYAML, composeENV);
         await stack.save(isAdd);
+
+        // Invalidate the cache for this stack so subsequent reads get fresh data from disk
+        Stack.invalidateCache(name);
+
         return stack;
     }
 
