@@ -15,10 +15,10 @@
                 <router-link to="/" class="d-flex align-items-center text-dark text-decoration-none">
                     <img src="/icon.svg" class="me-2" width="40" height="40" />
                     <!--object class="bi me-2" width="40" height="40" data="/icon.svg" /-->
-                    <span class="d-none d-md-inline fs-4 title">Dockge</span>
+                    <span class="d-none d-md-inline fs-4 title">Dockge <span class="edition-tag">(f3nici-edition)</span></span>
                 </router-link>
 
-                <a v-if="hasNewVersion" target="_blank" href="https://github.com/louislam/dockge/releases" class="ms-2 me-3">
+                <a v-if="hasNewVersion" target="_blank" href="https://github.com/f3nici/dockge/releases" class="ms-2 me-3">
                     <font-awesome-icon icon="arrow-up" class="notification-icon" />
                 </a>
             </div>
@@ -109,7 +109,6 @@
 
 <script>
 import Login from "../components/Login.vue";
-import { compareVersions } from "compare-versions";
 import { ALL_ENDPOINTS } from "../../../common/util-common";
 
 export default {
@@ -135,11 +134,7 @@ export default {
         },
 
         hasNewVersion() {
-            if (this.$root.info.latestVersion && this.$root.info.version) {
-                return compareVersions(this.$root.info.latestVersion, this.$root.info.version) >= 1;
-            } else {
-                return false;
-            }
+            return this.$root.info.hasLatestUpdate || this.$root.info.hasTestingUpdate;
         },
 
     },
@@ -217,6 +212,12 @@ main {
 
 .title {
     font-weight: bold;
+
+    .edition-tag {
+        font-size: 0.6em;
+        font-weight: normal;
+        opacity: 0.7;
+    }
 }
 
 .nav {
