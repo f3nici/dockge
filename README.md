@@ -63,6 +63,7 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **UI/UX Improvements** - Adjusted about page & updated title
 - **Dockge Update Checker** - Now checks for updates to dockge
 - **Clear Console Button** - Button to clear the console
+- **Generate Password Button** - Next to .env, creates a 32 random string to use for SECRET varibles or passwords.
 
 ## 📖 Usage
 
