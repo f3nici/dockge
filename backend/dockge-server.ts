@@ -411,6 +411,15 @@ export class DockgeServer {
                 this.sendStackList(true);
             });
 
+            // When a new Dockge version is detected, push info to all connected clients
+            checkVersion.onUpdateFound = () => {
+                for (const rawSocket of this.io.sockets.sockets.values()) {
+                    let dockgeSocket = rawSocket as DockgeSocket;
+                    if (dockgeSocket.userID) {
+                        this.sendInfo(dockgeSocket);
+                    }
+                }
+            };
             checkVersion.startInterval();
 
             // Update stack properties every 5 Minutes
