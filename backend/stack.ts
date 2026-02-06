@@ -533,7 +533,7 @@ async save(isAdd : boolean) {
                         } else {
                             ignoredExitedCount++;
                         }
-                    } else if (serviceInfo.State !== "created") {
+                    } else if (serviceInfo.State === "created") {
                         createdCount++;
                     } else {
                         log.warn("updateStackData", "Unexpected service state '" + serviceInfo.State + "'");
@@ -921,8 +921,8 @@ async save(isAdd : boolean) {
         // If the stack is running, restart it
         await this.updateData();
         if (this.isStarted) {
-            sleep(500); // sleep to wait for terminal output finished
- 
+            await sleep(500); // sleep to wait for terminal output finished
+
             exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans" ], this.path);
             if (exitCode !== 0) {
                 throw new Error("Failed to restart, please check the terminal output for more information.");
@@ -930,7 +930,7 @@ async save(isAdd : boolean) {
         }
 
         if (pruneAfterUpdate) {
-            sleep(500); // sleep to wait for terminal output finished
+            await sleep(500); // sleep to wait for terminal output finished
 
             const dockerParams = ["image", "prune", "-f"];
             if (pruneAllAfterUpdate) {
@@ -953,7 +953,7 @@ async save(isAdd : boolean) {
             throw new Error("Failed to pull, please check the terminal output for more information.");
         }
 
-        sleep(500); // sleep to wait for terminal output finished
+        await sleep(500); // sleep to wait for terminal output finished
 
         exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans", service ], this.path);
         if (exitCode !== 0) {
@@ -961,7 +961,7 @@ async save(isAdd : boolean) {
         }
 
         if (pruneAfterUpdate) {
-            sleep(500); // sleep to wait for terminal output finished
+            await sleep(500); // sleep to wait for terminal output finished
 
             const dockerParams = ["image", "prune", "-f"];
             if (pruneAllAfterUpdate) {
