@@ -13,7 +13,9 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 checkLogin(socket);
                 const stack = await this.saveStack(server, name, composeYAML, composeENV, isAdd);
                 await stack.deploy(socket);
-                server.sendStackList(true);
+                // Force a full rescan (useCache=false) because a new stack on disk
+                // won't be in the cached managedStackList yet
+                server.sendStackList(false);
                 callbackResult({
                     ok: true,
                     msg: "Deployed",
@@ -34,7 +36,9 @@ export class DockerSocketHandler extends AgentSocketHandler {
                     msg: "Saved",
                     msgi18n: true,
                 }, callback);
-                server.sendStackList(true);
+                // Force a full rescan (useCache=false) because a new stack on disk
+                // won't be in the cached managedStackList yet
+                server.sendStackList(false);
             } catch (e) {
                 callbackError(e, callback);
             }
@@ -51,11 +55,13 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 try {
                     await stack.delete(socket);
                 } catch (e) {
-                    server.sendStackList(true);
+                    // Force rescan after failed delete to reflect actual state
+                    server.sendStackList(false);
                     throw e;
                 }
 
-                server.sendStackList(true);
+                // Force a full rescan (useCache=false) because a stack was removed
+                server.sendStackList(false);
                 callbackResult({
                     ok: true,
                     msg: "Deleted",
@@ -535,6 +541,10 @@ export class DockerSocketHandler extends AgentSocketHandler {
 
         const stack = new Stack(server, name, composeYAML, composeENV);
         await stack.save(isAdd);
+
+        // Invalidate the cache for this stack so subsequent reads get fresh data from disk
+        Stack.invalidateCache(name);
+
         return stack;
     }
 
