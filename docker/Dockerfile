@@ -30,6 +30,21 @@ RUN npm ci --omit=dev
 ############################################
 FROM louislam/dockge:base AS release
 WORKDIR /app
+
+# Refresh the bundled Docker CLI / Compose plugin.
+# The base image installs these unpinned, so they freeze at whatever was
+# current when the base image was last built (e.g. docker-ce-cli 24.0.7).
+# Old clients call netip.ParseAddr on IPv6 ULA gateways like
+# "fdd0:0:0:5::1/64" (instead of ParsePrefix), which modern engines
+# auto-assign, producing a "ParseAddr ... unexpected character, want colon"
+# error. Upgrading to the current client (>= 27.x) fixes this.
+# The Docker apt repo is already configured in the base image.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends --only-upgrade \
+         docker-ce-cli \
+         docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy healthcheck
 COPY --chown=node:node --from=build_healthcheck /app/extra/healthcheck /app/extra/healthcheck
 
