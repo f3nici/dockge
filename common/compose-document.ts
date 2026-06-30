@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Document, Pair, parseDocument, Scalar } from "yaml";
+import { Alias, Document, isAlias, isMap, isSeq, Node, Pair, parseDocument, Scalar } from "yaml";
 import dotenv, { DotenvParseOutput } from "dotenv";
 import { LooseObject } from "./util-common";
 // @ts-ignore
@@ -83,10 +83,18 @@ export class ComposeDocument {
     }
 
     toYAML(): string {
-        const doc = new Document(this.composeData.data);
+        // Build a fresh document from the (possibly edited) data. Disable automatic
+        // anchoring of duplicate objects so the only anchors/aliases in the output are
+        // the ones the user actually wrote, which we restore below from the original
+        // document. Without this, toJS() flattens anchors (scalars lose them entirely)
+        // and the rebuilt document either drops them or renames them to "a1", "a2"...
+        const doc = new Document(this.composeData.data, { aliasDuplicateObjects: false });
 
         // Stick back the yaml comments
         copyYAMLComments(doc, this.doc);
+
+        // Restore the original YAML anchors and aliases (e.g. &env / *env)
+        restoreYAMLAnchors(doc, this.doc);
 
         return doc.toString();
     }
@@ -532,6 +540,79 @@ function traverseYAML(pair : Pair, env : DotenvParseOutput) : void {
     } else if (pair.value && typeof(pair.value.value) === "string") {
         // @ts-ignore
         pair.value.value = envsubst(pair.value.value, env);
+    }
+}
+
+type YAMLPath = (string | number)[];
+
+type AnchorEntry = {
+    path: YAMLPath;
+    kind: "anchor" | "alias";
+    name: string;
+};
+
+/**
+ * Walk the source YAML tree and record where every anchor is defined and where
+ * every alias references one, keyed by their path from the document root.
+ */
+function collectYAMLAnchors(node : unknown, path : YAMLPath, out : AnchorEntry[]) {
+    if (!node || typeof node !== "object") {
+        return;
+    }
+
+    if (isAlias(node)) {
+        out.push({ path,
+            kind: "alias",
+            name: node.source });
+        return;
+    }
+
+    const anchor = (node as Node).anchor;
+    if (anchor) {
+        out.push({ path,
+            kind: "anchor",
+            name: anchor });
+    }
+
+    if (isMap(node)) {
+        for (const pair of node.items) {
+            // Only follow scalar keys, which is all docker compose ever uses
+            if (pair.key && typeof pair.key === "object" && "value" in pair.key) {
+                collectYAMLAnchors(pair.value, [ ...path, pair.key.value as string ], out);
+            }
+        }
+    } else if (isSeq(node)) {
+        node.items.forEach((item, index) => collectYAMLAnchors(item, [ ...path, index ], out));
+    }
+}
+
+/**
+ * Re-apply the anchors (&name) and aliases (*name) from the source document onto
+ * a freshly rebuilt document, matching nodes by their path. This keeps user-defined
+ * anchors intact through an edit round trip instead of expanding them into values.
+ * @param doc Document rebuilt from the JS data (no anchors yet)
+ * @param src Original parsed document that still carries the anchors/aliases
+ */
+function restoreYAMLAnchors(doc : Document, src : Document) {
+    if (!src.contents) {
+        return;
+    }
+
+    const entries : AnchorEntry[] = [];
+    collectYAMLAnchors(src.contents, [], entries);
+
+    // Set anchors before aliases so the anchored node always exists first
+    for (const entry of entries.filter(e => e.kind === "anchor")) {
+        const node = doc.getIn(entry.path, true);
+        if (node && typeof node === "object") {
+            (node as Node).anchor = entry.name;
+        }
+    }
+
+    for (const entry of entries.filter(e => e.kind === "alias")) {
+        if (entry.path.length > 0 && doc.hasIn(entry.path)) {
+            doc.setIn(entry.path, new Alias(entry.name));
+        }
     }
 }
 
