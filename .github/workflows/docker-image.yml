@@ -4,12 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker tag (testing or latest)'
+        description: 'Docker tag (e.g. testing, v1.2.3)'
         required: true
-        type: choice
-        options:
-          - testing
-          - latest
+        type: string
+        default: 'testing'
+      latest:
+        description: 'Also tag and push as :latest'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-and-push:
@@ -41,3 +44,9 @@ jobs:
       run: |
         docker build -f docker/Dockerfile -t f3nici/dockge:${{ inputs.tag }} .
         docker push f3nici/dockge:${{ inputs.tag }}
+
+    - name: Tag and push as latest
+      if: ${{ inputs.latest }}
+      run: |
+        docker tag f3nici/dockge:${{ inputs.tag }} f3nici/dockge:latest
+        docker push f3nici/dockge:latest

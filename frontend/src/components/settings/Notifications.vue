@@ -254,7 +254,8 @@ export default {
         async loadSettings() {
             this.$root.getSocket().emit("getNotificationSettings", (res) => {
                 if (res.ok) {
-                    this.settings = { ...this.settings, ...res.data };
+                    this.settings = { ...this.settings,
+                        ...res.data };
 
                     // Determine auth method
                     if (this.settings.ntfyToken) {

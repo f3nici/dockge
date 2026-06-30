@@ -107,7 +107,7 @@ export default {
         }
 
         // Add right-click context menu handler for paste
-        this.$refs.terminal.addEventListener('contextmenu', this.handleContextMenu);
+        this.$refs.terminal.addEventListener("contextmenu", this.handleContextMenu);
 
         // Add selection handler for copy to clipboard
         this.terminal.onSelectionChange(() => {
@@ -217,7 +217,7 @@ export default {
                         const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
                         this.terminalInputBuffer = beforeCursor + afterCursor;
                         this.cursorPosition--;
-                        
+
                         // Redraw the line
                         this.terminal.write("\b" + afterCursor + " \b".repeat(afterCursor.length + 1));
                     }
@@ -227,7 +227,7 @@ export default {
                         const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
                         const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition + 1);
                         this.terminalInputBuffer = beforeCursor + afterCursor;
-                        
+
                         // Redraw the line from cursor position
                         this.terminal.write(afterCursor + " \b".repeat(afterCursor.length + 1));
                     }
@@ -322,19 +322,19 @@ export default {
                 // For main terminal, insert text at current cursor position
                 const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
                 const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-                
+
                 // Update the buffer with inserted text
                 this.terminalInputBuffer = beforeCursor + text + afterCursor;
-                
+
                 // Clear the current line and rewrite it
                 this.clearCurrentLine();
                 this.terminal.write(this.terminalInputBuffer);
-                
+
                 // Move cursor to the correct position (after the pasted text)
                 this.cursorPosition += text.length;
                 const backspaces = "\b".repeat(afterCursor.length);
                 this.terminal.write(backspaces);
-                
+
             } else if (this.mode === "interactive") {
                 // For interactive terminal, send directly to server
                 this.$root.emitAgent(this.endpoint, "terminalInput", this.name, text, (res) => {
@@ -351,7 +351,7 @@ export default {
         handleContextMenu(event) {
             // Prevent default context menu
             event.preventDefault();
-            
+
             // Only handle paste for modes that support input
             if (this.mode === "mainTerminal" || this.mode === "interactive") {
                 this.handlePaste();

@@ -46,10 +46,14 @@
             <div v-if="selectMode && false" class="selection-controls px-2 pt-2">
                 <input v-model="selectAll" class="form-check-input select-input" type="checkbox" />
 
-                <button class="btn-outline-normal" @click="pauseDialog"><font-awesome-icon icon="pause" size="sm" /> {{
-                    $t("Pause") }}</button>
-                <button class="btn-outline-normal" @click="resumeSelected"><font-awesome-icon icon="play" size="sm" />
-                    {{ $t("Resume") }}</button>
+                <button class="btn-outline-normal" @click="pauseDialog">
+                    <font-awesome-icon icon="pause" size="sm" /> {{
+                        $t("Pause") }}
+                </button>
+                <button class="btn-outline-normal" @click="resumeSelected">
+                    <font-awesome-icon icon="play" size="sm" />
+                    {{ $t("Resume") }}
+                </button>
 
                 <span v-if="selectedStackCount > 0">
                     {{ $t("selectedStackCount", [selectedStackCount]) }}
@@ -475,7 +479,7 @@ export default defineComponent({
         toggleTagFolder(tagKey: string) {
             const currentState = this.closedTags.get(tagKey);
             // Toggle between false (open) and true/undefined (closed)
-            this.closedTags.set(tagKey, currentState === false ? true : false);
+            this.closedTags.set(tagKey, currentState === false);
         },
 
         /**
@@ -504,12 +508,14 @@ export default defineComponent({
 
             // Convert map to array and sort by tag name
             const tagGroups = Array.from(tagMap.entries())
-                .map(([tag, stacks]) => ({ tag, stacks }))
+                .map(([ tag, stacks ]) => ({ tag,
+                    stacks }))
                 .sort((a, b) => a.tag.localeCompare(b.tag));
 
             // Add untagged stacks at the end if there are any
             if (untaggedStacks.length > 0) {
-                tagGroups.push({ tag: '', stacks: untaggedStacks });
+                tagGroups.push({ tag: "",
+                    stacks: untaggedStacks });
             }
 
             return tagGroups;
