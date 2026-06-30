@@ -96,6 +96,22 @@ You can use Vue.js devtools Chrome extension for debugging.
 npm run build
 ```
 
+## Testing
+
+Unit tests live in the `test/` directory and are run with [Vitest](https://vitest.dev/).
+They cover the pure-logic modules in `common/` and `backend/` (compose document
+parsing, utility helpers, password hashing, etc.).
+
+```bash
+npm test            # run all tests once
+npm run test:watch  # re-run tests on change
+npm run test:coverage
+```
+
+The same checks run automatically on every pull request via GitHub Actions
+(`.github/workflows/ci.yml`): lint, TypeScript type check, unit tests and a
+frontend build.
+
 ## Database Migration
 
 TODO

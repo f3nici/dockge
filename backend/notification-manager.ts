@@ -74,7 +74,7 @@ export class NotificationManager {
             title: "Dockge Test Notification",
             message: "Your NTFY integration is working correctly!",
             priority: 3,
-            tags: ["white_check_mark"]
+            tags: [ "white_check_mark" ]
         };
 
         return await this.sendToNtfy(message);
@@ -224,7 +224,7 @@ export class NotificationManager {
             title: `[Dockge] ${eventInfo.title}`,
             message: message,
             priority: eventInfo.priority,
-            tags: [eventInfo.emoji]
+            tags: [ eventInfo.emoji ]
         };
     }
 
@@ -285,7 +285,7 @@ export class NotificationManager {
             title: `[Dockge] ${eventInfo.title}`,
             message: message,
             priority: eventInfo.priority,
-            tags: [eventInfo.emoji]
+            tags: [ eventInfo.emoji ]
         };
     }
 
@@ -311,25 +311,27 @@ export class NotificationManager {
                 tags: message.tags
             });
 
+            const headers: http.OutgoingHttpHeaders = {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(postData)
+            };
+
+            // Add authentication if configured
+            if (this.settings!.ntfyToken) {
+                headers["Authorization"] = `Bearer ${this.settings!.ntfyToken}`;
+            } else if (this.settings!.ntfyUsername && this.settings!.ntfyPassword) {
+                const auth = Buffer.from(`${this.settings!.ntfyUsername}:${this.settings!.ntfyPassword}`).toString("base64");
+                headers["Authorization"] = `Basic ${auth}`;
+            }
+
             const options: http.RequestOptions = {
                 hostname: url.hostname,
                 port: url.port || (isHttps ? 443 : 80),
                 path: "/",  // Always POST to root for JSON publishing
                 method: "POST",
                 family: 4,  // Force IPv4
-                headers: {
-                    "Content-Type": "application/json",
-                    "Content-Length": Buffer.byteLength(postData)
-                }
+                headers
             };
-
-            // Add authentication if configured
-            if (this.settings!.ntfyToken) {
-                options.headers!["Authorization"] = `Bearer ${this.settings!.ntfyToken}`;
-            } else if (this.settings!.ntfyUsername && this.settings!.ntfyPassword) {
-                const auth = Buffer.from(`${this.settings!.ntfyUsername}:${this.settings!.ntfyPassword}`).toString("base64");
-                options.headers!["Authorization"] = `Basic ${auth}`;
-            }
 
             const req = httpModule.request(options, (res) => {
                 let data = "";

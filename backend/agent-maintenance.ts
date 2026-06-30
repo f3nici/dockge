@@ -105,7 +105,7 @@ export class AgentMaintenance {
             data: []
         };
 
-        const defaultNetworks = new Set(["bridge", "host", "none"]);
+        const defaultNetworks = new Set([ "bridge", "host", "none" ]);
 
         try {
             const res = await childProcessAsync.spawn("docker", [ "network", "ls", "--format", "json" ], {

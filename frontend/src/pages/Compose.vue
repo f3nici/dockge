@@ -243,7 +243,7 @@
                     <div v-if="isEditMode">
                         <div class="d-flex align-items-center mb-3">
                             <h4 class="mb-0">.env</h4>
-                            <button class="btn btn-outline-secondary btn-sm ms-2" @click="generateAndCopyPassword" :title="$t('generatePassword')">
+                            <button class="btn btn-outline-secondary btn-sm ms-2" :title="$t('generatePassword')" @click="generateAndCopyPassword">
                                 <font-awesome-icon icon="key" class="me-1" />
                                 {{ $t("generatePassword") }}
                             </button>
@@ -744,7 +744,6 @@ export default defineComponent({
 
         startStack() {
             this.startComposeAction();
-
 
             this.$root.emitAgent(this.endpoint, "startStack", this.stack.name, (res) => {
                 this.stopComposeAction();

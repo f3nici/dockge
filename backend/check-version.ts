@@ -20,7 +20,7 @@ class CheckVersion {
     async getLocalImageDigest(image: string): Promise<string | undefined> {
         try {
             const res = await childProcessAsync.spawn(
-                "docker", ["inspect", "--format", "{{index .RepoDigests 0}}", image],
+                "docker", [ "inspect", "--format", "{{index .RepoDigests 0}}", image ],
                 { encoding: "utf-8" }
             );
             const output = res.stdout?.toString().trim();

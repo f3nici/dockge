@@ -331,45 +331,46 @@ export class Stack {
         return fullPathDir;
     }
 
-/**
+    /**
  * Save the stack to the disk
  * @param isAdd
  */
-async save(isAdd : boolean) {
-    let dir = this.path;
+    async save(isAdd : boolean) {
+        let dir = this.path;
 
-    // Check if the name is used if isAdd
-    if (isAdd) {
-        if (await fileExists(dir)) {
-            throw new ValidationError("Stack name already exists");
-        }
+        // Check if the name is used if isAdd
+        if (isAdd) {
+            if (await fileExists(dir)) {
+                throw new ValidationError("Stack name already exists");
+            }
 
-        // Create temporary directory for validation
-        await fsAsync.mkdir(dir);
+            // Create temporary directory for validation
+            await fsAsync.mkdir(dir);
 
-        try {
+            try {
             // Validate the compose file
+                await this.validate();
+
+                // Everything is good, writing the main files
+                await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
+            } catch (error) {
+            // If validation fails, clean up the directory we just created
+                await fsAsync.rm(dir, { recursive: true,
+                    force: true });
+                throw error;
+            }
+        } else {
+            if (!await fileExists(dir)) {
+                throw new ValidationError("Stack not found");
+            }
+
+            // For updates, validate before writing
             await this.validate();
-            
+
             // Everything is good, writing the main files
             await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
-        } catch (error) {
-            // If validation fails, clean up the directory we just created
-            await fsAsync.rm(dir, { recursive: true, force: true });
-            throw error;
         }
-    } else {
-        if (!await fileExists(dir)) {
-            throw new ValidationError("Stack not found");
-        }
-        
-        // For updates, validate before writing
-        await this.validate();
-        
-        // Everything is good, writing the main files
-        await this.saveFiles(path.join(dir, this._composeFileName), path.join(dir, ".env"));
     }
-}
 
     private async saveFiles(yamlPath: string, envPath: string) {
         // Write or overwrite the compose.yaml
@@ -620,7 +621,7 @@ async save(isAdd : boolean) {
             }
 
             // Service-level changes
-            for (const [serviceName, newServiceData] of this._services.entries()) {
+            for (const [ serviceName, newServiceData ] of this._services.entries()) {
                 const oldServiceData = oldServices.get(serviceName);
 
                 if (!oldServiceData) {
@@ -676,7 +677,7 @@ async save(isAdd : boolean) {
             }
 
             // Check for removed services
-            for (const [serviceName, oldServiceData] of oldServices.entries()) {
+            for (const [ serviceName, oldServiceData ] of oldServices.entries()) {
                 if (!this._services.has(serviceName) && oldServiceData.state === "running") {
                     await Stack.notificationManager.notifyServiceChange(
                         this.name,
@@ -932,7 +933,7 @@ async save(isAdd : boolean) {
         if (pruneAfterUpdate) {
             await sleep(500); // sleep to wait for terminal output finished
 
-            const dockerParams = ["image", "prune", "-f"];
+            const dockerParams = [ "image", "prune", "-f" ];
             if (pruneAllAfterUpdate) {
                 dockerParams.push("-a");
             }
@@ -963,7 +964,7 @@ async save(isAdd : boolean) {
         if (pruneAfterUpdate) {
             await sleep(500); // sleep to wait for terminal output finished
 
-            const dockerParams = ["image", "prune", "-f"];
+            const dockerParams = [ "image", "prune", "-f" ];
             if (pruneAllAfterUpdate) {
                 dockerParams.push("-a");
             }
