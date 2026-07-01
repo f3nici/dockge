@@ -300,7 +300,18 @@
             <BModal v-model="showPasswordDialog" :title="$t('generatePassword')" :close-on-esc="true">
                 <BForm @submit.prevent="generateAndCopyPassword">
                     <div class="mb-3">
-                        <label class="form-label">{{ $t("passwordLength") }}</label>
+                        <label class="form-label">{{ $t("passwordFormat") }}</label>
+                        <select v-model="passwordOptions.format" class="form-select">
+                            <option value="base64">{{ $t("passwordFormatBase64") }}</option>
+                            <option value="hex">{{ $t("passwordFormatHex") }}</option>
+                            <option value="alphanumeric">{{ $t("passwordFormatAlphanumeric") }}</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">
+                            {{ passwordOptions.format === "alphanumeric" ? $t("passwordLengthChars") : $t("passwordLengthBytes") }}
+                        </label>
                         <input
                             v-model.number="passwordOptions.length"
                             type="number"
@@ -309,17 +320,26 @@
                             class="form-control"
                         />
                     </div>
-                    <BFormCheckbox v-model="passwordOptions.uppercase" switch>{{ $t("passwordUppercase") }}</BFormCheckbox>
-                    <BFormCheckbox v-model="passwordOptions.lowercase" switch>{{ $t("passwordLowercase") }}</BFormCheckbox>
-                    <BFormCheckbox v-model="passwordOptions.numbers" switch>{{ $t("passwordNumbers") }}</BFormCheckbox>
-                    <BFormCheckbox v-model="passwordOptions.symbols" switch>{{ $t("passwordSymbols") }}</BFormCheckbox>
-                    <p v-if="!passwordCharsetSelected" class="text-danger mt-2 mb-0">
-                        {{ $t("passwordNoCharsetSelected") }}
+
+                    <!-- Character sets only apply to the custom alphanumeric format -->
+                    <template v-if="passwordOptions.format === 'alphanumeric'">
+                        <BFormCheckbox v-model="passwordOptions.uppercase" switch>{{ $t("passwordUppercase") }}</BFormCheckbox>
+                        <BFormCheckbox v-model="passwordOptions.lowercase" switch>{{ $t("passwordLowercase") }}</BFormCheckbox>
+                        <BFormCheckbox v-model="passwordOptions.numbers" switch>{{ $t("passwordNumbers") }}</BFormCheckbox>
+                        <BFormCheckbox v-model="passwordOptions.symbols" switch>{{ $t("passwordSymbols") }}</BFormCheckbox>
+                        <p v-if="!passwordCharsetSelected" class="text-danger mt-2 mb-0">
+                            {{ $t("passwordNoCharsetSelected") }}
+                        </p>
+                    </template>
+
+                    <!-- Show the equivalent openssl command that most compose projects reference -->
+                    <p v-if="opensslCommandHint" class="text-muted small mt-3 mb-0">
+                        {{ $t("passwordEquivalentCommand") }} <code>{{ opensslCommandHint }}</code>
                     </p>
                 </BForm>
 
                 <template #footer>
-                    <button class="btn btn-primary" :disabled="!passwordCharsetSelected || !passwordLengthValid" @click="generateAndCopyPassword">
+                    <button class="btn btn-primary" :disabled="!passwordFormatValid || !passwordLengthValid" @click="generateAndCopyPassword">
                         <font-awesome-icon icon="key" class="me-1" />{{ $t("generateAndCopyPassword") }}
                     </button>
                 </template>
@@ -361,7 +381,10 @@ services:
 
 const envDefault = "# VARIABLE=value #comment";
 
+type PasswordFormat = "base64" | "hex" | "alphanumeric";
+
 interface PasswordOptions {
+    format?: PasswordFormat;
     length?: number;
     uppercase?: boolean;
     lowercase?: boolean;
@@ -419,6 +442,7 @@ export default defineComponent({
             newTag: "",
             showPasswordDialog: false,
             passwordOptions: {
+                format: "base64",
                 length: 32,
                 uppercase: true,
                 lowercase: true,
@@ -435,9 +459,31 @@ export default defineComponent({
             return o.uppercase || o.lowercase || o.numbers || o.symbols;
         },
 
+        passwordFormatValid(): boolean {
+            // Character-set selection only matters for the custom alphanumeric format.
+            if (this.passwordOptions.format === "alphanumeric") {
+                return this.passwordCharsetSelected;
+            }
+            return true;
+        },
+
         passwordLengthValid(): boolean {
             const length = this.passwordOptions.length;
             return Number.isInteger(length) && length >= 1 && length <= 256;
+        },
+
+        opensslCommandHint(): string {
+            const { format, length } = this.passwordOptions;
+            if (!this.passwordLengthValid) {
+                return "";
+            }
+            if (format === "base64") {
+                return `openssl rand -base64 ${length}`;
+            }
+            if (format === "hex") {
+                return `openssl rand -hex ${length}`;
+            }
+            return "";
         },
 
         agentName(): string {
@@ -959,12 +1005,22 @@ export default defineComponent({
 
         generatePassword(options: PasswordOptions = {}) {
             const {
+                format = "base64",
                 length = 32,
                 uppercase = true,
                 lowercase = true,
                 numbers = true,
                 symbols = false,
             } = options;
+
+            // Byte-encoded formats mirror `openssl rand -base64 N` / `-hex N`,
+            // where the length is the number of random bytes.
+            if (format === "base64") {
+                return this.randomBase64(length);
+            }
+            if (format === "hex") {
+                return this.randomHex(length);
+            }
 
             const charsets: string[] = [];
             if (uppercase) {
@@ -1020,8 +1076,31 @@ export default defineComponent({
             return value % max;
         },
 
+        randomBytes(byteLength: number): Uint8Array {
+            const bytes = new Uint8Array(byteLength);
+            crypto.getRandomValues(bytes);
+            return bytes;
+        },
+
+        randomBase64(byteLength: number): string {
+            const bytes = this.randomBytes(byteLength);
+            let binary = "";
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            // btoa produces standard base64, matching `openssl rand -base64`.
+            return btoa(binary);
+        },
+
+        randomHex(byteLength: number): string {
+            const bytes = this.randomBytes(byteLength);
+            return Array.from(bytes)
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+        },
+
         async generateAndCopyPassword() {
-            if (!this.passwordCharsetSelected || !this.passwordLengthValid) {
+            if (!this.passwordFormatValid || !this.passwordLengthValid) {
                 return;
             }
             const password = this.generatePassword(this.passwordOptions);

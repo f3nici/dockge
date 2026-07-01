@@ -210,10 +210,16 @@
     "generateAndCopyPassword": "Generate & Copy",
     "passwordCopied": "Password copied to clipboard",
     "passwordCopyFailed": "Failed to copy password to clipboard",
-    "passwordLength": "Length",
+    "passwordFormat": "Format",
+    "passwordFormatBase64": "Base64 (openssl rand -base64)",
+    "passwordFormatHex": "Hex (openssl rand -hex)",
+    "passwordFormatAlphanumeric": "Alphanumeric (custom characters)",
+    "passwordLengthBytes": "Length (bytes)",
+    "passwordLengthChars": "Length (characters)",
     "passwordUppercase": "Uppercase letters (A-Z)",
     "passwordLowercase": "Lowercase letters (a-z)",
     "passwordNumbers": "Numbers (0-9)",
     "passwordSymbols": "Symbols (!@#$%^&*)",
-    "passwordNoCharsetSelected": "Please select at least one character type."
+    "passwordNoCharsetSelected": "Please select at least one character type.",
+    "passwordEquivalentCommand": "Equivalent to:"
 }
