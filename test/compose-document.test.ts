@@ -155,4 +155,62 @@ services:
         const doc = new ComposeDocument(yaml);
         expect(doc.toYAML()).toContain("# top level comment");
     });
+
+    it("preserves collection anchors and aliases", () => {
+        const yaml = `services:
+  first:
+    image: my-image:latest
+    environment: &env
+      - CONFIG_KEY
+      - EXAMPLE_KEY
+  second:
+    image: another-image:latest
+    environment: *env
+`;
+        const out = new ComposeDocument(yaml).toYAML();
+        expect(out).toContain("&env");
+        expect(out).toContain("*env");
+        // The aliased value must not be expanded into a duplicate list
+        expect(out.match(/CONFIG_KEY/g)?.length).toBe(1);
+    });
+
+    it("preserves scalar anchors and aliases", () => {
+        const yaml = `services:
+  first:
+    image: &img my-image:latest
+  second:
+    image: *img
+`;
+        const out = new ComposeDocument(yaml).toYAML();
+        expect(out).toContain("&img my-image:latest");
+        expect(out).toContain("*img");
+    });
+
+    it("keeps the original anchor name instead of renaming it", () => {
+        const yaml = `services:
+  first:
+    image: nginx
+    environment: &shared
+      - A=1
+  second:
+    image: redis
+    environment: *shared
+`;
+        const out = new ComposeDocument(yaml).toYAML();
+        expect(out).toContain("&shared");
+        expect(out).not.toContain("&a1");
+    });
+
+    it("preserves merge keys", () => {
+        const yaml = `x-common: &common
+  restart: unless-stopped
+services:
+  first:
+    image: nginx
+    <<: *common
+`;
+        const out = new ComposeDocument(yaml).toYAML();
+        expect(out).toContain("&common");
+        expect(out).toContain("<<: *common");
+    });
 });
