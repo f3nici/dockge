@@ -191,11 +191,15 @@ export default {
         },
 
         mainTerminalConfig() {
-            this.terminal.onKey(e => {
-                const code = e.key.charCodeAt(0);
-                console.debug("Encode: " + JSON.stringify(e.key));
+            // Use onData (not onKey): onKey only fires for events that
+            // originate from a real keydown, so input coming from mobile
+            // virtual keyboards/IME composition (which xterm.js delivers
+            // straight to onData) would otherwise be silently dropped.
+            this.terminal.onData(data => {
+                const code = data.charCodeAt(0);
+                console.debug("Encode: " + JSON.stringify(data));
 
-                if (e.key === "\r") {
+                if (data === "\r") {
                     // Return if no input
                     if (this.terminalInputBuffer.length === 0) {
                         return;
@@ -206,7 +210,7 @@ export default {
                     // Remove the input from the terminal
                     this.removeInput();
 
-                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, buffer + e.key, (err) => {
+                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, buffer + data, (err) => {
                         this.$root.toastError(err.msg);
                     });
 
@@ -221,7 +225,7 @@ export default {
                         // Redraw the line
                         this.terminal.write("\b" + afterCursor + " \b".repeat(afterCursor.length + 1));
                     }
-                } else if (e.key === "\u001B\u005B\u0033\u007E") { // Delete key
+                } else if (data === "\u001B\u005B\u0033\u007E") { // Delete key
                     if (this.cursorPosition < this.terminalInputBuffer.length) {
                         // Remove character to the right of cursor
                         const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
@@ -231,44 +235,49 @@ export default {
                         // Redraw the line from cursor position
                         this.terminal.write(afterCursor + " \b".repeat(afterCursor.length + 1));
                     }
-                } else if (e.key === "\u001B\u005B\u0041" || e.key === "\u001B\u005B\u0042") {      // UP OR DOWN
+                } else if (data === "\u001B\u005B\u0041" || data === "\u001B\u005B\u0042") {      // UP OR DOWN
                     // Do nothing
 
-                } else if (e.key === "\u001B\u005B\u0043") {      // RIGHT
+                } else if (data === "\u001B\u005B\u0043") {      // RIGHT
                     if (this.cursorPosition < this.terminalInputBuffer.length) {
                         this.terminal.write(this.terminalInputBuffer[this.cursorPosition]);
                         this.cursorPosition++;
                     }
-                } else if (e.key === "\u001B\u005B\u0044") {      // LEFT
+                } else if (data === "\u001B\u005B\u0044") {      // LEFT
                     if (this.cursorPosition > 0) {
                         this.terminal.write("\b");
                         this.cursorPosition--;
                     }
-                } else if (e.key === "\u0003") {      // Ctrl + C
+                } else if (data === "\u0003") {      // Ctrl + C
                     console.debug("Ctrl + C");
-                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, e.key);
+                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data);
                     this.removeInput();
-                } else if (e.key === "\u0016" || (e.ctrlKey && e.key === "v")) {      // Ctrl + V
+                } else if (data === "\u0016") {      // Ctrl + V
                     this.handlePaste();
                 } else {
+                    // data may be more than one character (e.g. a mobile
+                    // IME/autocomplete committing a whole word at once)
                     const textBeforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
                     const textAfterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-                    this.terminalInputBuffer = textBeforeCursor + e.key + textAfterCursor;
-                    this.terminal.write(e.key + textAfterCursor + "\b".repeat(textAfterCursor.length));
-                    this.cursorPosition++;
+                    this.terminalInputBuffer = textBeforeCursor + data + textAfterCursor;
+                    this.terminal.write(data + textAfterCursor + "\b".repeat(textAfterCursor.length));
+                    this.cursorPosition += data.length;
                 }
             });
         },
 
         interactiveTerminalConfig() {
-            this.terminal.onKey(e => {
+            // Use onData (not onKey): mobile virtual keyboards/IME
+            // composition deliver typed text via onData without ever
+            // firing a keydown, so onKey alone misses that input.
+            this.terminal.onData(data => {
                 // Handle Ctrl+V for paste
-                if (e.key === "\u0016" || (e.ctrlKey && e.key === "v")) {
+                if (data === "\u0016") {
                     this.handlePaste();
                     return;
                 }
 
-                this.$root.emitAgent(this.endpoint, "terminalInput", this.name, e.key, (res) => {
+                this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data, (res) => {
                     if (!res.ok) {
                         this.$root.toastRes(res);
                     }
