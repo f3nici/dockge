@@ -207,6 +207,13 @@
     "status": "Status",
     "attribute": "Attribute | Attributes",
     "generatePassword": "Generate Password",
+    "generateAndCopyPassword": "Generate & Copy",
     "passwordCopied": "Password copied to clipboard",
-    "passwordCopyFailed": "Failed to copy password to clipboard"
+    "passwordCopyFailed": "Failed to copy password to clipboard",
+    "passwordLength": "Length",
+    "passwordUppercase": "Uppercase letters (A-Z)",
+    "passwordLowercase": "Lowercase letters (a-z)",
+    "passwordNumbers": "Numbers (0-9)",
+    "passwordSymbols": "Symbols (!@#$%^&*)",
+    "passwordNoCharsetSelected": "Please select at least one character type."
 }
