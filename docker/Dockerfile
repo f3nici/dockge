@@ -4,7 +4,9 @@
 FROM node:22-bookworm-slim AS frontend-build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# Retry once to work around the intermittent esbuild postinstall ETXTBSY
+# race that can occur under Docker BuildKit (npm ci is idempotent).
+RUN npm ci || npm ci
 COPY frontend ./frontend
 COPY backend ./backend
 COPY common ./common
@@ -23,7 +25,7 @@ FROM louislam/dockge:base AS build
 WORKDIR /app
 COPY --chown=node:node  ./package.json ./package.json
 COPY --chown=node:node  ./package-lock.json ./package-lock.json
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev || npm ci --omit=dev
 
 ############################################
 # ⭐ Main Image
