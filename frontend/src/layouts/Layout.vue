@@ -134,7 +134,7 @@ export default {
         },
 
         hasNewVersion() {
-            return this.$root.info.hasLatestUpdate || this.$root.info.hasTestingUpdate;
+            return this.$root.info.hasUpdate;
         },
 
     },

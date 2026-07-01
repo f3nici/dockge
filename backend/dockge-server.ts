@@ -459,21 +459,21 @@ export class DockgeServer {
     async sendInfo(socket : Socket, hideVersion = false) {
         let versionProperty;
         let isContainer;
-        let hasLatestUpdate;
-        let hasTestingUpdate;
+        let hasUpdate;
+        let latestVersion;
 
         if (!hideVersion) {
             versionProperty = packageJSON.version;
             isContainer = (process.env.DOCKGE_IS_CONTAINER === "1");
-            hasLatestUpdate = checkVersion.hasLatestUpdate;
-            hasTestingUpdate = checkVersion.hasTestingUpdate;
+            hasUpdate = checkVersion.hasUpdate;
+            latestVersion = checkVersion.latestVersion;
         }
 
         socket.emit("info", {
             version: versionProperty,
             isContainer,
-            hasLatestUpdate,
-            hasTestingUpdate,
+            hasUpdate,
+            latestVersion,
             primaryHostname: await Settings.get("primaryHostname"),
             //serverTimezone: await this.getTimezone(),
             //serverTimezoneOffset: this.getTimezoneOffset(),
