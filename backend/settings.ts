@@ -34,10 +34,10 @@ export class Settings {
         if (!Settings.cacheCleaner) {
             Settings.cacheCleaner = setInterval(() => {
                 log.debug("settings", "Cache Cleaner is just started.");
-                for (key in Settings.cacheList) {
-                    if (Date.now() - Settings.cacheList[key].timestamp > 60 * 1000) {
-                        log.debug("settings", "Cache Cleaner deleted: " + key);
-                        delete Settings.cacheList[key];
+                for (const cacheKey in Settings.cacheList) {
+                    if (Date.now() - Settings.cacheList[cacheKey].timestamp > 60 * 1000) {
+                        log.debug("settings", "Cache Cleaner deleted: " + cacheKey);
+                        delete Settings.cacheList[cacheKey];
                     }
                 }
 

@@ -4,7 +4,7 @@ import { SocketHandler } from "../socket-handler.js";
 import { DockgeServer } from "../dockge-server";
 import { log } from "../log";
 import { R } from "redbean-node";
-import { loginRateLimiter, twoFaRateLimiter } from "../rate-limiter";
+import { loginRateLimiter } from "../rate-limiter";
 import { generatePasswordHash, needRehashPassword, shake256, SHAKE256_LENGTH, verifyPassword } from "../password-hash";
 import { User } from "../models/user";
 import {
@@ -40,7 +40,7 @@ export class MainSocketHandler extends SocketHandler {
 
                 const user = R.dispense("user");
                 user.username = username;
-                user.password = generatePasswordHash(password);
+                user.password = await generatePasswordHash(password);
                 await R.store(user);
 
                 server.needSetup = false;
@@ -121,88 +121,65 @@ export class MainSocketHandler extends SocketHandler {
 
         // Login
         socket.on("login", async (data, callback) => {
-            const clientIP = await server.getClientIP(socket);
-
-            log.info("auth", `Login by username + password. IP=${clientIP}`);
-
             // Checking
             if (typeof callback !== "function") {
                 return;
             }
 
-            if (!data) {
-                return;
-            }
+            try {
+                const clientIP = await server.getClientIP(socket);
 
-            // Login Rate Limit
-            if (!await loginRateLimiter.pass(callback)) {
-                log.info("auth", `Too many failed requests for user ${data.username}. IP=${clientIP}`);
-                return;
-            }
+                log.info("auth", `Login by username + password. IP=${clientIP}`);
 
-            const user = await this.login(data.username, data.password);
+                if (!data) {
+                    return;
+                }
 
-            if (user) {
-                if (user.twofa_status === 0) {
-                    server.afterLogin(socket, user);
+                // Login Rate Limit
+                if (!await loginRateLimiter.pass(callback)) {
+                    log.info("auth", `Too many failed requests for user ${data.username}. IP=${clientIP}`);
+                    return;
+                }
 
-                    log.info("auth", `Successfully logged in user ${data.username}. IP=${clientIP}`);
+                const user = await this.login(data.username, data.password);
+
+                if (!user) {
+                    log.warn("auth", `Incorrect username or password for user ${data.username}. IP=${clientIP}`);
 
                     callback({
-                        ok: true,
-                        token: User.createJWT(user, server.jwtSecret),
+                        ok: false,
+                        msg: "authIncorrectCreds",
+                        msgi18n: true,
                     });
+                    return;
                 }
 
-                if (user.twofa_status === 1 && !data.token) {
-
-                    log.info("auth", `2FA token required for user ${data.username}. IP=${clientIP}`);
+                // Two-factor authentication has no server-side enrollment/verification
+                // path in this build. Rather than silently bypassing the second factor
+                // (a security downgrade), deny login for any account that still has it
+                // flagged on. Such accounts can be reset via the reset-password CLI.
+                if (user.twofa_status) {
+                    log.warn("auth", `2FA is enabled for user ${data.username} but not supported by this server. IP=${clientIP}`);
 
                     callback({
-                        tokenRequired: true,
+                        ok: false,
+                        msg: "authInvalidToken",
+                        msgi18n: true,
                     });
+                    return;
                 }
 
-                if (data.token) {
-                    // @ts-ignore
-                    const verify = notp.totp.verify(data.token, user.twofa_secret, twoFAVerifyOptions);
+                await server.afterLogin(socket, user);
 
-                    if (user.twofa_last_token !== data.token && verify) {
-                        server.afterLogin(socket, user);
-
-                        await R.exec("UPDATE `user` SET twofa_last_token = ? WHERE id = ? ", [
-                            data.token,
-                            socket.userID,
-                        ]);
-
-                        log.info("auth", `Successfully logged in user ${data.username}. IP=${clientIP}`);
-
-                        callback({
-                            ok: true,
-                            token: User.createJWT(user, server.jwtSecret),
-                        });
-                    } else {
-
-                        log.warn("auth", `Invalid token provided for user ${data.username}. IP=${clientIP}`);
-
-                        callback({
-                            ok: false,
-                            msg: "authInvalidToken",
-                            msgi18n: true,
-                        });
-                    }
-                }
-            } else {
-
-                log.warn("auth", `Incorrect username or password for user ${data.username}. IP=${clientIP}`);
+                log.info("auth", `Successfully logged in user ${data.username}. IP=${clientIP}`);
 
                 callback({
-                    ok: false,
-                    msg: "authIncorrectCreds",
-                    msgi18n: true,
+                    ok: true,
+                    token: User.createJWT(user, server.jwtSecret),
                 });
+            } catch (e) {
+                callbackError(e, callback);
             }
-
         });
 
         // Change Password
@@ -412,11 +389,11 @@ export class MainSocketHandler extends SocketHandler {
             username,
         ]) as User;
 
-        if (user && verifyPassword(password, user.password)) {
+        if (user && await verifyPassword(password, user.password)) {
             // Upgrade the hash to bcrypt
             if (needRehashPassword(user.password)) {
                 await R.exec("UPDATE `user` SET password = ? WHERE id = ? ", [
-                    generatePasswordHash(password),
+                    await generatePasswordHash(password),
                     user.id,
                 ]);
             }

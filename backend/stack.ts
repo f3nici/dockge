@@ -336,6 +336,10 @@ export class Stack {
  * @param isAdd
  */
     async save(isAdd : boolean) {
+        // Reject any name that would escape the stacks directory before creating
+        // anything on disk (validate() also enforces the name charset).
+        Stack.resolveStackDir(this.server, this.name);
+
         let dir = this.path;
 
         // Check if the name is used if isAdd
@@ -799,7 +803,35 @@ export class Stack {
         return stackList;
     }
 
+    /**
+     * Ensure a stack name resolves to a directory strictly inside stacksDir.
+     * Prevents path traversal (e.g. "../../etc") from lifecycle operations that
+     * build filesystem paths from the socket-supplied name.
+     * @param server
+     * @param stackName
+     * @returns The resolved, validated absolute stack directory
+     */
+    static resolveStackDir(server: DockgeServer, stackName: string) : string {
+        const stacksDirResolved = path.resolve(server.stacksDir);
+        const dirResolved = path.resolve(path.join(server.stacksDir, stackName));
+
+        // Must be a strict subdirectory of stacksDir
+        if (dirResolved !== stacksDirResolved && !dirResolved.startsWith(stacksDirResolved + path.sep)) {
+            throw new ValidationError("Invalid stack name");
+        }
+
+        // Disallow the stacksDir itself (empty / dot names)
+        if (dirResolved === stacksDirResolved) {
+            throw new ValidationError("Invalid stack name");
+        }
+
+        return dirResolved;
+    }
+
     static async getStack(server: DockgeServer, stackName: string, useCache = true) : Promise<Stack> {
+        // Reject any name that would escape the stacks directory before touching the filesystem
+        Stack.resolveStackDir(server, stackName);
+
         let dir = path.join(server.stacksDir, stackName);
 
         if (useCache) {

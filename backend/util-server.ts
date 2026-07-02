@@ -93,7 +93,7 @@ export async function doubleCheckPassword(socket : DockgeSocket, currentPassword
         socket.userID,
     ]);
 
-    if (!user || !verifyPassword(currentPassword, user.password)) {
+    if (!user || !await verifyPassword(currentPassword, user.password)) {
         throw new Error("Incorrect current password");
     }
 

@@ -4,21 +4,24 @@ const saltRounds = 10;
 
 /**
  * Hash a password
+ *
+ * Uses the async bcrypt API so the (single-threaded) event loop is not blocked
+ * for the whole cost of the hash while other sockets are waiting.
  * @param {string} password Password to hash
- * @returns {string} Hash
+ * @returns {Promise<string>} Hash
  */
-export function generatePasswordHash(password : string) {
-    return bcrypt.hashSync(password, saltRounds);
+export function generatePasswordHash(password : string) : Promise<string> {
+    return bcrypt.hash(password, saltRounds);
 }
 
 /**
  * Verify a password against a hash
  * @param {string} password Password to verify
  * @param {string} hash Hash to verify against
- * @returns {boolean} Does the password match the hash?
+ * @returns {Promise<boolean>} Does the password match the hash?
  */
-export function verifyPassword(password : string, hash : string) {
-    return bcrypt.compareSync(password, hash);
+export function verifyPassword(password : string, hash : string) : Promise<boolean> {
+    return bcrypt.compare(password, hash);
 }
 
 /**

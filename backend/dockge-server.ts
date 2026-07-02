@@ -612,7 +612,7 @@ export class DockgeServer {
             jwtSecretBean.key = "jwtSecret";
         }
 
-        jwtSecretBean.value = generatePasswordHash(genSecret());
+        jwtSecretBean.value = await generatePasswordHash(genSecret());
         await R.store(jwtSecretBean);
         return jwtSecretBean;
     }

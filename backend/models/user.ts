@@ -13,7 +13,7 @@ export class User extends BeanModel {
      */
     static async resetPassword(userID : number, newPassword : string) {
         await R.exec("UPDATE `user` SET password = ? WHERE id = ? ", [
-            generatePasswordHash(newPassword),
+            await generatePasswordHash(newPassword),
             userID
         ]);
     }
