@@ -8,23 +8,23 @@ import {
 } from "../backend/password-hash";
 
 describe("password hashing", () => {
-    it("generates a bcrypt hash that verifies against the original password", () => {
-        const hash = generatePasswordHash("super-secret");
+    it("generates a bcrypt hash that verifies against the original password", async () => {
+        const hash = await generatePasswordHash("super-secret");
         expect(hash).not.toBe("super-secret");
-        expect(verifyPassword("super-secret", hash)).toBe(true);
+        expect(await verifyPassword("super-secret", hash)).toBe(true);
     });
 
-    it("rejects an incorrect password", () => {
-        const hash = generatePasswordHash("super-secret");
-        expect(verifyPassword("wrong-password", hash)).toBe(false);
+    it("rejects an incorrect password", async () => {
+        const hash = await generatePasswordHash("super-secret");
+        expect(await verifyPassword("wrong-password", hash)).toBe(false);
     });
 
-    it("produces a different hash each time (salted)", () => {
-        expect(generatePasswordHash("same")).not.toBe(generatePasswordHash("same"));
+    it("produces a different hash each time (salted)", async () => {
+        expect(await generatePasswordHash("same")).not.toBe(await generatePasswordHash("same"));
     });
 
-    it("never asks for a rehash", () => {
-        expect(needRehashPassword(generatePasswordHash("x"))).toBe(false);
+    it("never asks for a rehash", async () => {
+        expect(needRehashPassword(await generatePasswordHash("x"))).toBe(false);
     });
 });
 

@@ -42,10 +42,33 @@ export class NotificationManager {
     }
 
     /**
+     * Validate that a server URL is a well-formed http(s) URL.
+     * Rejects other schemes (file:, gopher:, etc.) that could be abused.
+     * @param serverUrl
+     */
+    private assertValidServerUrl(serverUrl: string | undefined): void {
+        if (!serverUrl) {
+            return;
+        }
+        let url: URL;
+        try {
+            url = new URL(serverUrl);
+        } catch (e) {
+            throw new Error("Invalid NTFY server URL");
+        }
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+            throw new Error("NTFY server URL must use http or https");
+        }
+    }
+
+    /**
      * Save notification settings to database
      */
     async saveSettings(settings: NotificationSettings): Promise<void> {
         try {
+            if (settings.enabled) {
+                this.assertValidServerUrl(settings.ntfyServerUrl);
+            }
             await Settings.setSettings("notifications", settings);
             this.settings = settings;
             log.info("notification", "Notification settings saved successfully");
@@ -298,6 +321,7 @@ export class NotificationManager {
         }
 
         // For JSON publishing, POST to the server root URL, not to the topic path
+        this.assertValidServerUrl(this.settings.ntfyServerUrl);
         const url = new URL(this.settings.ntfyServerUrl);
         const isHttps = url.protocol === "https:";
         const httpModule = isHttps ? https : http;

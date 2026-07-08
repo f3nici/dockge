@@ -28,7 +28,9 @@
     <!-- Pull dialog -->
     <BModal v-model="showPullDialog" :title="$t('pull') + ' ' + $tc(artefact.name, 2)" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('pull')" okVariant="primary" :ok-disabled="selectedItems.length === 0" @ok="executeAction(DockerArtefactAction.Pull)">
         <p v-html="$t('imagePullInfoMsg')"></p>
-        <p v-html="pullDialogData.danglingImagesList"></p>
+        <ul>
+            <li v-for="(name, i) in pullDialogData.danglingImages" :key="i">{{ name }}</li>
+        </ul>
     </BModal>
 
     <!-- Delete dialog -->
@@ -101,7 +103,7 @@ const selectedItems = ref<string[]>([]);
 const showPruneDialog = ref(false);
 const pruneDialogData = reactive({ all: false });
 const showPullDialog = ref(false);
-const pullDialogData = reactive({ danglingImagesList: "" });
+const pullDialogData = reactive<{ danglingImages: string[] }>({ danglingImages: [] });
 const showDeleteDialog = ref(false);
 
 // Computed
@@ -178,12 +180,7 @@ function checkOpenPullDialog() {
         .filter(id => dataMap.get(id)!.excludedActions.includes(DockerArtefactAction.Pull));
 
     if (selectedDanglingImages.length > 0) {
-        const danglingImageList = [ "<ul>" ];
-        for (const id of selectedDanglingImages) {
-            danglingImageList.push(`<li>${dataMap.get(id)!.actionIds.pull}</li>`);
-        }
-        danglingImageList.push("</ul>");
-        pullDialogData.danglingImagesList = danglingImageList.join("");
+        pullDialogData.danglingImages = selectedDanglingImages.map(id => dataMap.get(id)!.actionIds.pull);
 
         selectedItems.value = selectedItems.value.filter(id => !selectedDanglingImages.includes(id));
 
