@@ -7,6 +7,10 @@ export class ImageRepository {
 
     private imageInfos: Map<string, Map<string, ImageInfo>> = new Map();
 
+    private warnedImages: Set<string> = new Set();
+
+    private skopeoMissingWarned = false;
+
     resetStack(stack: string) {
         this.imageInfos.delete(stack);
     }
@@ -25,9 +29,22 @@ export class ImageRepository {
         // Skip remote digest check for digest-pinned images
         // (they're explicitly pinned to a specific version, no update possible)
         if (!!imageInfo.localDigest && !this.isDigestPinned(image)) {
-            const resRemote = await childProcessAsync.spawn("skopeo", [ "inspect", "--no-tags", "--format", "{{ .Digest }}", "docker://" + image ], {
-                encoding: "utf-8",
-            });
+            let resRemote;
+            try {
+                resRemote = await childProcessAsync.spawn("skopeo", [ "inspect", "--no-tags", "--format", "{{ .Digest }}", "docker://" + image ], {
+                    encoding: "utf-8",
+                });
+            } catch (e) {
+                // skopeo is optional: without it, remote update checks are skipped
+                if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+                    if (!this.skopeoMissingWarned) {
+                        this.skopeoMissingWarned = true;
+                        log.warn("update", "skopeo binary not found, remote image update checks are disabled");
+                    }
+                    return imageInfo;
+                }
+                throw e;
+            }
 
             let remoteDigest = "";
             if (resRemote.stdout) {
@@ -44,7 +61,9 @@ export class ImageRepository {
     async updateLocal(stack: string, service: string, image: string): Promise<ImageInfo> {
         let imageInfo = this.getImageInfo(stack, service, image);
 
-        const resLocal = await childProcessAsync.spawn("docker", [ "inspect", "--format", "json", image ], {
+        // "docker image inspect" instead of "docker inspect": a container with
+        // the same name as the image would otherwise shadow the image lookup
+        const resLocal = await childProcessAsync.spawn("docker", [ "image", "inspect", "--format", "json", image ], {
             encoding: "utf-8",
         });
 
@@ -69,7 +88,13 @@ export class ImageRepository {
         }
 
         if (!(!!localDigest && !!localId)) {
-            log.warn("updateLocal", "Image '" + image + "': Local id '" + localId + "' digest '" + localDigest + "'");
+            // Warn only once per image, otherwise this repeats on every poll
+            if (!this.warnedImages.has(image)) {
+                this.warnedImages.add(image);
+                log.warn("updateLocal", "Image '" + image + "': Local id '" + localId + "' digest '" + localDigest + "'");
+            }
+        } else {
+            this.warnedImages.delete(image);
         }
 
         imageInfo = new ImageInfo(imageInfo.remoteDigest, localDigest, localId);
