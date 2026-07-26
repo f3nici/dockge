@@ -12,7 +12,7 @@ For general information about Dockge, please refer to the [original project](htt
 
 ### Quick Start with Docker Compose
 
-1. Navigate to a directory where you want to store your Dockge setup (recommende to use a fast drive):
+1. Navigate to a directory where you want to store your Dockge setup (recommened to use a fast drive):
 ```bash
 cd /path/to/your/docker/setup
 ```
