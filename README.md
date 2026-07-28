@@ -64,6 +64,9 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **Dockge Update Checker** - Now checks for updates to dockge
 - **Clear Console Button** - Button to clear the console
 - **Generate Password Button** - Next to .env, creates a 32 random string to use for SECRET varibles or passwords.
+- **Agent Console** - Open a console directly on any online agent from the dashboard
+- **Full-Width Log Option** - Appearance setting to show the stack log full width for easier scanning
+- **Scheduled Auto Update** - Configurable cron schedule to auto update running stacks, an "Update now" button, and per-stack opt-out via `x-dockge.skip-auto-update`
 
 ## 📖 Usage
 

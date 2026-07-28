@@ -130,6 +130,20 @@ export class Stack {
         return this._status == RUNNING || this._status == RUNNING_AND_EXITED || this._status == UNHEALTHY;
     }
 
+    /**
+     * Whether this stack opts out of scheduled auto-updates via
+     * `x-dockge.skip-auto-update: true` in its compose file.
+     */
+    get skipAutoUpdate(): boolean {
+        try {
+            return this.composeDocument.xDockge.skipAutoUpdate;
+        } catch (e) {
+            // If the compose file cannot be parsed, err on the side of not touching it
+            log.warn("skipAutoUpdate", `Failed to read x-dockge for stack ${this.name}: ${e}`);
+            return true;
+        }
+    }
+
     async validate() {
         // Check name, allows [a-z][0-9] _ - only
         if (!this.name.match(/^[a-z0-9_-]+$/)) {
@@ -944,8 +958,10 @@ export class Stack {
         return exitCode;
     }
 
-    async update(socket: DockgeSocket, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async update(socket: DockgeSocket | undefined, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
+        // socket is optional so scheduled auto-updates can run without a client attached.
+        // A missing socket means the local (master) endpoint, whose name is the empty string.
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to pull, please check the terminal output for more information.");

@@ -2,7 +2,10 @@
     <transition name="slide-fade" appear>
         <div v-if="!processing">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h1 class="mb-0">{{ $t("console") }}</h1>
+                <h1 class="mb-0">
+                    {{ $t("console") }}
+                    <span v-if="endpoint" class="agent-name">({{ agentName }})</span>
+                </h1>
                 <button v-if="enableConsole" class="btn btn-outline-secondary" @click="clearConsole">
                     <font-awesome-icon icon="trash" class="me-1" /> Clear
                 </button>
@@ -34,6 +37,9 @@ export default {
         endpoint() {
             return this.$route.params.endpoint || "";
         },
+        agentName() {
+            return this.$root.getAgentName(this.endpoint);
+        },
     },
     mounted() {
         this.$root.emitAgent(this.endpoint, "checkMainTerminal", (res) => {
@@ -55,7 +61,14 @@ export default {
 </script>
 
 <style scoped lang="scss">
+@import "../styles/vars.scss";
+
 .terminal {
     height: 410px;
+}
+
+.agent-name {
+    font-size: 13px;
+    color: $dark-font-color3;
 }
 </style>

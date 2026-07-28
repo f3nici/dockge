@@ -404,6 +404,14 @@ export class ComposeDockge extends ComposeMap {
     get urls(): ComposeArray {
         return this.getComposeArray("urls");
     }
+
+    /**
+     * When set to true via `x-dockge.skip-auto-update`, this stack is excluded
+     * from the scheduled auto-update run.
+     */
+    get skipAutoUpdate(): boolean {
+        return convertToBoolean(this.get("skip-auto-update"), false) as boolean;
+    }
 }
 
 export class ComposeLabels extends ComposeNode {

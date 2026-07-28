@@ -14,6 +14,23 @@
                 </option>
             </select>
         </div>
+        <!-- Full Width Log -->
+        <div class="my-4">
+            <label class="form-label">{{ $t("stackLogLayout") }}</label>
+            <div class="form-check form-switch">
+                <input
+                    id="fullWidthLog"
+                    v-model="$root.fullWidthLog"
+                    class="form-check-input"
+                    type="checkbox"
+                />
+                <label class="form-check-label" for="fullWidthLog">
+                    {{ $t("fullWidthLog") }}
+                </label>
+            </div>
+            <div class="form-text">{{ $t("fullWidthLogDescription") }}</div>
+        </div>
+
         <div v-show="false" class="my-4">
             <label for="timezone" class="form-label">{{ $t("Theme") }}</label>
             <div>

@@ -131,6 +131,46 @@ describe("ComposeLabels", () => {
     });
 });
 
+describe("ComposeDockge x-dockge", () => {
+    it("defaults skipAutoUpdate to false when x-dockge is absent", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        expect(doc.xDockge.skipAutoUpdate).toBe(false);
+    });
+
+    it("reads skip-auto-update: true", () => {
+        const yaml = `x-dockge:
+  skip-auto-update: true
+services:
+  web:
+    image: nginx
+`;
+        const doc = new ComposeDocument(yaml);
+        expect(doc.xDockge.skipAutoUpdate).toBe(true);
+    });
+
+    it("reads skip-auto-update given as the string \"true\"", () => {
+        const yaml = `x-dockge:
+  skip-auto-update: "true"
+services:
+  web:
+    image: nginx
+`;
+        const doc = new ComposeDocument(yaml);
+        expect(doc.xDockge.skipAutoUpdate).toBe(true);
+    });
+
+    it("treats skip-auto-update: false as not skipped", () => {
+        const yaml = `x-dockge:
+  skip-auto-update: false
+services:
+  web:
+    image: nginx
+`;
+        const doc = new ComposeDocument(yaml);
+        expect(doc.xDockge.skipAutoUpdate).toBe(false);
+    });
+});
+
 describe("environment variable substitution", () => {
     it("substitutes variables from the env file in envsubst data", () => {
         const yaml = `services:
