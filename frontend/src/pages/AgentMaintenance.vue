@@ -43,6 +43,30 @@
 
             <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" />
 
+            <!-- Interactive console for this agent -->
+            <div class="shadow-box big-padding mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4 class="mb-0">{{ $t("console") }}</h4>
+                    <button v-if="enableConsole" class="btn btn-outline-secondary btn-sm" @click="clearConsole">
+                        <font-awesome-icon icon="trash" class="me-1" /> Clear
+                    </button>
+                </div>
+
+                <Terminal
+                    v-if="enableConsole"
+                    ref="consoleTerminal"
+                    class="terminal"
+                    :rows="15"
+                    mode="mainTerminal"
+                    name="console"
+                    :endpoint="endpoint"
+                ></Terminal>
+
+                <div v-else class="text-muted mb-0">
+                    {{ $t("Console is not enabled") }}
+                </div>
+            </div>
+
             <div class="shadow-box mt-3">
                 <b-tabs v-model="activeArtefactIndex" nav-item-class="artefact-tab me-2" active-nav-item-class="active-artefact-tab" pills>
                     <template v-for="info in Object.values(DockerArtefactInfos)" :key="info.name">
@@ -86,6 +110,8 @@ export default defineComponent({
         const processing = ref(false);
         const showSystemPruneDialog = ref(false);
         const activeArtefactIndex = ref(0);
+        const enableConsole = ref(false);
+        const consoleTerminal = ref();
         const systemPruneData = reactive({
             all: false,
             volumes: false
@@ -140,7 +166,19 @@ export default defineComponent({
             }
         }
 
+        function clearConsole() {
+            // Clear the server-side buffer, then the local terminal display
+            root.emitAgent(endpoint.value, "clearTerminal", "console", () => {});
+            if (consoleTerminal.value) {
+                consoleTerminal.value.clearTerminal();
+            }
+        }
+
         onMounted(() => {
+            // Check whether the interactive console is enabled on this agent
+            root.emitAgent(endpoint.value, "checkMainTerminal", (res) => {
+                enableConsole.value = res.ok;
+            });
         });
 
         // Provide
@@ -158,6 +196,9 @@ export default defineComponent({
             name,
             terminalName,
             progressTerminal,
+            enableConsole,
+            consoleTerminal,
+            clearConsole,
             resetSystemPrune,
             systemPrune,
             startPruneAction: startAction,
@@ -181,6 +222,10 @@ export default defineComponent({
     border-bottom: 4px solid $primary;
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
+}
+
+.terminal {
+    height: 320px;
 }
 
 </style>

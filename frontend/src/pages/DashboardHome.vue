@@ -41,14 +41,9 @@ stackStatusList<template>
                                     <font-awesome-icon v-if="endpoint !== ''" class="ms-3 action-icon" icon="trash" @click="showRemoveAgentDialog[agent.endpoint] = !showRemoveAgentDialog[agent.endpoint]" />
                                 </div>
 
-                                <div v-if="agentStatusList[endpoint] === 'online'" class="d-flex gap-2">
-                                    <router-link class="btn btn-sm btn-normal" data-toggle="tooltip" :title="$t('tooltipAgentConsole')" :to="getConsoleRouteLink(agent)">
-                                        <font-awesome-icon icon="terminal" class="me-2" />{{ $t("console") }}
-                                    </router-link>
-                                    <router-link class="btn btn-sm btn-normal" data-toggle="tooltip" :title="$t('tooltipAgentMaintenance')" :to="getAgentRouteLink(agent)">
-                                        <font-awesome-icon icon="wrench" class="me-2" />{{ $t("maintenance") }}
-                                    </router-link>
-                                </div>
+                                <router-link v-if="agentStatusList[endpoint] === 'online'" class="btn btn-sm btn-normal" data-toggle="tooltip" :title="$t('tooltipAgentMaintenance')" :to="getAgentRouteLink(agent)">
+                                    <font-awesome-icon icon="wrench" class="me-2" />{{ $t("maintenance") }}
+                                </router-link>
                             </div>
 
                             <div class="mb-3">
@@ -238,14 +233,6 @@ export default defineComponent({
                 return `/agent/${agent.endpoint}`;
             } else {
                 return "/agent";
-            }
-        },
-
-        getConsoleRouteLink(agent) {
-            if (!!agent.endpoint) {
-                return `/console/${agent.endpoint}`;
-            } else {
-                return "/console";
             }
         },
 

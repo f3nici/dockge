@@ -135,6 +135,20 @@
 
             <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" />
 
+            <!-- Combined Terminal Output (full width, above the containers/editor) -->
+            <div v-if="stack.isManagedByDockge && fullWidthLog" v-show="!isEditMode" class="mt-3">
+                <h4 class="mb-3">{{ $t("log") }}</h4>
+                <Terminal
+                    ref="combinedTerminal"
+                    class="mb-3 terminal"
+                    :name="combinedTerminalName"
+                    :endpoint="endpoint"
+                    :rows="combinedTerminalRows"
+                    :cols="combinedTerminalCols"
+                    style="height: 400px;"
+                ></Terminal>
+            </div>
+
             <div v-if="stack.isManagedByDockge" class="row mt-3">
                 <div class="col-xl-6">
                     <!-- General -->
@@ -302,20 +316,6 @@
                         <prism-editor v-if="false" v-model="yamlConfig" class="yaml-editor" :highlight="highlighter" line-numbers @input="yamlCodeChange"></prism-editor>
                     </div>-->
                 </div>
-            </div>
-
-            <!-- Combined Terminal Output (full width, below the editor) -->
-            <div v-if="stack.isManagedByDockge && fullWidthLog" v-show="!isEditMode" class="mt-3">
-                <h4 class="mb-3">{{ $t("log") }}</h4>
-                <Terminal
-                    ref="combinedTerminal"
-                    class="mb-3 terminal"
-                    :name="combinedTerminalName"
-                    :endpoint="endpoint"
-                    :rows="combinedTerminalRows"
-                    :cols="combinedTerminalCols"
-                    style="height: 400px;"
-                ></Terminal>
             </div>
 
             <div v-if="!stack.isManagedByDockge && !processing">
