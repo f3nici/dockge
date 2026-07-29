@@ -3,6 +3,7 @@ import { DockgeServer } from "../dockge-server";
 import { callbackError, callbackResult, checkLogin, DockgeSocket, ValidationError } from "../util-server";
 import { Stack } from "../stack";
 import { AgentSocket } from "../../common/agent-socket";
+import { log } from "../log";
 
 export class DockerSocketHandler extends AgentSocketHandler {
     create(socket : DockgeSocket, server : DockgeServer, agentSocket : AgentSocket) {
@@ -255,6 +256,36 @@ export class DockerSocketHandler extends AgentSocketHandler {
                     msg: "checkedImageUpdates",
                     msgi18n: true,
                     stack: await stack.getData(socket.endpoint),
+                }, callback);
+
+                server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // checkAllStacksImageUpdates - force an on-demand remote image update check for every managed stack
+        agentSocket.on("checkAllStacksImageUpdates", async (callback) => {
+            try {
+                checkLogin(socket);
+
+                const stackList = await Stack.getStackList(server, true);
+                for (const stack of stackList.values()) {
+                    if (!stack.isManagedByDockge) {
+                        continue;
+                    }
+                    try {
+                        await stack.updateImageInfos();
+                        await stack.updateData();
+                    } catch (e) {
+                        log.error("checkAllStacksImageUpdates", `Stack "${stack.name}": ${e}`);
+                    }
+                }
+
+                callbackResult({
+                    ok: true,
+                    msg: "checkedImageUpdates",
+                    msgi18n: true,
                 }, callback);
 
                 server.sendStackList(true);

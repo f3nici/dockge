@@ -162,6 +162,7 @@
     "checkImageUpdates": "Check for image updates",
     "checkForUpdates": "Check for Updates",
     "tooltipCheckImageUpdates": "Check the registry now for newer images for this stack",
+    "tooltipCheckAllImageUpdates": "Check the registry now for newer images for all stacks",
     "checkedImageUpdates": "Checked for image updates",
     "imageUpdatesAvailable": "Update available",
     "changelogLink": "Link to changelog",
