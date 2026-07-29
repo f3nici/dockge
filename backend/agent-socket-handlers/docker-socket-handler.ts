@@ -139,6 +139,33 @@ export class DockerSocketHandler extends AgentSocketHandler {
             }
         });
 
+        // setStackAutoUpdate
+        agentSocket.on("setStackAutoUpdate", async (stackName : unknown, enabled : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                if (typeof(stackName) !== "string") {
+                    throw new ValidationError("Stack name must be a string");
+                }
+
+                if (typeof(enabled) !== "boolean") {
+                    throw new ValidationError("enabled must be a boolean");
+                }
+
+                const stack = await Stack.getStack(server, stackName);
+                await stack.setAutoUpdate(enabled);
+
+                callbackResult({
+                    ok: true,
+                    msg: enabled ? "Auto update enabled" : "Auto update disabled",
+                }, callback);
+
+                server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
         // startStack
         agentSocket.on("startStack", async (stackName : unknown, callback) => {
             try {

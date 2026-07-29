@@ -66,7 +66,7 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **Generate Password Button** - Next to .env, creates a 32 random string to use for SECRET varibles or passwords.
 - **Agent Console** - Open a console directly on any online agent from the dashboard
 - **Full-Width Log Option** - Appearance setting to show the stack log full width for easier scanning
-- **Scheduled Auto Update** - Configurable cron schedule to auto update running stacks, an "Update now" button, and per-stack opt-out via `x-dockge.skip-auto-update`
+- **Scheduled Auto Update** - Opt-in per stack: toggle Auto Update on a stack (or set `x-dockge.auto-update: true`) and it updates on a configurable cron schedule. Includes an "Update now" button. Stacks are never auto-updated unless enabled.
 
 ## 📖 Usage
 

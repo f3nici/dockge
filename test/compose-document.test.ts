@@ -132,42 +132,42 @@ describe("ComposeLabels", () => {
 });
 
 describe("ComposeDockge x-dockge", () => {
-    it("defaults skipAutoUpdate to false when x-dockge is absent", () => {
+    it("defaults autoUpdate to false when x-dockge is absent (opt-in)", () => {
         const doc = new ComposeDocument(sampleYAML);
-        expect(doc.xDockge.skipAutoUpdate).toBe(false);
+        expect(doc.xDockge.autoUpdate).toBe(false);
     });
 
-    it("reads skip-auto-update: true", () => {
+    it("reads auto-update: true", () => {
         const yaml = `x-dockge:
-  skip-auto-update: true
+  auto-update: true
 services:
   web:
     image: nginx
 `;
         const doc = new ComposeDocument(yaml);
-        expect(doc.xDockge.skipAutoUpdate).toBe(true);
+        expect(doc.xDockge.autoUpdate).toBe(true);
     });
 
-    it("reads skip-auto-update given as the string \"true\"", () => {
+    it("reads auto-update given as the string \"true\"", () => {
         const yaml = `x-dockge:
-  skip-auto-update: "true"
+  auto-update: "true"
 services:
   web:
     image: nginx
 `;
         const doc = new ComposeDocument(yaml);
-        expect(doc.xDockge.skipAutoUpdate).toBe(true);
+        expect(doc.xDockge.autoUpdate).toBe(true);
     });
 
-    it("treats skip-auto-update: false as not skipped", () => {
+    it("treats auto-update: false as not enabled", () => {
         const yaml = `x-dockge:
-  skip-auto-update: false
+  auto-update: false
 services:
   web:
     image: nginx
 `;
         const doc = new ComposeDocument(yaml);
-        expect(doc.xDockge.skipAutoUpdate).toBe(false);
+        expect(doc.xDockge.autoUpdate).toBe(false);
     });
 });
 

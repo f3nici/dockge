@@ -109,6 +109,23 @@
                 </div>
             </div>
 
+            <!-- Auto Update (per-stack opt-in) -->
+            <div v-if="!isAdd && stack.isManagedByDockge" class="mb-3">
+                <div class="form-check form-switch">
+                    <input
+                        id="stackAutoUpdate"
+                        v-model="stack.autoUpdate"
+                        class="form-check-input"
+                        type="checkbox"
+                        :disabled="processing"
+                        @change="toggleAutoUpdate"
+                    />
+                    <label class="form-check-label" for="stackAutoUpdate">
+                        <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("autoUpdateStack") }}
+                    </label>
+                </div>
+            </div>
+
             <!-- URLs -->
             <div v-if="urls.length > 0" class="mb-3">
                 <a v-for="(url, index) in urls" :key="index" target="_blank" :href="url.url">
@@ -659,6 +676,7 @@ export default defineComponent({
                 started: false,
                 imageUpdatesAvailable: false,
                 tags: [],
+                autoUpdate: false,
                 composeYAML: composeYAML,
                 composeENV: composeENV,
                 isManagedByDockge: true,
@@ -712,6 +730,21 @@ export default defineComponent({
         removeTag(index) {
             this.stack.tags.splice(index, 1);
             this.saveTags();
+        },
+
+        toggleAutoUpdate() {
+            // stack.autoUpdate has already been flipped by v-model; persist the new value.
+            const enabled = this.stack.autoUpdate;
+            this.$root.emitAgent(this.endpoint, "setStackAutoUpdate", this.stack.name, enabled, (res) => {
+                if (res.ok) {
+                    this.$root.toastSuccess(res.msg);
+                    this.$root.emitAgent(this.endpoint, "requestStackList");
+                } else {
+                    // Revert the toggle if the server rejected the change
+                    this.stack.autoUpdate = !enabled;
+                    this.$root.toastError(res.msg);
+                }
+            });
         },
 
         saveTags() {

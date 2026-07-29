@@ -406,11 +406,13 @@ export class ComposeDockge extends ComposeMap {
     }
 
     /**
-     * When set to true via `x-dockge.skip-auto-update`, this stack is excluded
-     * from the scheduled auto-update run.
+     * Auto update is opt-in: a stack is only included in the scheduled
+     * auto-update run when it explicitly enables it, either via the per-stack
+     * toggle (stored in metadata) or `x-dockge.auto-update: true` in the compose
+     * file.
      */
-    get skipAutoUpdate(): boolean {
-        return convertToBoolean(this.get("skip-auto-update"), false) as boolean;
+    get autoUpdate(): boolean {
+        return convertToBoolean(this.get("auto-update"), false) as boolean;
     }
 }
 

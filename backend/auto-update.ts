@@ -102,8 +102,9 @@ export class AutoUpdateManager {
                     continue;
                 }
 
-                if (stack.skipAutoUpdate) {
-                    log.info("auto-update", `Skipping stack "${stack.name}" (skip-auto-update)`);
+                // Opt-in only: skip stacks that have not enabled auto update
+                if (!stack.autoUpdate) {
+                    log.debug("auto-update", `Skipping stack "${stack.name}" (auto update not enabled)`);
                     continue;
                 }
 
