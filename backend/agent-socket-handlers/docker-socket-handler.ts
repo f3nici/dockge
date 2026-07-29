@@ -235,6 +235,34 @@ export class DockerSocketHandler extends AgentSocketHandler {
             }
         });
 
+        // checkStackImageUpdates - force an on-demand remote image update check
+        agentSocket.on("checkStackImageUpdates", async (stackName : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                if (typeof(stackName) !== "string") {
+                    throw new ValidationError("Stack name must be a string");
+                }
+
+                const stack = await Stack.getStack(server, stackName);
+
+                // Refresh remote digests, then recompute the update-available flags
+                await stack.updateImageInfos();
+                await stack.updateData();
+
+                callbackResult({
+                    ok: true,
+                    msg: "checkedImageUpdates",
+                    msgi18n: true,
+                    stack: await stack.getData(socket.endpoint),
+                }, callback);
+
+                server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
         // updateStack
         agentSocket.on("updateStack", async (stackName: unknown, pruneAfterUpdate: unknown, pruneAllAfterUpdate: unknown, callback) => {
             try {

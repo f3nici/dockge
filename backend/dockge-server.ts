@@ -439,10 +439,10 @@ export class DockgeServer {
                 5 * 60 * 1000
             );
 
-            // Start first ImageUpdateCheck 1 min. after startup, and then every 6 hours
+            // Start first ImageUpdateCheck 1 min. after startup, and then every 3 hours
             setTimeout(
                 () => {
-                    this.updateAvailableStackImageUpdates(6 * 60 * 60 * 1000);
+                    this.updateAvailableStackImageUpdates(3 * 60 * 60 * 1000);
                 },
                 60 * 1000
             );

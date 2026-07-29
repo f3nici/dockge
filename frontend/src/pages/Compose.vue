@@ -36,6 +36,11 @@
                         <span class="d-none d-xl-inline">{{ $t("restartStack") }}</span>
                     </button>
 
+                    <button v-if="!isEditMode" class="btn btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipCheckImageUpdates')" :disabled="processing || checkingImageUpdates" @click="checkImageUpdates">
+                        <font-awesome-icon icon="arrows-rotate" :spin="checkingImageUpdates" class="me-1" />
+                        <span class="d-none d-xl-inline">{{ $t("checkForUpdates") }}</span>
+                    </button>
+
                     <button v-if="!isEditMode" class="btn me-1" data-toggle="tooltip" :title="$t('tooltipStackUpdate')" :class="stack.imageUpdatesAvailable ? 'btn-info' : 'btn-normal'" :disabled="processing" @click="showUpdateDialog = true">
                         <font-awesome-icon icon="cloud-arrow-down" class="me-1" />
                         <span class="d-none d-xl-inline">{{ $t("updateStack") }}</span>
@@ -462,6 +467,7 @@ export default defineComponent({
             serviceStats: undefined,
             isEditMode: false,
             showDeleteDialog: false,
+            checkingImageUpdates: false,
             newContainerName: "",
             stopUpdateTimeouts: false,
             showUpdateDialog: false,
@@ -926,6 +932,17 @@ export default defineComponent({
 
             this.$root.emitAgent(this.endpoint, "restartStack", this.stack.name, (res) => {
                 this.stopComposeAction();
+                this.$root.toastRes(res);
+            });
+        },
+
+        checkImageUpdates() {
+            this.checkingImageUpdates = true;
+            this.$root.emitAgent(this.endpoint, "checkStackImageUpdates", this.stack.name, (res) => {
+                this.checkingImageUpdates = false;
+                if (res.ok && res.stack) {
+                    this.stack = res.stack;
+                }
                 this.$root.toastRes(res);
             });
         },
