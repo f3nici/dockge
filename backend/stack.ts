@@ -42,6 +42,7 @@ export class Stack {
     protected server: DockgeServer;
     protected _firstUpdate: boolean = true;
     protected _tags: string[] = [];
+    protected _autoUpdate: boolean = false;
     protected _tagsLoaded: boolean = false;
 
     protected combinedTerminal? : Terminal;
@@ -112,6 +113,7 @@ export class Stack {
             recreateNecessary: this._recreateNecessary,
             imageUpdatesAvailable: this._imageUpdatesAvailable,
             tags: this.tags,
+            autoUpdate: this.autoUpdate,
             isManagedByDockge: this.isManagedByDockge,
             composeFileName: this._composeFileName,
             endpoint
@@ -128,6 +130,39 @@ export class Stack {
 
     get isStarted(): boolean {
         return this._status == RUNNING || this._status == RUNNING_AND_EXITED || this._status == UNHEALTHY;
+    }
+
+    /**
+     * Whether this stack opts in to scheduled auto-updates. Opt-in only: nothing
+     * is auto-updated unless enabled via the per-stack toggle (metadata) or
+     * `x-dockge.auto-update: true` in the compose file.
+     */
+    get autoUpdate(): boolean {
+        if (!this._tagsLoaded) {
+            this.loadMetadata();
+        }
+
+        if (this._autoUpdate) {
+            return true;
+        }
+
+        // Also honour an explicit opt-in in the compose file
+        try {
+            return this.composeDocument.xDockge.autoUpdate;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    /**
+     * Enable or disable auto update for this stack (persisted in metadata).
+     */
+    async setAutoUpdate(enabled: boolean) : Promise<void> {
+        if (!this._tagsLoaded) {
+            this.loadMetadata();
+        }
+        this._autoUpdate = enabled;
+        await this.saveMetadata();
     }
 
     async validate() {
@@ -268,12 +303,15 @@ export class Stack {
             if (fs.existsSync(this.metadataPath)) {
                 const metadata = JSON.parse(fs.readFileSync(this.metadataPath, "utf-8"));
                 this._tags = Array.isArray(metadata.tags) ? metadata.tags : [];
+                this._autoUpdate = metadata.autoUpdate === true;
             } else {
                 this._tags = [];
+                this._autoUpdate = false;
             }
         } catch (e) {
             log.error("loadMetadata", `Failed to load metadata for stack ${this.name}: ${e}`);
             this._tags = [];
+            this._autoUpdate = false;
         }
         this._tagsLoaded = true;
     }
@@ -289,7 +327,8 @@ export class Stack {
             }
 
             const metadata = {
-                tags: this._tags
+                tags: this._tags,
+                autoUpdate: this._autoUpdate
             };
             await fsAsync.writeFile(this.metadataPath, JSON.stringify(metadata, null, 2));
         } catch (e) {
@@ -305,6 +344,11 @@ export class Stack {
         // Validate tags
         if (!Array.isArray(tags)) {
             throw new ValidationError("Tags must be an array");
+        }
+
+        // Load existing metadata first so we don't clobber other fields (e.g. autoUpdate)
+        if (!this._tagsLoaded) {
+            this.loadMetadata();
         }
 
         // Filter out empty tags and trim whitespace
@@ -944,8 +988,10 @@ export class Stack {
         return exitCode;
     }
 
-    async update(socket: DockgeSocket, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async update(socket: DockgeSocket | undefined, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
+        // socket is optional so scheduled auto-updates can run without a client attached.
+        // A missing socket means the local (master) endpoint, whose name is the empty string.
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to pull, please check the terminal output for more information.");

@@ -3,6 +3,7 @@ import { DockgeServer } from "../dockge-server";
 import { callbackError, callbackResult, checkLogin, DockgeSocket, ValidationError } from "../util-server";
 import { Stack } from "../stack";
 import { AgentSocket } from "../../common/agent-socket";
+import { log } from "../log";
 
 export class DockerSocketHandler extends AgentSocketHandler {
     create(socket : DockgeSocket, server : DockgeServer, agentSocket : AgentSocket) {
@@ -139,6 +140,33 @@ export class DockerSocketHandler extends AgentSocketHandler {
             }
         });
 
+        // setStackAutoUpdate
+        agentSocket.on("setStackAutoUpdate", async (stackName : unknown, enabled : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                if (typeof(stackName) !== "string") {
+                    throw new ValidationError("Stack name must be a string");
+                }
+
+                if (typeof(enabled) !== "boolean") {
+                    throw new ValidationError("enabled must be a boolean");
+                }
+
+                const stack = await Stack.getStack(server, stackName);
+                await stack.setAutoUpdate(enabled);
+
+                callbackResult({
+                    ok: true,
+                    msg: enabled ? "Auto update enabled" : "Auto update disabled",
+                }, callback);
+
+                server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
         // startStack
         agentSocket.on("startStack", async (stackName : unknown, callback) => {
             try {
@@ -202,6 +230,64 @@ export class DockerSocketHandler extends AgentSocketHandler {
                     msg: "Restarted",
                     msgi18n: true,
                 }, callback);
+                server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // checkStackImageUpdates - force an on-demand remote image update check
+        agentSocket.on("checkStackImageUpdates", async (stackName : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                if (typeof(stackName) !== "string") {
+                    throw new ValidationError("Stack name must be a string");
+                }
+
+                const stack = await Stack.getStack(server, stackName);
+
+                // Refresh remote digests, then recompute the update-available flags
+                await stack.updateImageInfos();
+                await stack.updateData();
+
+                callbackResult({
+                    ok: true,
+                    msg: "checkedImageUpdates",
+                    msgi18n: true,
+                    stack: await stack.getData(socket.endpoint),
+                }, callback);
+
+                server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // checkAllStacksImageUpdates - force an on-demand remote image update check for every managed stack
+        agentSocket.on("checkAllStacksImageUpdates", async (callback) => {
+            try {
+                checkLogin(socket);
+
+                const stackList = await Stack.getStackList(server, true);
+                for (const stack of stackList.values()) {
+                    if (!stack.isManagedByDockge) {
+                        continue;
+                    }
+                    try {
+                        await stack.updateImageInfos();
+                        await stack.updateData();
+                    } catch (e) {
+                        log.error("checkAllStacksImageUpdates", `Stack "${stack.name}": ${e}`);
+                    }
+                }
+
+                callbackResult({
+                    ok: true,
+                    msg: "checkedImageUpdates",
+                    msgi18n: true,
+                }, callback);
+
                 server.sendStackList(true);
             } catch (e) {
                 callbackError(e, callback);

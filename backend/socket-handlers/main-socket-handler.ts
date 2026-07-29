@@ -19,6 +19,7 @@ import { passwordStrength } from "check-password-strength";
 import jwt from "jsonwebtoken";
 import { Settings } from "../settings";
 import { Stack } from "../stack";
+import { AutoUpdateManager } from "../auto-update";
 
 export class MainSocketHandler extends SocketHandler {
     create(socket : DockgeSocket, server : DockgeServer) {
@@ -249,7 +250,23 @@ export class MainSocketHandler extends SocketHandler {
                     await doubleCheckPassword(socket, currentPassword);
                 }
 
+                // Validate the auto-update cron expression before saving so an invalid
+                // pattern never lands in the database.
+                if (data.autoUpdateEnabled && data.autoUpdateCron) {
+                    if (typeof data.autoUpdateCron !== "string") {
+                        throw new ValidationError("Auto update cron must be a string");
+                    }
+                    try {
+                        AutoUpdateManager.validateCron(data.autoUpdateCron);
+                    } catch (e) {
+                        throw new ValidationError("Invalid auto update cron expression");
+                    }
+                }
+
                 await Settings.setSettings("general", data);
+
+                // Reschedule (or cancel) the auto-update job to reflect the new settings
+                await server.autoUpdateManager.schedule();
 
                 callback({
                     ok: true,
@@ -265,6 +282,23 @@ export class MainSocketHandler extends SocketHandler {
                         msg: e.message,
                     });
                 }
+            }
+        });
+
+        // Trigger an auto update run immediately ("Update now")
+        socket.on("triggerAutoUpdate", async (callback) => {
+            try {
+                checkLogin(socket);
+
+                const updated = await server.autoUpdateManager.runNow();
+
+                callback({
+                    ok: true,
+                    msg: `Auto update finished. Updated ${updated.length} stack(s).`,
+                    updated,
+                });
+            } catch (e) {
+                callbackError(e, callback);
             }
         });
 

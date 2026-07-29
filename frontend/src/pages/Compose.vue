@@ -36,6 +36,11 @@
                         <span class="d-none d-xl-inline">{{ $t("restartStack") }}</span>
                     </button>
 
+                    <button v-if="!isEditMode" class="btn btn-normal me-1" data-toggle="tooltip" :title="$t('tooltipCheckImageUpdates')" :disabled="processing || checkingImageUpdates" @click="checkImageUpdates">
+                        <font-awesome-icon icon="arrows-rotate" :spin="checkingImageUpdates" class="me-1" />
+                        <span class="d-none d-xl-inline">{{ $t("checkForUpdates") }}</span>
+                    </button>
+
                     <button v-if="!isEditMode" class="btn me-1" data-toggle="tooltip" :title="$t('tooltipStackUpdate')" :class="stack.imageUpdatesAvailable ? 'btn-info' : 'btn-normal'" :disabled="processing" @click="showUpdateDialog = true">
                         <font-awesome-icon icon="cloud-arrow-down" class="me-1" />
                         <span class="d-none d-xl-inline">{{ $t("updateStack") }}</span>
@@ -109,6 +114,23 @@
                 </div>
             </div>
 
+            <!-- Auto Update (per-stack opt-in) -->
+            <div v-if="!isAdd && stack.isManagedByDockge" class="mb-3">
+                <div class="form-check form-switch">
+                    <input
+                        id="stackAutoUpdate"
+                        v-model="stack.autoUpdate"
+                        class="form-check-input"
+                        type="checkbox"
+                        :disabled="processing"
+                        @change="toggleAutoUpdate"
+                    />
+                    <label class="form-check-label" for="stackAutoUpdate">
+                        <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("autoUpdateStack") }}
+                    </label>
+                </div>
+            </div>
+
             <!-- URLs -->
             <div v-if="urls.length > 0" class="mb-3">
                 <a v-for="(url, index) in urls" :key="index" target="_blank" :href="url.url">
@@ -117,6 +139,20 @@
             </div>
 
             <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" />
+
+            <!-- Combined Terminal Output (full width, above the containers/editor) -->
+            <div v-if="stack.isManagedByDockge && fullWidthLog" v-show="!isEditMode" class="mt-3">
+                <h4 class="mb-3">{{ $t("log") }}</h4>
+                <Terminal
+                    ref="combinedTerminal"
+                    class="mb-3 terminal"
+                    :name="combinedTerminalName"
+                    :endpoint="endpoint"
+                    :rows="combinedTerminalRows"
+                    :cols="combinedTerminalCols"
+                    style="height: 400px;"
+                ></Terminal>
+            </div>
 
             <div v-if="stack.isManagedByDockge" class="row mt-3">
                 <div class="col-xl-6">
@@ -183,8 +219,8 @@
                         </div>
                     </div>
 
-                    <!-- Combined Terminal Output -->
-                    <div v-show="!isEditMode">
+                    <!-- Combined Terminal Output (inline, next to the editor) -->
+                    <div v-if="!fullWidthLog" v-show="!isEditMode">
                         <h4 class="mb-3">{{ $t("log") }}</h4>
                         <Terminal
                             ref="combinedTerminal"
@@ -431,6 +467,7 @@ export default defineComponent({
             serviceStats: undefined,
             isEditMode: false,
             showDeleteDialog: false,
+            checkingImageUpdates: false,
             newContainerName: "",
             stopUpdateTimeouts: false,
             showUpdateDialog: false,
@@ -488,6 +525,10 @@ export default defineComponent({
 
         agentName(): string {
             return this.$root.getAgentName(this.endpoint);
+        },
+
+        fullWidthLog(): boolean {
+            return this.$root.fullWidthLog;
         },
 
         agentCount(): number {
@@ -641,6 +682,7 @@ export default defineComponent({
                 started: false,
                 imageUpdatesAvailable: false,
                 tags: [],
+                autoUpdate: false,
                 composeYAML: composeYAML,
                 composeENV: composeENV,
                 isManagedByDockge: true,
@@ -694,6 +736,21 @@ export default defineComponent({
         removeTag(index) {
             this.stack.tags.splice(index, 1);
             this.saveTags();
+        },
+
+        toggleAutoUpdate() {
+            // stack.autoUpdate has already been flipped by v-model; persist the new value.
+            const enabled = this.stack.autoUpdate;
+            this.$root.emitAgent(this.endpoint, "setStackAutoUpdate", this.stack.name, enabled, (res) => {
+                if (res.ok) {
+                    this.$root.toastSuccess(res.msg);
+                    this.$root.emitAgent(this.endpoint, "requestStackList");
+                } else {
+                    // Revert the toggle if the server rejected the change
+                    this.stack.autoUpdate = !enabled;
+                    this.$root.toastError(res.msg);
+                }
+            });
         },
 
         saveTags() {
@@ -875,6 +932,17 @@ export default defineComponent({
 
             this.$root.emitAgent(this.endpoint, "restartStack", this.stack.name, (res) => {
                 this.stopComposeAction();
+                this.$root.toastRes(res);
+            });
+        },
+
+        checkImageUpdates() {
+            this.checkingImageUpdates = true;
+            this.$root.emitAgent(this.endpoint, "checkStackImageUpdates", this.stack.name, (res) => {
+                this.checkingImageUpdates = false;
+                if (res.ok && res.stack) {
+                    this.stack = res.stack;
+                }
                 this.$root.toastRes(res);
             });
         },

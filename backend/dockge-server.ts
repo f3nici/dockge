@@ -38,6 +38,7 @@ import { AgentSocket } from "../common/agent-socket";
 import { ManageAgentSocketHandler } from "./socket-handlers/manage-agent-socket-handler";
 import { Terminal } from "./terminal";
 import { AgentMaintenanceSocketHandler } from "./agent-socket-handlers/agent-maintenance-socket-handler";
+import { AutoUpdateManager } from "./auto-update";
 
 export class DockgeServer {
     app : Express;
@@ -81,6 +82,11 @@ export class DockgeServer {
     jwtSecret : string = "";
 
     stacksDir : string = "";
+
+    /**
+     * Schedules and runs automatic stack updates
+     */
+    autoUpdateManager : AutoUpdateManager = new AutoUpdateManager(this);
 
     /**
      *
@@ -422,6 +428,9 @@ export class DockgeServer {
             };
             checkVersion.startInterval();
 
+            // Schedule automatic stack updates (if enabled in settings)
+            this.autoUpdateManager.schedule().catch((e) => log.error("auto-update", e));
+
             // Update stack properties every 5 Minutes
             setTimeout(
                 () => {
@@ -430,10 +439,10 @@ export class DockgeServer {
                 5 * 60 * 1000
             );
 
-            // Start first ImageUpdateCheck 1 min. after startup, and then every 6 hours
+            // Start first ImageUpdateCheck 1 min. after startup, and then every 3 hours
             setTimeout(
                 () => {
-                    this.updateAvailableStackImageUpdates(6 * 60 * 60 * 1000);
+                    this.updateAvailableStackImageUpdates(3 * 60 * 60 * 1000);
                 },
                 60 * 1000
             );

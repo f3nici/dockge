@@ -25,6 +25,7 @@ export type SimpleStackData = {
     recreateNecessary: boolean,
     imageUpdatesAvailable: boolean,
     tags: string[],
+    autoUpdate: boolean,
     isManagedByDockge: boolean,
     composeFileName: string,
     endpoint: string
