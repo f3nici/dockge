@@ -207,6 +207,8 @@
     "autoUpdateMonthly": "Monthly (1st, 04:00)",
     "autoUpdateCustom": "Custom cron expression",
     "autoUpdateCronHint": "Cron format: <code>minute hour day-of-month month day-of-week</code>. Example: <code>0 4 * * 0</code> runs every Sunday at 04:00.",
+    "autoUpdateTimezoneHint": "Schedules use the server timezone: {timezone} (UTC{offset}), currently {time}.",
+    "autoUpdateNextRun": "Next run: {time}.",
     "autoUpdatePrune": "Prune dangling images after each update",
     "autoUpdateNow": "Update now",
     "autoUpdateNowHint": "Immediately update all eligible stacks, regardless of the schedule.",

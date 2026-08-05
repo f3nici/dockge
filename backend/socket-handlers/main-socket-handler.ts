@@ -16,6 +16,7 @@ import {
     ValidationError
 } from "../util-server";
 import { passwordStrength } from "check-password-strength";
+import dayjs from "dayjs";
 import jwt from "jsonwebtoken";
 import { Settings } from "../settings";
 import { Stack } from "../stack";
@@ -296,6 +297,26 @@ export class MainSocketHandler extends SocketHandler {
                     ok: true,
                     msg: `Auto update finished. Updated ${updated.length} stack(s).`,
                     updated,
+                });
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // Auto update schedule status: the server's timezone (cron expressions are
+        // evaluated in it) and the next scheduled run.
+        socket.on("getAutoUpdateStatus", async (callback) => {
+            try {
+                checkLogin(socket);
+
+                const nextRun = server.autoUpdateManager.nextRun();
+
+                callback({
+                    ok: true,
+                    timezone: await server.getTimezone(),
+                    timezoneOffset: server.getTimezoneOffset(),
+                    serverTime: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+                    nextRun: nextRun ? dayjs(nextRun).format("YYYY-MM-DD HH:mm:ss") : null,
                 });
             } catch (e) {
                 callbackError(e, callback);

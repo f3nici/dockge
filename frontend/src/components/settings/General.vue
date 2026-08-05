@@ -94,6 +94,16 @@
                             placeholder="0 4 * * 0"
                         />
                         <div class="form-text" v-html="$t('autoUpdateCronHint')"></div>
+                        <div v-if="autoUpdateStatus" class="form-text">
+                            {{ $t("autoUpdateTimezoneHint", {
+                                timezone: autoUpdateStatus.timezone,
+                                offset: autoUpdateStatus.timezoneOffset,
+                                time: autoUpdateStatus.serverTime,
+                            }) }}
+                            <template v-if="autoUpdateStatus.nextRun">
+                                {{ $t("autoUpdateNextRun", { time: autoUpdateStatus.nextRun }) }}
+                            </template>
+                        </div>
                     </div>
 
                     <!-- Prune -->
@@ -145,6 +155,11 @@ export default {
         return {
             timezoneList: timezoneList(),
             autoUpdating: false,
+            // Set once the user explicitly picks "Custom cron expression", so the
+            // input stays editable even while the value still matches a preset.
+            customCron: false,
+            // Server timezone / next run, fetched from the backend
+            autoUpdateStatus: null,
         };
     },
 
@@ -154,18 +169,22 @@ export default {
         },
         /**
          * Maps the stored cron expression to one of the preset options, or
-         * "custom" when it does not match a known preset.
+         * "custom" when it does not match a known preset or the user picked
+         * "custom" explicitly.
          */
         autoUpdatePreset: {
             get() {
                 const presets = [ "0 4 * * 0", "0 4 * * *", "0 4 1 * *" ];
-                if (presets.includes(this.settings.autoUpdateCron)) {
+                if (!this.customCron && presets.includes(this.settings.autoUpdateCron)) {
                     return this.settings.autoUpdateCron;
                 }
                 return "custom";
             },
             set(value) {
-                if (value !== "custom") {
+                if (value === "custom") {
+                    this.customCron = true;
+                } else {
+                    this.customCron = false;
                     this.settings.autoUpdateCron = value;
                 }
             },
@@ -190,11 +209,24 @@ export default {
         },
     },
 
+    mounted() {
+        this.loadAutoUpdateStatus();
+    },
+
     methods: {
         /** Save the settings */
         saveGeneral() {
             localStorage.timezone = this.$root.userTimezone;
-            this.saveSettings();
+            // The schedule may have changed, so refresh the next run time afterwards
+            this.saveSettings(() => this.loadAutoUpdateStatus());
+        },
+        /** Load the server timezone and the next scheduled auto update run */
+        loadAutoUpdateStatus() {
+            this.$root.getSocket().emit("getAutoUpdateStatus", (res) => {
+                if (res.ok) {
+                    this.autoUpdateStatus = res;
+                }
+            });
         },
         /** Get the base URL of the application */
         autoGetPrimaryHostname() {
