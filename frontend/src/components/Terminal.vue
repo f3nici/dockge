@@ -97,6 +97,10 @@ export default {
             this.interactiveTerminalConfig();
         }
 
+        // Ctrl+C copies the selection instead of sending SIGINT, like most
+        // terminal emulators. Without a selection it is passed through as usual.
+        this.terminal.attachCustomKeyEventHandler(this.handleCustomKeyEvent);
+
         //this.terminal.loadAddon(new WebLinksAddon());
 
         // Bind to a div
@@ -365,6 +369,38 @@ export default {
             if (this.mode === "mainTerminal" || this.mode === "interactive") {
                 this.handlePaste();
             }
+        },
+
+        /**
+         * Intercept Ctrl+C when text is selected so it copies instead of
+         * interrupting the running command.
+         *
+         * Returning false tells xterm.js to swallow the key, so it never
+         * reaches onData and no ^C is sent to the process.
+         *
+         * macOS is left alone: there Ctrl+C is still SIGINT and Cmd+C is the
+         * browser's own copy, which would break if we cleared the selection.
+         *
+         * @param {KeyboardEvent} event
+         * @returns {boolean} false to swallow the key, true to let xterm handle it
+         */
+        handleCustomKeyEvent(event) {
+            const isCopyShortcut = event.type === "keydown" &&
+                event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                event.key.toLowerCase() === "c";
+
+            if (isCopyShortcut && this.terminal.hasSelection()) {
+                this.copyToClipboard(this.terminal.getSelection());
+
+                // Clear the selection so the next Ctrl+C sends SIGINT again,
+                // otherwise a stale selection would keep swallowing it.
+                this.terminal.clearSelection();
+                return false;
+            }
+
+            return true;
         },
 
         /**
