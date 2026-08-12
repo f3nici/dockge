@@ -395,6 +395,8 @@ export class ComposeService extends ComposeMap {
     }
 }
 
+export const AUTO_UPDATE_KEY = "auto-update";
+
 export class ComposeDockge extends ComposeMap {
 
     constructor(protected baseComposeData: ComposeData) {
@@ -406,14 +408,49 @@ export class ComposeDockge extends ComposeMap {
     }
 
     /**
-     * Auto update is opt-in: a stack is only included in the scheduled
-     * auto-update run when it explicitly enables it, either via the per-stack
-     * toggle (stored in metadata) or `x-dockge.auto-update: true` in the compose
-     * file.
+     * The stack's auto update preference, `x-dockge.auto-update`.
+     *
+     * Tri-state: `true` or `false` when the key is set explicitly, `undefined`
+     * when it is absent, in which case the global default in Settings decides.
      */
-    get autoUpdate(): boolean {
-        return convertToBoolean(this.get("auto-update"), false) as boolean;
+    get autoUpdate(): boolean | undefined {
+        return convertToBoolean(this.get(AUTO_UPDATE_KEY));
     }
+}
+
+/**
+ * Set, or with `undefined` remove, `x-dockge.auto-update` in a compose file.
+ *
+ * This edits the parsed YAML in place rather than going through
+ * ComposeDocument.toYAML(), which rebuilds the document from scratch: we are
+ * writing to a file the user maintains by hand, so everything we are not
+ * touching — comments, blank lines, quoting style — must survive untouched.
+ * An `x-dockge` block that is left empty is removed as well, so a stack that
+ * never had one ends up exactly as it started.
+ * @param composeYAML The current compose file contents
+ * @param autoUpdate true, false, or undefined to remove the key
+ * @returns The updated compose file contents
+ */
+export function setAutoUpdateInYAML(composeYAML: string, autoUpdate: boolean | undefined): string {
+    const doc = parseDocument(composeYAML);
+    if (doc.errors.length > 0) {
+        throw doc.errors[0];
+    }
+
+    if (autoUpdate === undefined) {
+        doc.deleteIn([ X_DOCKGE, AUTO_UPDATE_KEY ]);
+
+        const xDockge = doc.get(X_DOCKGE);
+        if (isMap(xDockge) && xDockge.items.length === 0) {
+            doc.delete(X_DOCKGE);
+        }
+    } else {
+        // Appended at the end when the file has no x-dockge block yet: inserting it at
+        // the top instead would push a leading file comment down below it
+        doc.setIn([ X_DOCKGE, AUTO_UPDATE_KEY ], autoUpdate);
+    }
+
+    return String(doc);
 }
 
 export class ComposeLabels extends ComposeNode {

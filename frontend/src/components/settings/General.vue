@@ -106,6 +106,18 @@
                         </div>
                     </div>
 
+                    <!-- Default behaviour for stacks without x-dockge.auto-update -->
+                    <div class="mt-3">
+                        <label class="form-label" for="autoUpdateDefault">
+                            {{ $t("autoUpdateDefault") }}
+                        </label>
+                        <select id="autoUpdateDefault" v-model="settings.autoUpdateDefault" class="form-select">
+                            <option value="none">{{ $t("autoUpdateDefaultNone") }}</option>
+                            <option value="update">{{ $t("autoUpdateDefaultUpdate") }}</option>
+                        </select>
+                        <div class="form-text">{{ $t("autoUpdateDefaultHint") }}</div>
+                    </div>
+
                     <!-- Prune -->
                     <div class="form-check form-switch mt-3">
                         <input
@@ -145,6 +157,7 @@
 
 import dayjs from "dayjs";
 import { timezoneList } from "../../util-frontend";
+import { AUTO_UPDATE_DEFAULT, AUTO_UPDATE_DEFAULT_CRON } from "../../../../common/util-common";
 
 export default {
     components: {
@@ -202,9 +215,12 @@ export default {
 
     watch: {
         "settings.autoUpdateEnabled"(enabled) {
-            // Seed a sensible default schedule the first time auto update is switched on
+            // Seed sensible defaults the first time auto update is switched on
             if (enabled && !this.settings.autoUpdateCron) {
-                this.settings.autoUpdateCron = "0 4 * * 0";
+                this.settings.autoUpdateCron = AUTO_UPDATE_DEFAULT_CRON;
+            }
+            if (enabled && !this.settings.autoUpdateDefault) {
+                this.settings.autoUpdateDefault = AUTO_UPDATE_DEFAULT;
             }
         },
     },

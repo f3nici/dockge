@@ -21,6 +21,7 @@ import jwt from "jsonwebtoken";
 import { Settings } from "../settings";
 import { Stack } from "../stack";
 import { AutoUpdateManager } from "../auto-update";
+import { AUTO_UPDATE_DEFAULT } from "../../common/util-common";
 
 export class MainSocketHandler extends SocketHandler {
     create(socket : DockgeSocket, server : DockgeServer) {
@@ -222,6 +223,11 @@ export class MainSocketHandler extends SocketHandler {
                 checkLogin(socket);
                 const data = await Settings.getSettings("general");
 
+                // Never saved before: show the same default the scheduler applies
+                if (!data.autoUpdateDefault) {
+                    data.autoUpdateDefault = AUTO_UPDATE_DEFAULT;
+                }
+
                 callback({
                     ok: true,
                     data: data,
@@ -262,6 +268,10 @@ export class MainSocketHandler extends SocketHandler {
                     } catch (e) {
                         throw new ValidationError("Invalid auto update cron expression");
                     }
+                }
+
+                if (data.autoUpdateDefault !== undefined && data.autoUpdateDefault !== "none" && data.autoUpdateDefault !== "update") {
+                    throw new ValidationError("Auto update default must be \"none\" or \"update\"");
                 }
 
                 await Settings.setSettings("general", data);
@@ -317,6 +327,9 @@ export class MainSocketHandler extends SocketHandler {
                     timezoneOffset: server.getTimezoneOffset(),
                     serverTime: dayjs().format("YYYY-MM-DD HH:mm:ss"),
                     nextRun: nextRun ? dayjs(nextRun).format("YYYY-MM-DD HH:mm:ss") : null,
+                    enabled: !!(await Settings.get("autoUpdateEnabled")),
+                    // What stacks without x-dockge.auto-update currently do
+                    defaultBehaviour: await AutoUpdateManager.getDefaultBehaviour(),
                 });
             } catch (e) {
                 callbackError(e, callback);

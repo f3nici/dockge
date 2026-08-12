@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ComposeDocument } from "../common/compose-document";
+import { ComposeDocument, setAutoUpdateInYAML } from "../common/compose-document";
 import { LABEL_STATUS_IGNORE } from "../common/compose-labels";
 
 const sampleYAML = `services:
@@ -132,9 +132,9 @@ describe("ComposeLabels", () => {
 });
 
 describe("ComposeDockge x-dockge", () => {
-    it("defaults autoUpdate to false when x-dockge is absent (opt-in)", () => {
+    it("leaves autoUpdate undefined when x-dockge is absent (inherit)", () => {
         const doc = new ComposeDocument(sampleYAML);
-        expect(doc.xDockge.autoUpdate).toBe(false);
+        expect(doc.xDockge.autoUpdate).toBe(undefined);
     });
 
     it("reads auto-update: true", () => {
@@ -159,7 +159,7 @@ services:
         expect(doc.xDockge.autoUpdate).toBe(true);
     });
 
-    it("treats auto-update: false as not enabled", () => {
+    it("reads an explicit auto-update: false as an opt-out", () => {
         const yaml = `x-dockge:
   auto-update: false
 services:
@@ -168,6 +168,75 @@ services:
 `;
         const doc = new ComposeDocument(yaml);
         expect(doc.xDockge.autoUpdate).toBe(false);
+    });
+
+});
+
+describe("setAutoUpdateInYAML", () => {
+    const commentedYAML = `# My stack
+x-dockge:
+  urls:
+    - https://example.com
+
+services:
+  web:
+    image: nginx:latest
+    ports:
+      - "8080:80"
+`;
+
+    it("writes true and false, and reads back what it wrote", () => {
+        const enabled = setAutoUpdateInYAML(commentedYAML, true);
+        expect(enabled).toContain("auto-update: true");
+        expect(new ComposeDocument(enabled).xDockge.autoUpdate).toBe(true);
+
+        const disabled = setAutoUpdateInYAML(enabled, false);
+        expect(disabled).toContain("auto-update: false");
+        expect(new ComposeDocument(disabled).xDockge.autoUpdate).toBe(false);
+    });
+
+    it("adds an x-dockge block when the file has none", () => {
+        const yaml = `# My stack
+services:
+  web:
+    image: nginx
+`;
+        const out = setAutoUpdateInYAML(yaml, true);
+        expect(new ComposeDocument(out).xDockge.autoUpdate).toBe(true);
+        // The block is appended, so a leading file comment stays at the top
+        expect(out.startsWith("# My stack")).toBe(true);
+    });
+
+    it("removes the key again on undefined, leaving other x-dockge keys alone", () => {
+        const out = setAutoUpdateInYAML(setAutoUpdateInYAML(commentedYAML, true), undefined);
+
+        expect(out).not.toContain("auto-update");
+        expect(out).toContain("https://example.com");
+        expect(new ComposeDocument(out).xDockge.autoUpdate).toBe(undefined);
+    });
+
+    it("removes an x-dockge block that it created itself", () => {
+        const yaml = `services:
+  web:
+    image: nginx
+`;
+        const out = setAutoUpdateInYAML(setAutoUpdateInYAML(yaml, true), undefined);
+        expect(out).not.toContain("x-dockge");
+        expect(out).toBe(yaml);
+    });
+
+    it("leaves comments, blank lines and quoting untouched", () => {
+        const out = setAutoUpdateInYAML(commentedYAML, true);
+
+        expect(out).toContain("# My stack");
+        expect(out).toContain("\"8080:80\"");
+        expect(out).toContain("\n\nservices:");
+        // Round tripping back to "inherit" restores the original file
+        expect(setAutoUpdateInYAML(out, undefined)).toBe(commentedYAML);
+    });
+
+    it("throws on an unparseable compose file", () => {
+        expect(() => setAutoUpdateInYAML("services:\n  web:\n   - :\n  bad\n", true)).toThrow();
     });
 });
 
