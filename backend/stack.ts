@@ -21,8 +21,8 @@ import { InteractiveTerminal, Terminal } from "./terminal";
 import childProcessAsync from "promisify-child-process";
 import { Settings } from "./settings";
 import { ImageRepository } from "./image-repository";
-import { SimpleStackData, StackData, ServiceData, StatsData, NotificationEvent } from "../common/types";
-import { ComposeDocument } from "../common/compose-document";
+import { AutoUpdatePolicy, SimpleStackData, StackData, ServiceData, StatsData, NotificationEvent } from "../common/types";
+import { ComposeDocument, setAutoUpdateInYAML } from "../common/compose-document";
 import { LABEL_STATUS_IGNORE, LABEL_IMAGEUPDATES_CHECK, LABEL_IMAGEUPDATES_IGNORE } from "../common/compose-labels";
 import { NotificationManager } from "./notification-manager";
 
@@ -42,7 +42,6 @@ export class Stack {
     protected server: DockgeServer;
     protected _firstUpdate: boolean = true;
     protected _tags: string[] = [];
-    protected _autoUpdate: boolean = false;
     protected _tagsLoaded: boolean = false;
 
     protected combinedTerminal? : Terminal;
@@ -133,36 +132,42 @@ export class Stack {
     }
 
     /**
-     * Whether this stack opts in to scheduled auto-updates. Opt-in only: nothing
-     * is auto-updated unless enabled via the per-stack toggle (metadata) or
-     * `x-dockge.auto-update: true` in the compose file.
+     * This stack's auto update preference, read from `x-dockge.auto-update` in
+     * its compose file. `null` means the stack does not state one, so the global
+     * default in Settings applies.
      */
-    get autoUpdate(): boolean {
-        if (!this._tagsLoaded) {
-            this.loadMetadata();
-        }
-
-        if (this._autoUpdate) {
-            return true;
-        }
-
-        // Also honour an explicit opt-in in the compose file
+    get autoUpdate(): AutoUpdatePolicy {
         try {
-            return this.composeDocument.xDockge.autoUpdate;
+            const value = this.composeDocument.xDockge.autoUpdate;
+            return value === undefined ? null : value;
         } catch (e) {
-            return false;
+            // Unparseable compose file: treat it as "no preference"
+            return null;
         }
     }
 
     /**
-     * Enable or disable auto update for this stack (persisted in metadata).
+     * Write the auto update preference into the compose file, or remove it
+     * (`null`) so the stack follows the global default again.
+     * @param policy true, false, or null to inherit
      */
-    async setAutoUpdate(enabled: boolean) : Promise<void> {
-        if (!this._tagsLoaded) {
-            this.loadMetadata();
+    async setAutoUpdate(policy: AutoUpdatePolicy) : Promise<void> {
+        if (!this.isManagedByDockge) {
+            throw new ValidationError("Stack is not managed by Dockge");
         }
-        this._autoUpdate = enabled;
-        await this.saveMetadata();
+
+        const composeFilePath = path.join(this.path, this._composeFileName);
+
+        // Re-read from disk instead of using the cached copy, so an edit made
+        // elsewhere since this Stack object was created is not silently reverted.
+        const composeYAML = await fsAsync.readFile(composeFilePath, "utf-8");
+
+        this._composeYAML = setAutoUpdateInYAML(composeYAML, policy === null ? undefined : policy);
+        this._composeDocument = undefined;
+        await fsAsync.writeFile(composeFilePath, this._composeYAML);
+
+        // Other cached copies of this stack still hold the previous compose file
+        Stack.invalidateCache(this.name);
     }
 
     async validate() {
@@ -303,15 +308,12 @@ export class Stack {
             if (fs.existsSync(this.metadataPath)) {
                 const metadata = JSON.parse(fs.readFileSync(this.metadataPath, "utf-8"));
                 this._tags = Array.isArray(metadata.tags) ? metadata.tags : [];
-                this._autoUpdate = metadata.autoUpdate === true;
             } else {
                 this._tags = [];
-                this._autoUpdate = false;
             }
         } catch (e) {
             log.error("loadMetadata", `Failed to load metadata for stack ${this.name}: ${e}`);
             this._tags = [];
-            this._autoUpdate = false;
         }
         this._tagsLoaded = true;
     }
@@ -327,8 +329,7 @@ export class Stack {
             }
 
             const metadata = {
-                tags: this._tags,
-                autoUpdate: this._autoUpdate
+                tags: this._tags
             };
             await fsAsync.writeFile(this.metadataPath, JSON.stringify(metadata, null, 2));
         } catch (e) {
@@ -346,7 +347,7 @@ export class Stack {
             throw new ValidationError("Tags must be an array");
         }
 
-        // Load existing metadata first so we don't clobber other fields (e.g. autoUpdate)
+        // Load existing metadata first so we don't clobber other fields
         if (!this._tagsLoaded) {
             this.loadMetadata();
         }

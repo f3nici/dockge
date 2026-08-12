@@ -7,6 +7,7 @@ import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
 import relativeTime from "dayjs/plugin/relativeTime";
+import { AutoUpdateDefault, AutoUpdatePolicy } from "./types";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -150,6 +151,27 @@ export const acceptedComposeFileNames = [
     "docker-compose.yml",
     "compose.yml",
 ];
+
+// Weekly, every Sunday at 04:00.
+export const AUTO_UPDATE_DEFAULT_CRON = "0 4 * * 0";
+
+// Stacks that don't set x-dockge.auto-update themselves are left alone by default.
+export const AUTO_UPDATE_DEFAULT: AutoUpdateDefault = "none";
+
+/**
+ * Decide whether a stack is auto-updated.
+ *
+ * The stack's own preference (`x-dockge.auto-update` in its compose file) wins;
+ * when it is not set, the global default from Settings applies.
+ * @param policy The stack preference, or null when the stack does not set one
+ * @param defaultBehaviour The global default for stacks without a preference
+ */
+export function resolveAutoUpdate(policy : AutoUpdatePolicy, defaultBehaviour : AutoUpdateDefault) : boolean {
+    if (policy !== null && policy !== undefined) {
+        return policy;
+    }
+    return defaultBehaviour === "update";
+}
 
 /**
  * Generate a decimal integer number from a string

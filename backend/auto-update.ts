@@ -3,16 +3,19 @@ import { DockgeServer } from "./dockge-server";
 import { Settings } from "./settings";
 import { Stack } from "./stack";
 import { log } from "./log";
+import { AUTO_UPDATE_DEFAULT, AUTO_UPDATE_DEFAULT_CRON, resolveAutoUpdate } from "../common/util-common";
+import { AutoUpdateDefault } from "../common/types";
 
-// Weekly, every Sunday at 04:00. Matches the "once a week" default requested in the issue.
-export const AUTO_UPDATE_DEFAULT_CRON = "0 4 * * 0";
+export { AUTO_UPDATE_DEFAULT_CRON };
 
 /**
  * Schedules and runs automatic stack updates.
  *
  * A single cron job is (re)created whenever the settings change. When it fires
  * (or when a user triggers "Update now"), every Dockge-managed, running stack is
- * pulled and recreated, unless it opts out via `x-dockge.skip-auto-update: true`.
+ * pulled and recreated if auto update applies to it: `x-dockge.auto-update` in
+ * the stack's compose file decides, falling back to the global default setting
+ * when the stack does not set it.
  */
 export class AutoUpdateManager {
     protected server: DockgeServer;
@@ -31,6 +34,13 @@ export class AutoUpdateManager {
         // Constructing a paused job validates the pattern without scheduling anything.
         const job = new Cron(pattern, { paused: true });
         job.stop();
+    }
+
+    /**
+     * The configured behaviour for stacks that do not set `x-dockge.auto-update`.
+     */
+    static async getDefaultBehaviour() : Promise<AutoUpdateDefault> {
+        return (await Settings.get("autoUpdateDefault")) === "update" ? "update" : AUTO_UPDATE_DEFAULT;
     }
 
     /**
@@ -95,6 +105,7 @@ export class AutoUpdateManager {
 
         try {
             const pruneAfterUpdate = !!(await Settings.get("autoUpdatePrune"));
+            const defaultBehaviour = await AutoUpdateManager.getDefaultBehaviour();
             const stackList = await Stack.getStackList(this.server, true);
 
             for (const stack of stackList.values()) {
@@ -102,8 +113,8 @@ export class AutoUpdateManager {
                     continue;
                 }
 
-                // Opt-in only: skip stacks that have not enabled auto update
-                if (!stack.autoUpdate) {
+                // The stack's own x-dockge.auto-update wins; otherwise the global default
+                if (!resolveAutoUpdate(stack.autoUpdate, defaultBehaviour)) {
                     log.debug("auto-update", `Skipping stack "${stack.name}" (auto update not enabled)`);
                     continue;
                 }
