@@ -114,20 +114,29 @@
                 </div>
             </div>
 
-            <!-- Auto Update (per-stack opt-in) -->
-            <div v-if="!isAdd && stack.isManagedByDockge" class="mb-3">
-                <div class="form-check form-switch">
-                    <input
-                        id="stackAutoUpdate"
-                        v-model="stack.autoUpdate"
-                        class="form-check-input"
-                        type="checkbox"
-                        :disabled="processing"
-                        @change="toggleAutoUpdate"
-                    />
-                    <label class="form-check-label" for="stackAutoUpdate">
-                        <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("autoUpdateStack") }}
-                    </label>
+            <!-- Auto Update (per-stack, stored in the compose file as x-dockge.auto-update) -->
+            <div v-if="!isAdd && !isEditMode && stack.isManagedByDockge" class="mb-3">
+                <label class="form-label mb-1" style="font-size: 12px; font-weight: 500; color: #888;" for="stackAutoUpdate">
+                    <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("autoUpdateStack") }}
+                </label>
+                <select
+                    id="stackAutoUpdate"
+                    v-model="autoUpdatePolicy"
+                    class="form-select form-select-sm"
+                    style="max-width: 320px;"
+                    :disabled="processing"
+                >
+                    <option :value="null">{{ $t("autoUpdateInherit") }}</option>
+                    <option :value="true">{{ $t("autoUpdateAlways") }}</option>
+                    <option :value="false">{{ $t("autoUpdateNever") }}</option>
+                </select>
+                <div class="form-text" style="font-size: 12px;">
+                    <template v-if="autoUpdateStatus && autoUpdatePolicy === null">
+                        {{ $t("autoUpdateInheritHint", { behaviour: inheritedAutoUpdateLabel }) }}
+                    </template>
+                    <template v-if="autoUpdateStatus && !autoUpdateStatus.enabled">
+                        {{ $t("autoUpdateDisabledHint") }}
+                    </template>
                 </div>
             </div>
 
@@ -477,6 +486,8 @@ export default defineComponent({
             },
             showTagInput: false,
             newTag: "",
+            // Global auto update settings, used to explain what "Inherit" resolves to
+            autoUpdateStatus: null,
             showPasswordDialog: false,
             passwordOptions: {
                 format: "base64",
@@ -568,6 +579,25 @@ export default defineComponent({
 
         isAdd(): boolean {
             return this.$route.path === "/compose";
+        },
+
+        /**
+         * The stack's auto update preference: true, false, or null to follow the
+         * global default. Setting it writes x-dockge.auto-update to the compose file.
+         */
+        autoUpdatePolicy: {
+            get(): boolean | null {
+                return this.stack.autoUpdate ?? null;
+            },
+            set(policy: boolean | null) {
+                this.saveAutoUpdate(policy);
+            },
+        },
+
+        /** What stacks without a preference of their own currently do */
+        inheritedAutoUpdateLabel(): string {
+            const behaviour = this.autoUpdateStatus?.defaultBehaviour;
+            return behaviour === "update" ? this.$t("autoUpdateDefaultUpdate") : this.$t("autoUpdateDefaultNone");
         },
 
         terminalName(): string {
@@ -682,7 +712,7 @@ export default defineComponent({
                 started: false,
                 imageUpdatesAvailable: false,
                 tags: [],
-                autoUpdate: false,
+                autoUpdate: null,
                 composeYAML: composeYAML,
                 composeENV: composeENV,
                 isManagedByDockge: true,
@@ -695,6 +725,7 @@ export default defineComponent({
         } else {
             this.stack.name = this.$route.params.stackName;
             this.loadStack();
+            this.loadAutoUpdateStatus();
         }
 
         this.updateStackData();
@@ -738,17 +769,33 @@ export default defineComponent({
             this.saveTags();
         },
 
-        toggleAutoUpdate() {
-            // stack.autoUpdate has already been flipped by v-model; persist the new value.
-            const enabled = this.stack.autoUpdate;
-            this.$root.emitAgent(this.endpoint, "setStackAutoUpdate", this.stack.name, enabled, (res) => {
+        /**
+         * Persist the auto update preference into the stack's compose file.
+         * @param policy true, false, or null to follow the global default
+         */
+        saveAutoUpdate(policy: boolean | null) {
+            const previous = this.stack.autoUpdate ?? null;
+            // Show the new selection right away, revert below if the server rejects it
+            this.stack.autoUpdate = policy;
+
+            this.$root.emitAgent(this.endpoint, "setStackAutoUpdate", this.stack.name, policy, (res) => {
                 if (res.ok) {
                     this.$root.toastSuccess(res.msg);
+                    // The compose file changed on disk, pull the new YAML into the editor
+                    this.updateStackData();
                     this.$root.emitAgent(this.endpoint, "requestStackList");
                 } else {
-                    // Revert the toggle if the server rejected the change
-                    this.stack.autoUpdate = !enabled;
+                    this.stack.autoUpdate = previous;
                     this.$root.toastError(res.msg);
+                }
+            });
+        },
+
+        /** Load the global auto update settings, to explain what "Inherit" means here */
+        loadAutoUpdateStatus() {
+            this.$root.getSocket().emit("getAutoUpdateStatus", (res) => {
+                if (res.ok) {
+                    this.autoUpdateStatus = res;
                 }
             });
         },

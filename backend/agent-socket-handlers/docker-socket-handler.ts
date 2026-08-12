@@ -141,7 +141,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
         });
 
         // setStackAutoUpdate
-        agentSocket.on("setStackAutoUpdate", async (stackName : unknown, enabled : unknown, callback) => {
+        agentSocket.on("setStackAutoUpdate", async (stackName : unknown, policy : unknown, callback) => {
             try {
                 checkLogin(socket);
 
@@ -149,16 +149,24 @@ export class DockerSocketHandler extends AgentSocketHandler {
                     throw new ValidationError("Stack name must be a string");
                 }
 
-                if (typeof(enabled) !== "boolean") {
-                    throw new ValidationError("enabled must be a boolean");
+                // null means "no preference": remove the key and follow the global default
+                if (typeof(policy) !== "boolean" && policy !== null) {
+                    throw new ValidationError("Auto update must be true, false or null");
                 }
 
                 const stack = await Stack.getStack(server, stackName);
-                await stack.setAutoUpdate(enabled);
+                await stack.setAutoUpdate(policy);
+
+                let msg;
+                if (policy === null) {
+                    msg = "Auto update follows the global default";
+                } else {
+                    msg = policy ? "Auto update enabled" : "Auto update disabled";
+                }
 
                 callbackResult({
                     ok: true,
-                    msg: enabled ? "Auto update enabled" : "Auto update disabled",
+                    msg,
                 }, callback);
 
                 server.sendStackList(true);

@@ -18,6 +18,18 @@ export type ServiceData = {
     remoteImageDigest: string,
 }
 
+/**
+ * Per-stack auto update preference, read from `x-dockge.auto-update` in the
+ * compose file. `null` means the key is absent, so the global default in
+ * Settings decides.
+ */
+export type AutoUpdatePolicy = boolean | null;
+
+/**
+ * What happens to stacks that do not set `x-dockge.auto-update` themselves.
+ */
+export type AutoUpdateDefault = "none" | "update";
+
 export type SimpleStackData = {
     name: string,
     status: number,
@@ -25,7 +37,7 @@ export type SimpleStackData = {
     recreateNecessary: boolean,
     imageUpdatesAvailable: boolean,
     tags: string[],
-    autoUpdate: boolean,
+    autoUpdate: AutoUpdatePolicy,
     isManagedByDockge: boolean,
     composeFileName: string,
     endpoint: string
