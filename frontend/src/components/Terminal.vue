@@ -97,6 +97,10 @@ export default {
             this.interactiveTerminalConfig();
         }
 
+        // Ctrl+C copies the selection instead of sending SIGINT, like most
+        // terminal emulators. Without a selection it is passed through as usual.
+        this.terminal.attachCustomKeyEventHandler(this.handleCustomKeyEvent);
+
         //this.terminal.loadAddon(new WebLinksAddon());
 
         // Bind to a div
@@ -368,6 +372,46 @@ export default {
         },
 
         /**
+         * Intercept Ctrl+C when text is selected so it copies instead of
+         * interrupting the running command.
+         *
+         * Returning false tells xterm.js to swallow the key, so it never
+         * reaches onData and no ^C is sent to the process.
+         *
+         * Cmd+C is deliberately not handled here, so on macOS it stays the
+         * browser's own copy, which clearing the selection would break.
+         *
+         * @param {KeyboardEvent} event
+         * @returns {boolean} false to swallow the key, true to let xterm handle it
+         */
+        handleCustomKeyEvent(event) {
+            const isCopyShortcut = event.type === "keydown" &&
+                event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                event.key.toLowerCase() === "c";
+
+            if (isCopyShortcut && this.terminal.hasSelection()) {
+                // Runs inside a real key event, so the execCommand fallback is
+                // allowed to kick in on insecure origins. Copy before clearing:
+                // clearSelection() also drops the DOM selection the browser's
+                // own Ctrl+C would have used, so the copy has to be ours.
+                if (this.copyToClipboard(this.terminal.getSelection(), true)) {
+                    // The text really is on the clipboard, so the selection has
+                    // served its purpose and the next Ctrl+C can send SIGINT
+                    // again instead of being swallowed by a stale selection.
+                    // If the copy failed the selection is kept, otherwise the
+                    // key press would interrupt the command without having
+                    // copied anything - exactly what this is meant to prevent.
+                    this.terminal.clearSelection();
+                }
+                return false;
+            }
+
+            return true;
+        },
+
+        /**
          * Handle text selection in terminal - copy to clipboard
          */
         handleSelection() {
@@ -379,14 +423,72 @@ export default {
 
         /**
          * Copy text to clipboard
+         *
+         * navigator.clipboard only exists in a secure context. Dockge is
+         * usually reached over plain HTTP on a LAN, where the whole clipboard
+         * object is undefined, so this silently did nothing for most users.
+         *
+         * @param {string} text
+         * @param {boolean} allowFallback Set by callers that run inside a real
+         * user gesture (Ctrl+C). document.execCommand("copy") still works on
+         * insecure origins, but only while the gesture is being handled, and
+         * it briefly moves focus, so the copy-on-select path stays out of it.
+         * @returns {boolean} whether the text reached the clipboard
          */
-        async copyToClipboard(text) {
+        copyToClipboard(text, allowFallback = false) {
+            if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    console.debug("Text copied to clipboard:", text);
+                }).catch((error) => {
+                    console.error("Failed to copy to clipboard:", error);
+                });
+                return true;
+            }
+
+            if (!allowFallback) {
+                console.error("Clipboard API unavailable, text not copied");
+                return false;
+            }
+
+            return this.copyToClipboardFallback(text);
+        },
+
+        /**
+         * Copy text to clipboard on origins where navigator.clipboard is not
+         * available, by selecting the text in a throwaway textarea.
+         *
+         * @param {string} text
+         * @returns {boolean} whether the copy command succeeded
+         */
+        copyToClipboardFallback(text) {
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.setAttribute("readonly", "");
+            // Keep it off-screen so the page does not jump when it is focused.
+            textarea.style.position = "fixed";
+            textarea.style.top = "-9999px";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+
+            const previouslyFocused = document.activeElement;
+            let copied = false;
+
             try {
-                await navigator.clipboard.writeText(text);
-                console.debug("Text copied to clipboard:", text);
+                textarea.select();
+                copied = document.execCommand("copy");
             } catch (error) {
                 console.error("Failed to copy to clipboard:", error);
+            } finally {
+                textarea.remove();
+
+                // Focus has to go back to the terminal, otherwise the next
+                // keystroke is typed into nothing.
+                if (previouslyFocused instanceof HTMLElement) {
+                    previouslyFocused.focus();
+                }
             }
+
+            return copied;
         },
     }
 };
