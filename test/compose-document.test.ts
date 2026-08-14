@@ -238,6 +238,43 @@ services:
     it("throws on an unparseable compose file", () => {
         expect(() => setAutoUpdateInYAML("services:\n  web:\n   - :\n  bad\n", true)).toThrow();
     });
+
+    const plainYAML = `services:
+  web:
+    image: nginx
+`;
+
+    it("switching to inherit is a no-op when the file has no x-dockge block", () => {
+        expect(setAutoUpdateInYAML(plainYAML, undefined)).toBe(plainYAML);
+    });
+
+    it("switching to inherit twice in a row leaves the file alone", () => {
+        const inherited = setAutoUpdateInYAML(setAutoUpdateInYAML(plainYAML, true), undefined);
+        expect(setAutoUpdateInYAML(inherited, undefined)).toBe(plainYAML);
+    });
+
+    it("switching to inherit keeps an x-dockge block that has no auto-update key", () => {
+        const yaml = `x-dockge:
+  urls:
+    - https://example.com
+${plainYAML}`;
+        expect(setAutoUpdateInYAML(yaml, undefined)).toBe(yaml);
+    });
+
+    it("handles an x-dockge block with nothing under it", () => {
+        const yaml = `x-dockge:
+${plainYAML}`;
+        // Nothing to remove
+        expect(setAutoUpdateInYAML(yaml, undefined)).toBe(yaml);
+
+        // ...and the empty block becomes a real mapping when a preference is set
+        const out = setAutoUpdateInYAML(yaml, true);
+        expect(new ComposeDocument(out).xDockge.autoUpdate).toBe(true);
+    });
+
+    it("refuses to write into an x-dockge that is not a mapping", () => {
+        expect(() => setAutoUpdateInYAML(`x-dockge: nonsense\n${plainYAML}`, true)).toThrow();
+    });
 });
 
 describe("environment variable substitution", () => {

@@ -437,14 +437,33 @@ export function setAutoUpdateInYAML(composeYAML: string, autoUpdate: boolean | u
         throw doc.errors[0];
     }
 
-    if (autoUpdate === undefined) {
-        doc.deleteIn([ X_DOCKGE, AUTO_UPDATE_KEY ]);
+    // Note: yaml's setIn()/deleteIn() throw when the x-dockge block is missing or
+    // is not a mapping, so every one of those cases is handled before calling them.
+    const xDockge = doc.get(X_DOCKGE);
 
-        const xDockge = doc.get(X_DOCKGE);
-        if (isMap(xDockge) && xDockge.items.length === 0) {
+    if (autoUpdate === undefined) {
+        if (!isMap(xDockge) || !xDockge.has(AUTO_UPDATE_KEY)) {
+            // Nothing to remove: the stack already follows the global default,
+            // so hand back the file exactly as it came in
+            return composeYAML;
+        }
+
+        xDockge.delete(AUTO_UPDATE_KEY);
+
+        if (xDockge.items.length === 0) {
             doc.delete(X_DOCKGE);
         }
     } else {
+        if (!isMap(xDockge)) {
+            if (xDockge !== undefined) {
+                throw new Error(`"${X_DOCKGE}" in the compose file must be a mapping`);
+            }
+
+            // An "x-dockge:" line with nothing under it reads back as undefined too:
+            // drop it so the block below is created as a mapping
+            doc.delete(X_DOCKGE);
+        }
+
         // Appended at the end when the file has no x-dockge block yet: inserting it at
         // the top instead would push a leading file comment down below it
         doc.setIn([ X_DOCKGE, AUTO_UPDATE_KEY ], autoUpdate);
