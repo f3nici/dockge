@@ -131,3 +131,19 @@ export type NotificationSettings = {
     ntfyPassword?: string,
     enabledEvents: NotificationEvent[]
 }
+
+/**
+ * A GitHub release, as far as the "new version available" dialog cares about it.
+ */
+export type ReleaseInfo = {
+    /** The release tag, e.g. "V1.9.0" */
+    version: string,
+    /** The release notes in markdown, possibly empty, possibly truncated */
+    notes: string,
+    /** Whether {@link notes} was cut short and the reader should follow {@link url} */
+    notesTruncated: boolean,
+    /** Link to the release on GitHub */
+    url: string,
+    /** ISO timestamp of publication, when GitHub reported one */
+    publishedAt?: string,
+}

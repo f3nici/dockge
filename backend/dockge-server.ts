@@ -470,12 +470,14 @@ export class DockgeServer {
         let isContainer;
         let hasUpdate;
         let latestVersion;
+        let latestRelease;
 
         if (!hideVersion) {
             versionProperty = packageJSON.version;
             isContainer = (process.env.DOCKGE_IS_CONTAINER === "1");
             hasUpdate = checkVersion.hasUpdate;
             latestVersion = checkVersion.latestVersion;
+            latestRelease = checkVersion.latestRelease;
         }
 
         socket.emit("info", {
@@ -483,6 +485,7 @@ export class DockgeServer {
             isContainer,
             hasUpdate,
             latestVersion,
+            latestRelease,
             primaryHostname: await Settings.get("primaryHostname"),
             //serverTimezone: await this.getTimezone(),
             //serverTimezoneOffset: this.getTimezoneOffset(),

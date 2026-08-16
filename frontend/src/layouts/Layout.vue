@@ -18,7 +18,13 @@
                     <span class="d-none d-md-inline fs-4 title">Dockge <span class="edition-tag">(f3nici-edition)</span></span>
                 </router-link>
 
-                <a v-if="hasNewVersion" target="_blank" href="https://github.com/f3nici/dockge/releases" class="ms-2 me-3">
+                <a
+                    v-if="hasNewVersion"
+                    href="#"
+                    class="ms-2 me-3"
+                    :title="$t('newVersionShow')"
+                    @click.prevent="showNewVersionModal"
+                >
                     <font-awesome-icon icon="arrow-up" class="notification-icon" />
                 </a>
             </div>
@@ -104,17 +110,21 @@
             <router-view v-if="$root.loggedIn" />
             <Login v-if="! $root.loggedIn && $root.allowLoginDialog" />
         </main>
+
+        <NewVersionModal v-if="$root.loggedIn" ref="newVersionModal" />
     </div>
 </template>
 
 <script>
 import Login from "../components/Login.vue";
+import NewVersionModal from "../components/NewVersionModal.vue";
 import { ALL_ENDPOINTS } from "../../../common/util-common";
 
 export default {
 
     components: {
         Login,
+        NewVersionModal,
     },
 
     data() {
@@ -152,6 +162,15 @@ export default {
     },
 
     methods: {
+        /**
+         * Reopen the "new version" dialog from the header icon, which is the way
+         * back to the release notes after the dialog has been closed or skipped.
+         * @returns {void}
+         */
+        showNewVersionModal() {
+            this.$refs.newVersionModal?.show();
+        },
+
         scanFolder() {
             this.$root.emitAgent(ALL_ENDPOINTS, "requestStackList", (res) => {
                 this.$root.toastRes(res);
