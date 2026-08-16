@@ -4,6 +4,7 @@ import { callbackError, callbackResult, checkLogin, DockgeSocket, ValidationErro
 import { Stack } from "../stack";
 import { AgentSocket } from "../../common/agent-socket";
 import { log } from "../log";
+import { AUTO_UPDATE_DEFAULT, LooseObject } from "../../common/util-common";
 
 export class DockerSocketHandler extends AgentSocketHandler {
     create(socket : DockgeSocket, server : DockgeServer, agentSocket : AgentSocket) {
@@ -170,6 +171,30 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 }, callback);
 
                 server.sendStackList(true);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // runAutoUpdate - update this instance's eligible stacks, with the settings
+        // of the instance that asked for it. Sent by the auto update scheduler of a
+        // master instance to each of its agents, so one schedule covers every stack
+        // the user can see.
+        agentSocket.on("runAutoUpdate", async (options : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                const data = (options ?? {}) as LooseObject;
+
+                const updated = await server.autoUpdateManager.runNow({
+                    defaultBehaviour: data.defaultBehaviour === "update" ? "update" : AUTO_UPDATE_DEFAULT,
+                    pruneAfterUpdate: !!data.pruneAfterUpdate,
+                });
+
+                callbackResult({
+                    ok: true,
+                    updated,
+                }, callback);
             } catch (e) {
                 callbackError(e, callback);
             }

@@ -10,16 +10,21 @@ import { AgentData } from "../common/types";
 
 /**
  * Dockge Instance Manager
- * One AgentManager per Socket connection
+ * One AgentManager per Socket connection.
+ *
+ * The socket is the browser connection the agents are being managed on behalf
+ * of, and is where agent status and proxied agent events are relayed to. It is
+ * optional: background jobs (the auto update scheduler) talk to the agents
+ * without any browser being connected, and simply have nowhere to relay to.
  */
 export class AgentManager {
 
-    protected socket : DockgeSocket;
+    protected socket? : DockgeSocket;
     protected agentSocketList : Record<string, SocketClient> = {};
     protected agentLoggedInList : Record<string, boolean> = {};
     protected _firstConnectTime : Dayjs = dayjs();
 
-    constructor(socket: DockgeSocket) {
+    constructor(socket?: DockgeSocket) {
         this.socket = socket;
     }
 
@@ -142,7 +147,7 @@ export class AgentManager {
         let obj = new URL(url);
         let endpoint = obj.host;
 
-        this.socket.emit("agentStatus", {
+        this.socket?.emit("agentStatus", {
             endpoint: endpoint,
             status: "connecting",
         });
@@ -174,14 +179,14 @@ export class AgentManager {
                 if (res.ok) {
                     log.info("agent-manager", "Logged in to the socket server: " + endpoint);
                     this.agentLoggedInList[endpoint] = true;
-                    this.socket.emit("agentStatus", {
+                    this.socket?.emit("agentStatus", {
                         endpoint: endpoint,
                         status: "online",
                     });
                 } else {
                     log.error("agent-manager", "Failed to login to the socket server: " + endpoint);
                     this.agentLoggedInList[endpoint] = false;
-                    this.socket.emit("agentStatus", {
+                    this.socket?.emit("agentStatus", {
                         endpoint: endpoint,
                         status: "offline",
                     });
@@ -191,7 +196,7 @@ export class AgentManager {
 
         client.on("connect_error", (err) => {
             log.error("agent-manager", "Error from the socket server: " + endpoint);
-            this.socket.emit("agentStatus", {
+            this.socket?.emit("agentStatus", {
                 endpoint: endpoint,
                 status: "offline",
             });
@@ -199,14 +204,14 @@ export class AgentManager {
 
         client.on("disconnect", () => {
             log.info("agent-manager", "Disconnected from the socket server: " + endpoint);
-            this.socket.emit("agentStatus", {
+            this.socket?.emit("agentStatus", {
                 endpoint: endpoint,
                 status: "offline",
             });
         });
 
         client.on("agent", (...args : unknown[]) => {
-            this.socket.emit("agent", ...args);
+            this.socket?.emit("agent", ...args);
         });
 
         client.on("info", (res) => {
@@ -214,7 +219,7 @@ export class AgentManager {
 
             // Disconnect if the version is lower than 1.4.0
             if (!isDev && semver.satisfies(res.version, "< 1.4.0")) {
-                this.socket.emit("agentStatus", {
+                this.socket?.emit("agentStatus", {
                     endpoint: endpoint,
                     status: "offline",
                     msg: `${endpoint}: Unsupported version: ` + res.version,
@@ -234,7 +239,7 @@ export class AgentManager {
     async connectAll() {
         this._firstConnectTime = dayjs();
 
-        if (this.socket.endpoint) {
+        if (this.socket?.endpoint) {
             log.info("agent-manager", "This connection is connected as an agent, skip connectAll()");
             return;
         }
@@ -321,7 +326,7 @@ export class AgentManager {
             result[agent.endpoint] = agent.toJSON();
         }
 
-        this.socket.emit("agentList", {
+        this.socket?.emit("agentList", {
             ok: true,
             agentList: result,
         });

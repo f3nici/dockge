@@ -30,6 +30,16 @@ export type AutoUpdatePolicy = boolean | null;
  */
 export type AutoUpdateDefault = "none" | "update";
 
+/**
+ * The settings one auto update run uses. Sent to the agents so that a run
+ * covers the whole fleet with the settings configured on the instance that
+ * started it, instead of each agent having to be configured on its own.
+ */
+export type AutoUpdateRunOptions = {
+    defaultBehaviour: AutoUpdateDefault,
+    pruneAfterUpdate: boolean,
+}
+
 export type SimpleStackData = {
     name: string,
     status: number,
