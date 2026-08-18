@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createHash } from "crypto";
 
 vi.mock("promisify-child-process", () => ({
     default: {
@@ -22,10 +23,14 @@ import { ImageRepository } from "../backend/image-repository";
 const spawnMock = vi.mocked(childProcessAsync.spawn);
 const warnMock = vi.mocked(log.warn);
 
+const LOCAL_ID = "sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9";
+const LOCAL_DIGEST = "sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9";
+const OTHER_DIGEST = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+
 const imageInspectOutput = JSON.stringify([{
-    Id: "sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9",
+    Id: LOCAL_ID,
     RepoTags: [ "caddy:latest" ],
-    RepoDigests: [ "caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9" ],
+    RepoDigests: [ "caddy@" + LOCAL_DIGEST ],
 }]);
 
 const emptyInspectOutput = JSON.stringify([{
@@ -96,11 +101,90 @@ describe("ImageRepository", () => {
         it("detects an available update when digests differ", async () => {
             const repo = new ImageRepository();
             mockSpawnOnce(imageInspectOutput);
-            mockSpawnOnce("sha256:0000000000000000000000000000000000000000000000000000000000000000\n");
+            mockSpawnOnce(OTHER_DIGEST + "\n");
+            // The remote config, which is a different image than the local one
+            mockSpawnOnce("{\"config\":{}}");
 
             const info = await repo.update("stack", "caddy", "caddy");
 
-            expect(info.remoteDigest).toBe("sha256:0000000000000000000000000000000000000000000000000000000000000000");
+            expect(info.remoteDigest).toBe(OTHER_DIGEST);
+            expect(info.isImageUpdateAvailable()).toBe(true);
+        });
+
+        it("reports no update when the local image is known by the remote digest under another repository", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(JSON.stringify([{
+                Id: LOCAL_ID,
+                RepoTags: [ "lscr.io/linuxserver/sonarr:latest" ],
+                RepoDigests: [
+                    "linuxserver/sonarr@" + OTHER_DIGEST,
+                    "lscr.io/linuxserver/sonarr@" + LOCAL_DIGEST,
+                ],
+            }]));
+            mockSpawnOnce(LOCAL_DIGEST + "\n");
+
+            const info = await repo.update("stack", "sonarr", "lscr.io/linuxserver/sonarr:latest");
+
+            // The digest of the repository the stack references comes first
+            expect(info.localDigest).toBe(LOCAL_DIGEST);
+            expect(info.isImageUpdateAvailable()).toBe(false);
+            // No config check needed: the manifest digests already match
+            expect(spawnMock).toHaveBeenCalledTimes(2);
+        });
+
+        it("matches the repository of the image reference regardless of how it is written", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(JSON.stringify([{
+                Id: LOCAL_ID,
+                RepoTags: [ "caddy:2" ],
+                RepoDigests: [
+                    "mirror.example.com/caddy@" + OTHER_DIGEST,
+                    "caddy@" + LOCAL_DIGEST,
+                ],
+            }]));
+            mockSpawnOnce(LOCAL_DIGEST + "\n");
+
+            const info = await repo.update("stack", "caddy", "docker.io/library/caddy:2");
+
+            expect(info.localDigest).toBe(LOCAL_DIGEST);
+            expect(info.isImageUpdateAvailable()).toBe(false);
+        });
+
+        it("reports no update when only the manifest digest differs but the image config is the same", async () => {
+            const repo = new ImageRepository();
+            // skopeo writes the config blob out verbatim, and its digest is what
+            // Docker reports as the local image id
+            const config = Buffer.from("{\"architecture\":\"amd64\"}");
+            const configDigest = "sha256:" + createHash("sha256").update(config).digest("hex");
+
+            mockSpawnOnce(JSON.stringify([{
+                Id: configDigest,
+                RepoTags: [ "caddy:latest" ],
+                RepoDigests: [ "caddy@" + LOCAL_DIGEST ],
+            }]));
+            mockSpawnOnce(OTHER_DIGEST + "\n");
+            spawnMock.mockResolvedValueOnce({ stdout: config } as never);
+
+            const info = await repo.update("stack", "caddy", "caddy");
+
+            expect(info.remoteDigest).toBe(OTHER_DIGEST);
+            expect(info.isImageUpdateAvailable()).toBe(false);
+            // The config has to be read as raw bytes, not decoded text
+            expect(spawnMock).toHaveBeenLastCalledWith(
+                "skopeo",
+                [ "inspect", "--config", "--raw", "docker://caddy" ],
+                expect.not.objectContaining({ encoding: expect.anything() }),
+            );
+        });
+
+        it("keeps reporting the update when the remote config cannot be read", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(OTHER_DIGEST + "\n");
+            spawnMock.mockRejectedValueOnce(new Error("manifest unknown"));
+
+            const info = await repo.update("stack", "caddy", "caddy");
+
             expect(info.isImageUpdateAvailable()).toBe(true);
         });
 

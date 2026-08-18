@@ -22,6 +22,7 @@ export class AgentManager {
     protected socket? : DockgeSocket;
     protected agentSocketList : Record<string, SocketClient> = {};
     protected agentLoggedInList : Record<string, boolean> = {};
+    protected agentVersionList : Record<string, string> = {};
     protected _firstConnectTime : Dayjs = dayjs();
 
     constructor(socket?: DockgeSocket) {
@@ -217,6 +218,10 @@ export class AgentManager {
         client.on("info", (res) => {
             log.debug("agent-manager", res);
 
+            if (typeof(res?.version) === "string") {
+                this.agentVersionList[endpoint] = res.version;
+            }
+
             // Disconnect if the version is lower than 1.4.0
             if (!isDev && semver.satisfies(res.version, "< 1.4.0")) {
                 this.socket?.emit("agentStatus", {
@@ -234,6 +239,48 @@ export class AgentManager {
     disconnect(endpoint : string) {
         let client = this.agentSocketList[endpoint];
         client?.disconnect();
+    }
+
+    /**
+     * Wait until an agent is connected and logged in.
+     *
+     * `emitToEndpoint()` only gives a connection ten seconds to come up, counted
+     * from when the manager started connecting, which suits a browser session
+     * that is already up. A background job connects and talks to its agents in
+     * one go, and it is in no hurry, so it waits here first and can tell the
+     * difference between "not ready yet" and "cannot be reached at all".
+     * @param endpoint The agent to wait for
+     * @param timeoutMs How long to wait before giving up
+     * @returns Whether the agent is ready
+     */
+    async waitUntilReady(endpoint : string, timeoutMs : number) : Promise<boolean> {
+        const client = this.agentSocketList[endpoint];
+
+        if (!client) {
+            return false;
+        }
+
+        const deadline = dayjs().add(timeoutMs, "millisecond");
+
+        for (;;) {
+            if (client.connected && this.agentLoggedInList[endpoint]) {
+                return true;
+            }
+
+            if (dayjs().isAfter(deadline)) {
+                return false;
+            }
+
+            await sleep(1000);
+        }
+    }
+
+    /**
+     * The Dockge version an agent reported when it connected, if it has yet.
+     * @param endpoint The agent
+     */
+    getAgentVersion(endpoint : string) : string | undefined {
+        return this.agentVersionList[endpoint];
     }
 
     async connectAll() {
