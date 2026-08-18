@@ -753,6 +753,28 @@ export class Stack {
     }
 
     /**
+     * Re-read the running services and their images, then recompute the
+     * "update available" flags from scratch.
+     *
+     * Called right after a stack has been updated: the remote digests are only
+     * refreshed every few hours, so without this a stack that was just updated
+     * keeps its update indicator until the next scheduled check, which reads as
+     * "the update did not happen".
+     */
+    async refreshImageUpdateStatus() {
+        try {
+            // The same two steps the "check for image updates" button takes. The
+            // service list does not need refreshing first: an update changes
+            // which image a container runs, not which image the compose file
+            // names, and that name is what is looked up here.
+            await this.updateImageInfos();
+            await this.updateData();
+        } catch (e) {
+            log.error("refreshImageUpdateStatus", "Stack '" + this.name + "': " + e);
+        }
+    }
+
+    /**
      * Checks if a compose file exists in the specified directory.
      * @async
      * @static
@@ -1023,6 +1045,10 @@ export class Stack {
             }
         }
 
+        // The stack now runs whatever the registry had, so clear the update
+        // indicator instead of leaving it up until the next scheduled check
+        await this.refreshImageUpdateStatus();
+
         return exitCode;
     }
 
@@ -1053,6 +1079,9 @@ export class Stack {
                 throw new Error("Failed to prune images, please check the terminal output for more information.");
             }
         }
+
+        // See update(): the service is on the current image now
+        await this.refreshImageUpdateStatus();
 
         return exitCode;
     }
