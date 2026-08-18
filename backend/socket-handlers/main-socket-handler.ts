@@ -21,6 +21,7 @@ import jwt from "jsonwebtoken";
 import { Settings } from "../settings";
 import { Stack } from "../stack";
 import { AutoUpdateManager } from "../auto-update";
+import { RegistryCredentialManager } from "../registry-credentials";
 import { AUTO_UPDATE_DEFAULT } from "../../common/util-common";
 
 export class MainSocketHandler extends SocketHandler {
@@ -408,6 +409,66 @@ export class MainSocketHandler extends SocketHandler {
                         msg: e.message,
                     });
                 }
+            }
+        });
+
+        // Registry logins - the stored ones, without their secrets
+        socket.on("getRegistryCredentials", async (callback) => {
+            try {
+                checkLogin(socket);
+
+                callback({
+                    ok: true,
+                    data: RegistryCredentialManager.INSTANCE.list(),
+                });
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // Save registry logins
+        socket.on("saveRegistryCredentials", async (data, callback) => {
+            try {
+                checkLogin(socket);
+                await RegistryCredentialManager.INSTANCE.save(data);
+
+                callback({
+                    ok: true,
+                    msg: "Saved",
+                    msgi18n: true,
+                });
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // Check one registry login, and report the pull limit it comes with
+        socket.on("testRegistryCredential", async (registry, username, password, callback) => {
+            try {
+                checkLogin(socket);
+                const result = await RegistryCredentialManager.INSTANCE.test(registry, username, password);
+
+                callback({
+                    ok: result.ok,
+                    msg: result.msg,
+                    rateLimit: result.rateLimit,
+                });
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // Docker Hub's pull limit as it currently applies to this Dockge
+        socket.on("getDockerHubRateLimit", async (callback) => {
+            try {
+                checkLogin(socket);
+
+                callback({
+                    ok: true,
+                    rateLimit: await RegistryCredentialManager.INSTANCE.getDockerHubRateLimit(),
+                });
+            } catch (e) {
+                callbackError(e, callback);
             }
         });
 

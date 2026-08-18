@@ -17,6 +17,7 @@ const Settings = () => import("./pages/Settings.vue");
 import Appearance from "./components/settings/Appearance.vue";
 import General from "./components/settings/General.vue";
 import Notifications from "./components/settings/Notifications.vue";
+import Registries from "./components/settings/Registries.vue";
 const Security = () => import("./components/settings/Security.vue");
 import About from "./components/settings/About.vue";
 import MobileStackList from "./pages/MobileStackList.vue";
@@ -114,6 +115,10 @@ const routes = [
                             {
                                 path: "notifications",
                                 component: Notifications,
+                            },
+                            {
+                                path: "registries",
+                                component: Registries,
                             },
                             {
                                 path: "security",

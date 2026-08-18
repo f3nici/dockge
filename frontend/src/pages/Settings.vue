@@ -81,6 +81,9 @@ export default {
                 notifications: {
                     title: "Notifications",
                 },
+                registries: {
+                    title: this.$t("registries"),
+                },
                 security: {
                     title: this.$t("Security"),
                 },
