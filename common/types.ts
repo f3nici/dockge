@@ -147,3 +147,48 @@ export type ReleaseInfo = {
     /** ISO timestamp of publication, when GitHub reported one */
     publishedAt?: string,
 }
+
+/**
+ * Credentials for one container registry, as stored on the server.
+ */
+export type RegistryCredential = {
+    /** Registry host, e.g. "docker.io" or "ghcr.io" */
+    registry: string,
+    username: string,
+    /** Password, access token or PAT. Never sent to the browser. */
+    password: string,
+}
+
+/**
+ * A stored credential as the browser gets to see it: everything but the secret.
+ */
+export type RegistryCredentialInfo = {
+    registry: string,
+    username: string,
+}
+
+/**
+ * What a registry says about how many pulls are left. Docker Hub reports this,
+ * most other registries do not.
+ */
+export type RegistryRateLimit = {
+    /** Pulls allowed per window, or null when the registry reports no limit */
+    limit: number | null,
+    /** Pulls left in the current window, or null when there is no limit */
+    remaining: number | null,
+    /** Length of the limit window in seconds, when reported */
+    windowSeconds: number | null,
+    /** Whether the limit above was read while logged in */
+    authenticated: boolean,
+    /** The account the limit applies to, when authenticated */
+    username?: string,
+}
+
+/**
+ * Result of checking one set of registry credentials.
+ */
+export type RegistryTestResult = {
+    ok: boolean,
+    msg: string,
+    rateLimit?: RegistryRateLimit,
+}

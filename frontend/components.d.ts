@@ -35,6 +35,7 @@ declare module 'vue' {
     NewVersionModal: typeof import('./src/components/NewVersionModal.vue')['default']
     Notifications: typeof import('./src/components/settings/Notifications.vue')['default']
     ProgressTerminal: typeof import('./src/components/ProgressTerminal.vue')['default']
+    Registries: typeof import('./src/components/settings/Registries.vue')['default']
     ReleaseNotesSpans: typeof import('./src/components/ReleaseNotesSpans.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

@@ -39,6 +39,7 @@ import { ManageAgentSocketHandler } from "./socket-handlers/manage-agent-socket-
 import { Terminal } from "./terminal";
 import { AgentMaintenanceSocketHandler } from "./agent-socket-handlers/agent-maintenance-socket-handler";
 import { AutoUpdateManager } from "./auto-update";
+import { RegistryCredentialManager } from "./registry-credentials";
 
 export class DockgeServer {
     app : Express;
@@ -379,6 +380,13 @@ export class DockgeServer {
         // Initialize notification manager
         log.info("server", "Initializing notification manager...");
         await Stack.notificationManager.loadSettings();
+
+        // Make the stored registry logins available to skopeo and the docker CLI
+        try {
+            await RegistryCredentialManager.INSTANCE.init(this.config.dataDir);
+        } catch (e) {
+            log.error("server", "Failed to prepare the registry logins: " + e);
+        }
 
         // First time setup if needed
         let jwtSecretBean = await R.findOne("setting", " `key` = ? ", [

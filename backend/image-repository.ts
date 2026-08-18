@@ -1,6 +1,7 @@
 import { log } from "./log";
 import childProcessAsync from "promisify-child-process";
 import crypto from "crypto";
+import { RegistryCredentialManager } from "./registry-credentials";
 
 export class ImageRepository {
 
@@ -94,7 +95,11 @@ export class ImageRepository {
     private async inspectRemoteDigest(image: string): Promise<string | undefined> {
         let resRemote;
         try {
-            resRemote = await childProcessAsync.spawn("skopeo", [ "inspect", "--no-tags", "--format", "{{ .Digest }}", "docker://" + image ], {
+            // Registry logins, when configured, make these checks count against
+            // the account's pull limit instead of the (much lower) anonymous one
+            const authArgs = RegistryCredentialManager.INSTANCE.skopeoAuthArgs();
+
+            resRemote = await childProcessAsync.spawn("skopeo", [ "inspect", "--no-tags", ...authArgs, "--format", "{{ .Digest }}", "docker://" + image ], {
                 encoding: "utf-8",
             });
         } catch (e) {
@@ -131,7 +136,9 @@ export class ImageRepository {
         try {
             // maxBuffer instead of encoding, so the output is kept as the raw
             // bytes the digest has to be taken over rather than decoded text
-            const res = await childProcessAsync.spawn("skopeo", [ "inspect", "--config", "--raw", "docker://" + image ], {
+            const authArgs = RegistryCredentialManager.INSTANCE.skopeoAuthArgs();
+
+            const res = await childProcessAsync.spawn("skopeo", [ "inspect", "--config", "--raw", ...authArgs, "docker://" + image ], {
                 maxBuffer: 4 * 1024 * 1024,
             });
 

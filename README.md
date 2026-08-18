@@ -67,6 +67,7 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **Agent Console** - Open a console directly on any online agent from the dashboard
 - **Full-Width Log Option** - Appearance setting to show the stack log full width for easier scanning
 - **Scheduled Auto Update** - Pull new images and recreate stacks on a configurable cron schedule, with an "Update now" button. Each stack picks *Always update*, *Never update*, or *Inherit from settings* on its own page, saved as `x-dockge.auto-update` in its compose file. Stacks that don't pick follow the global default in Settings, which is "Do nothing" out of the box. One schedule covers every stack you can see: each run also asks every agent to update its own stacks with the same settings.
+- **Registry Logins** - Sign in to Docker Hub (or any other registry) under *Settings → Registries*, so update checks and pulls no longer run anonymously. Docker Hub allows about 100 anonymous pulls per 6 hours per IP address and every image update check spends one, which a busy host burns through quickly; signing in roughly doubles the allowance and counts it against your account instead. The page also shows how many pulls are left in the current window. Credentials are written to a docker `config.json` in the data directory, which is passed to skopeo (`--authfile`) and to the docker CLI (`DOCKER_CONFIG`). Each endpoint has its own logins, so add them on your agents too.
 
 ## 📖 Usage
 
