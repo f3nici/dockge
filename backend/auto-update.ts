@@ -5,7 +5,8 @@ import { Stack } from "./stack";
 import { log } from "./log";
 import { AgentManager } from "./agent-manager";
 import { Agent } from "./models/agent";
-import { AUTO_UPDATE_DEFAULT, AUTO_UPDATE_DEFAULT_CRON, resolveAutoUpdate } from "../common/util-common";
+import semver from "semver";
+import { AUTO_UPDATE_DEFAULT, AUTO_UPDATE_DEFAULT_CRON, isDev, resolveAutoUpdate } from "../common/util-common";
 import { AutoUpdateDefault, AutoUpdateRunOptions } from "../common/types";
 import { LooseObject } from "../common/util-common";
 
@@ -19,7 +20,25 @@ export { AUTO_UPDATE_DEFAULT_CRON };
  * agent that never answers - unreachable, or too old to know the event - from
  * holding up the rest of the run.
  */
-const AGENT_RUN_TIMEOUT = 10 * 60 * 1000;
+const AGENT_RUN_TIMEOUT = 60 * 60 * 1000;
+
+/**
+ * How long to wait for an agent connection to come up and log in.
+ *
+ * A scheduled run brings up its own connections and nobody is waiting on the
+ * result, so it is worth giving a slow or briefly unreachable agent a bit of
+ * time rather than skipping it for the whole run.
+ */
+const AGENT_CONNECT_TIMEOUT = 60 * 1000;
+
+/**
+ * The first Dockge version whose agents answer `runAutoUpdate`.
+ *
+ * An older agent silently ignores the event, so there is nothing to wait for:
+ * it is skipped straight away with a log line saying why, instead of holding
+ * the run open until it times out.
+ */
+const MIN_AGENT_VERSION = "1.8.1";
 
 /**
  * Schedules and runs automatic stack updates.
@@ -130,12 +149,32 @@ export class AutoUpdateManager {
                 pruneAfterUpdate: !!(await Settings.get("autoUpdatePrune")),
             };
 
-            const updated = await this.updateLocalStacks(runOptions);
+            log.info("auto-update", `Auto update started (default for stacks without a preference: ${runOptions.defaultBehaviour}, prune after update: ${runOptions.pruneAfterUpdate})`);
+
+            const updated : string[] = [];
+            let localError : unknown;
+
+            try {
+                updated.push(...await this.updateLocalStacks(runOptions));
+            } catch (e) {
+                // Reading this instance's stacks can fail as a whole, for
+                // instance when docker is unreachable. The agents are separate
+                // machines, so that must not stop them from running - the error
+                // is raised once they have had their turn.
+                log.error("auto-update", `Failed to update the local stacks: ${e}`);
+                localError = e;
+            }
 
             // A run an agent was asked to do covers that agent only: the instance
             // that started the run is the one that fans it out.
             if (!options) {
                 updated.push(...await this.updateAgentStacks(runOptions));
+            }
+
+            // Whoever asked for the run has to hear about it: "Update now" reports
+            // success purely on this not throwing
+            if (localError) {
+                throw localError;
             }
 
             log.info("auto-update", `Auto update finished. Updated ${updated.length} stack(s).`);
@@ -152,6 +191,8 @@ export class AutoUpdateManager {
      */
     protected async updateLocalStacks(options: AutoUpdateRunOptions): Promise<string[]> {
         const updated: string[] = [];
+        const skipped: string[] = [];
+        const failed: string[] = [];
         const stackList = await Stack.getStackList(this.server, true);
 
         for (const stack of stackList.values()) {
@@ -161,13 +202,13 @@ export class AutoUpdateManager {
 
             // The stack's own x-dockge.auto-update wins; otherwise the global default
             if (!resolveAutoUpdate(stack.autoUpdate, options.defaultBehaviour)) {
-                log.debug("auto-update", `Skipping stack "${stack.name}" (auto update not enabled)`);
+                skipped.push(`${stack.name} (auto update not enabled)`);
                 continue;
             }
 
             // Only touch stacks that are currently running
             if (!stack.isStarted) {
-                log.debug("auto-update", `Skipping stack "${stack.name}" (not running)`);
+                skipped.push(`${stack.name} (not running)`);
                 continue;
             }
 
@@ -176,8 +217,19 @@ export class AutoUpdateManager {
                 await stack.update(undefined, options.pruneAfterUpdate, false);
                 updated.push(stack.name);
             } catch (e) {
+                failed.push(stack.name);
                 log.error("auto-update", `Failed to update stack "${stack.name}": ${e}`);
             }
+        }
+
+        // Logged in full: when a stack is not updated, the reason it was passed
+        // over is the first thing anyone looking into it needs
+        log.info("auto-update", `Updated ${updated.length} local stack(s)${updated.length ? ": " + updated.join(", ") : ""}`);
+        if (failed.length > 0) {
+            log.info("auto-update", `Failed to update ${failed.length} local stack(s): ${failed.join(", ")}`);
+        }
+        if (skipped.length > 0) {
+            log.info("auto-update", `Skipped ${skipped.length} local stack(s): ${skipped.join(", ")}`);
         }
 
         this.server.sendStackList(false);
@@ -206,6 +258,7 @@ export class AutoUpdateManager {
         }
 
         if (endpointList.length === 0) {
+            log.debug("auto-update", "No agents configured, nothing to fan out to");
             return [];
         }
 
@@ -232,25 +285,57 @@ export class AutoUpdateManager {
      * @param options Settings the agent should run with
      * @returns The names of the updated stacks, prefixed with the endpoint
      */
-    protected updateOneAgent(agentManager: AgentManager, endpoint: string, options: AutoUpdateRunOptions): Promise<string[]> {
+    protected async updateOneAgent(agentManager: AgentManager, endpoint: string, options: AutoUpdateRunOptions): Promise<string[]> {
+        // Give the connection time to come up first, so an agent that is simply
+        // slow to answer is not mistaken for one that cannot be reached
+        if (!await agentManager.waitUntilReady(endpoint, AGENT_CONNECT_TIMEOUT)) {
+            log.error("auto-update", `Agent "${endpoint}" is not connected, skipping it. Check that the agent is running and that its credentials in Dockge are still valid.`);
+            return [];
+        }
+
+        const version = agentManager.getAgentVersion(endpoint);
+
+        if (version && !isDev && semver.satisfies(version, `< ${MIN_AGENT_VERSION}`)) {
+            log.error("auto-update", `Agent "${endpoint}" runs Dockge ${version}, which does not take part in scheduled updates. Upgrade it to ${MIN_AGENT_VERSION} or newer, or give it its own auto update schedule.`);
+            return [];
+        }
+
+        log.info("auto-update", `Running auto update on agent "${endpoint}"${version ? ` (Dockge ${version})` : ""}`);
+
+        // A socket.io acknowledgement does not survive a reconnect: if the
+        // connection drops, the reply to this run is lost even though the agent
+        // carries on with it. Watching for that is what keeps a lost reply from
+        // holding the run - and with it the next scheduled one - open for the
+        // full timeout.
+        const disconnectCount = agentManager.getDisconnectCount(endpoint);
+
         return new Promise((resolve) => {
             let done = false;
+            let timeout : NodeJS.Timeout | undefined;
+            let connectionWatch : NodeJS.Timeout | undefined;
 
             const finish = (updated : string[]) => {
                 if (!done) {
                     done = true;
+                    clearTimeout(timeout);
+                    clearInterval(connectionWatch);
                     resolve(updated);
                 }
             };
 
-            const timeout = setTimeout(() => {
-                log.error("auto-update", `Agent "${endpoint}" did not report back in time, continuing without it. It may still be updating, or be running an older version of Dockge.`);
+            connectionWatch = setInterval(() => {
+                if (agentManager.getDisconnectCount(endpoint) !== disconnectCount) {
+                    log.error("auto-update", `Lost the connection to agent "${endpoint}" while it was updating, so its reply can no longer arrive. It may well have finished the update; its stacks are simply not counted in this run.`);
+                    finish([]);
+                }
+            }, 15 * 1000);
+
+            timeout = setTimeout(() => {
+                log.error("auto-update", `Agent "${endpoint}" did not report back within ${AGENT_RUN_TIMEOUT / 60000} minutes, continuing without it. It may still be updating, or be running a version of Dockge older than ${MIN_AGENT_VERSION}, which does not support scheduled updates.`);
                 finish([]);
             }, AGENT_RUN_TIMEOUT);
 
             agentManager.emitToEndpoint(endpoint, "runAutoUpdate", options, (res : LooseObject) => {
-                clearTimeout(timeout);
-
                 if (!res?.ok) {
                     log.error("auto-update", `Agent "${endpoint}" failed to auto update: ${res?.msg}`);
                     finish([]);
@@ -258,10 +343,9 @@ export class AutoUpdateManager {
                 }
 
                 const updated : string[] = Array.isArray(res.updated) ? res.updated : [];
-                log.info("auto-update", `Agent "${endpoint}" updated ${updated.length} stack(s).`);
+                log.info("auto-update", `Agent "${endpoint}" updated ${updated.length} stack(s)${updated.length ? ": " + updated.join(", ") : ""}.`);
                 finish(updated.map((name) => `${endpoint}/${name}`));
             }).catch((e) => {
-                clearTimeout(timeout);
                 log.error("auto-update", `Could not reach agent "${endpoint}": ${e}`);
                 finish([]);
             });

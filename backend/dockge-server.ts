@@ -341,7 +341,11 @@ export class DockgeServer {
         socket.userID = user.id;
         socket.join(user.id.toString());
 
-        this.sendInfo(socket);
+        // Awaited, so this - the first "info" carrying the version, the one at
+        // connect time hides it - is on its way before the caller acknowledges
+        // the login. Another Dockge reads the version from it to decide what it
+        // may ask this instance to do.
+        await this.sendInfo(socket);
 
         try {
             this.sendStackList();
