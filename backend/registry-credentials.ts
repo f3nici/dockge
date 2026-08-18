@@ -65,8 +65,18 @@ export class RegistryCredentialManager {
      */
     private baseConfig : LooseObject = {};
 
+    /** The directory {@link baseConfig} was read from */
+    private baseConfigDir = "";
+
     /** DOCKER_CONFIG as it was on startup, restored when the last login is removed */
     private originalDockerConfigEnv? : string;
+
+    /**
+     * Whether the generated config.json is on disk. Pointing skopeo at a file
+     * that is not there makes it fail outright, which would take remote update
+     * checks down with it, so a failed write means going on without it.
+     */
+    private authFileReady = false;
 
     private initialized = false;
 
@@ -176,7 +186,7 @@ export class RegistryCredentialManager {
      * are stored.
      */
     skopeoAuthArgs() : string[] {
-        if (this.credentials.length === 0 || !this.configDir) {
+        if (!this.authFileReady || this.credentials.length === 0 || !this.configDir) {
             return [];
         }
 
@@ -282,6 +292,7 @@ export class RegistryCredentialManager {
             return {};
         }
 
+        this.baseConfigDir = path.resolve(dir);
         const file = path.join(dir, "config.json");
 
         try {
@@ -308,6 +319,7 @@ export class RegistryCredentialManager {
         }
 
         if (this.credentials.length === 0) {
+            this.authFileReady = false;
             this.restoreDockerConfigEnv();
 
             try {
@@ -323,6 +335,10 @@ export class RegistryCredentialManager {
             ...(typeof(this.baseConfig.auths) === "object" ? this.baseConfig.auths : {}),
         };
 
+        // Every key the logins are written under, so credential helpers can be
+        // kept out of the way of exactly those registries
+        const managedKeys : string[] = [];
+
         for (const credential of this.credentials) {
             const auth = {
                 auth: Buffer.from(`${credential.username}:${credential.password}`, "utf-8").toString("base64"),
@@ -332,15 +348,19 @@ export class RegistryCredentialManager {
                 // The docker CLI reads the legacy key, skopeo the host name
                 auths[DOCKER_HUB_CONFIG_KEY] = auth;
                 auths[DOCKER_HUB] = auth;
+                managedKeys.push(DOCKER_HUB_CONFIG_KEY, DOCKER_HUB);
             } else {
                 auths[credential.registry] = auth;
+                managedKeys.push(credential.registry);
             }
         }
 
-        const config = {
+        const config : LooseObject = {
             ...this.baseConfig,
             auths,
         };
+
+        this.dropConflictingCredentialHelpers(config, managedKeys);
 
         try {
             fs.mkdirSync(this.configDir, {
@@ -348,12 +368,98 @@ export class RegistryCredentialManager {
                 mode: 0o700,
             });
             fs.writeFileSync(this.authFilePath(), JSON.stringify(config, null, 4), { mode: 0o600 });
+            this.linkBaseConfigEntries();
+            this.authFileReady = true;
             process.env.DOCKER_CONFIG = this.configDir;
 
             log.debug("registry", `Wrote registry logins to ${this.authFilePath()}`);
         } catch (e) {
+            this.authFileReady = false;
             log.error("registry", "Failed to write the docker config with the registry logins: " + e);
             throw e;
+        }
+    }
+
+    /**
+     * Take out the credential helpers that would shadow the logins just
+     * written.
+     *
+     * The docker CLI asks `credHelpers[registry]`, then `credsStore`, and only
+     * reads `auths` when neither names a helper. A config carried over from a
+     * Docker Desktop install ("credsStore": "desktop") would therefore send
+     * every lookup to a helper binary that does not exist in Dockge's
+     * container, and the logins would never be used.
+     * @param config The config about to be written
+     * @param managedKeys The auths keys Dockge wrote
+     */
+    private dropConflictingCredentialHelpers(config : LooseObject, managedKeys : string[]) {
+        if (config.credsStore) {
+            log.warn("registry", `Ignoring "credsStore": "${config.credsStore}" from the existing docker config, `
+                + "as it would take precedence over the logins configured in Dockge");
+            delete config.credsStore;
+        }
+
+        if (!config.credHelpers || typeof(config.credHelpers) !== "object") {
+            return;
+        }
+
+        const credHelpers : LooseObject = { ...config.credHelpers };
+
+        for (const key of managedKeys) {
+            if (credHelpers[key]) {
+                log.warn("registry", `Ignoring the credential helper "${credHelpers[key]}" configured for ${key}, `
+                    + "as it would take precedence over the login configured in Dockge");
+                delete credHelpers[key];
+            }
+        }
+
+        config.credHelpers = credHelpers;
+    }
+
+    /**
+     * Link everything else that lived next to the original config.json into the
+     * generated directory.
+     *
+     * DOCKER_CONFIG points at a directory, not a file, so redirecting it also
+     * moves where the CLI looks for `cli-plugins` (which is how `docker
+     * compose` is found on some installs) and `contexts`. Linking them keeps
+     * those working.
+     */
+    private linkBaseConfigEntries() {
+        if (!this.baseConfigDir || !fs.existsSync(this.baseConfigDir)) {
+            return;
+        }
+
+        let entries : string[];
+
+        try {
+            entries = fs.readdirSync(this.baseConfigDir);
+        } catch (e) {
+            log.warn("registry", `Could not read ${this.baseConfigDir}: ${e}`);
+            return;
+        }
+
+        for (const entry of entries) {
+            if (entry === "config.json") {
+                continue;
+            }
+
+            const target = path.join(this.configDir, entry);
+
+            try {
+                // lstat rather than existsSync, so a link that has gone stale
+                // still counts as "already handled"
+                fs.lstatSync(target);
+                continue;
+            } catch (e) {
+                // Not there yet, so link it below
+            }
+
+            try {
+                fs.symlinkSync(path.join(this.baseConfigDir, entry), target);
+            } catch (e) {
+                log.warn("registry", `Could not link ${entry} from ${this.baseConfigDir}: ${e}`);
+            }
         }
     }
 
@@ -546,10 +652,13 @@ export class RegistryCredentialManager {
             };
         }
 
-        if (url.protocol !== "https:" && url.protocol !== "http:") {
+        // The realm comes from the registry, and the credentials are sent to
+        // whatever it names, so plain http is refused rather than handing them
+        // over in the clear
+        if (url.protocol !== "https:") {
             return {
                 ok: false,
-                msg: `The registry asked for a token over an unsupported protocol: ${url.protocol}`,
+                msg: `${url.host} asked for the credentials over ${url.protocol.replace(":", "")}, which would send them unencrypted.`,
             };
         }
 

@@ -67,6 +67,18 @@ describe("RegistryCredentialManager", () => {
     const configFile = () => path.join(dataDir, "docker-config", "config.json");
     const readConfig = () => JSON.parse(fs.readFileSync(configFile(), "utf-8"));
 
+    /**
+     * Stand in for a docker config the user mounted themselves, and point
+     * DOCKER_CONFIG at it.
+     * @param config Contents of its config.json
+     */
+    function makeHomeConfig(config : Record<string, unknown>) : string {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-home-docker-"));
+        fs.writeFileSync(path.join(dir, "config.json"), JSON.stringify(config));
+        process.env.DOCKER_CONFIG = dir;
+        return dir;
+    }
+
     describe("normalizeRegistry", () => {
         it("brings every spelling of Docker Hub to one entry", () => {
             for (const input of [ "docker.io", "DOCKER.IO", "https://index.docker.io/v1/", "registry-1.docker.io", " https://registry.hub.docker.com " ]) {
@@ -161,15 +173,13 @@ describe("RegistryCredentialManager", () => {
         });
 
         it("carries over an existing docker config", async () => {
-            const homeConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-home-docker-"));
-            fs.writeFileSync(path.join(homeConfigDir, "config.json"), JSON.stringify({
+            const homeConfigDir = makeHomeConfig({
                 auths: {
                     "quay.io": { auth: authOf("other", "secret") },
                 },
-                credsStore: "helper",
-            }));
+                psFormat: "table {{.ID}}",
+            });
 
-            process.env.DOCKER_CONFIG = homeConfigDir;
             const withBase = new RegistryCredentialManager();
             await withBase.init(dataDir);
 
@@ -180,7 +190,7 @@ describe("RegistryCredentialManager", () => {
             }]);
 
             const config = readConfig();
-            expect(config.credsStore).toBe("helper");
+            expect(config.psFormat).toBe("table {{.ID}}");
             expect(config.auths["quay.io"].auth).toBe(authOf("other", "secret"));
             expect(config.auths["docker.io"].auth).toBe(authOf("user", "token"));
 
@@ -188,6 +198,79 @@ describe("RegistryCredentialManager", () => {
                 recursive: true,
                 force: true,
             });
+        });
+
+        it("drops the credential helpers that would shadow the logins", async () => {
+            const homeConfigDir = makeHomeConfig({
+                credsStore: "desktop",
+                credHelpers: {
+                    "docker.io": "desktop",
+                    "quay.io": "ecr-login",
+                },
+            });
+
+            const withBase = new RegistryCredentialManager();
+            await withBase.init(dataDir);
+
+            await withBase.save([{
+                registry: "docker.io",
+                username: "user",
+                password: "token",
+            }]);
+
+            const config = readConfig();
+
+            // With either of these left in place the docker CLI would ask a
+            // helper binary that is not there instead of reading the login
+            expect(config.credsStore).toBeUndefined();
+            expect(config.credHelpers["docker.io"]).toBeUndefined();
+
+            // Helpers for registries Dockge does not manage are none of its business
+            expect(config.credHelpers["quay.io"]).toBe("ecr-login");
+
+            fs.rmSync(homeConfigDir, {
+                recursive: true,
+                force: true,
+            });
+        });
+
+        it("keeps the rest of the docker config directory reachable", async () => {
+            const homeConfigDir = makeHomeConfig({});
+            fs.mkdirSync(path.join(homeConfigDir, "cli-plugins"));
+            fs.writeFileSync(path.join(homeConfigDir, "cli-plugins", "docker-compose"), "#!/bin/sh\n");
+
+            const withBase = new RegistryCredentialManager();
+            await withBase.init(dataDir);
+
+            await withBase.save([{
+                registry: "docker.io",
+                username: "user",
+                password: "token",
+            }]);
+
+            // DOCKER_CONFIG moves the whole directory, so a compose plugin
+            // installed next to the original config has to still be found
+            expect(fs.existsSync(path.join(dataDir, "docker-config", "cli-plugins", "docker-compose"))).toBe(true);
+
+            fs.rmSync(homeConfigDir, {
+                recursive: true,
+                force: true,
+            });
+        });
+
+        it("leaves skopeo alone when the config could not be written", async () => {
+            // A file where the directory should go makes the write fail
+            fs.writeFileSync(path.join(dataDir, "docker-config"), "");
+
+            await expect(manager.save([{
+                registry: "docker.io",
+                username: "user",
+                password: "token",
+            }])).rejects.toThrow();
+
+            // Pointing skopeo at an authfile that is not there would fail every
+            // update check instead of only the authenticated part
+            expect(manager.skopeoAuthArgs()).toEqual([]);
         });
     });
 
@@ -287,6 +370,24 @@ describe("RegistryCredentialManager", () => {
 
             expect(result.ok).toBe(true);
             expect(fetchMock.mock.calls[1][0].toString()).toContain("https://ghcr.io/token");
+        });
+
+        it("refuses to send the credentials to a token endpoint without TLS", async () => {
+            const fetchMock = vi.fn(async () => new Response("", {
+                status: 401,
+                headers: {
+                    "www-authenticate": "Bearer realm=\"http://registry.example.com/token\",service=\"registry.example.com\"",
+                },
+            }));
+            vi.stubGlobal("fetch", fetchMock);
+
+            const result = await manager.test("registry.example.com", "user", "token");
+
+            expect(result.ok).toBe(false);
+            expect(result.msg).toContain("unencrypted");
+
+            // The point is that the credentials never went anywhere near it
+            expect(fetchMock).toHaveBeenCalledTimes(1);
         });
 
         it("uses the stored password when the browser sends none", async () => {
