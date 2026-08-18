@@ -23,6 +23,7 @@ export class AgentManager {
     protected agentSocketList : Record<string, SocketClient> = {};
     protected agentLoggedInList : Record<string, boolean> = {};
     protected agentVersionList : Record<string, string> = {};
+    protected agentDisconnectCountList : Record<string, number> = {};
     protected _firstConnectTime : Dayjs = dayjs();
 
     constructor(socket?: DockgeSocket) {
@@ -205,6 +206,8 @@ export class AgentManager {
 
         client.on("disconnect", () => {
             log.info("agent-manager", "Disconnected from the socket server: " + endpoint);
+            this.agentLoggedInList[endpoint] = false;
+            this.agentDisconnectCountList[endpoint] = (this.agentDisconnectCountList[endpoint] ?? 0) + 1;
             this.socket?.emit("agentStatus", {
                 endpoint: endpoint,
                 status: "offline",
@@ -281,6 +284,18 @@ export class AgentManager {
      */
     getAgentVersion(endpoint : string) : string | undefined {
         return this.agentVersionList[endpoint];
+    }
+
+    /**
+     * How many times the connection to an agent has dropped.
+     *
+     * Socket.io hands out no acknowledgement across a reconnect, so a caller
+     * waiting for one can compare this against what it saw before it asked to
+     * find out that the reply it is waiting for is never going to arrive.
+     * @param endpoint The agent
+     */
+    getDisconnectCount(endpoint : string) : number {
+        return this.agentDisconnectCountList[endpoint] ?? 0;
     }
 
     async connectAll() {

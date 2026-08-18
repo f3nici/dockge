@@ -12,6 +12,14 @@ export class ImageRepository {
 
     private skopeoMissingWarned = false;
 
+    /**
+     * The config digest last read for an image, and the manifest digest it was
+     * read for. `updateImageInfos()` clears a stack's entries before every
+     * check, so without this the config blob would be fetched again on every
+     * poll for every image that has an update pending.
+     */
+    private remoteConfigDigests: Map<string, { manifestDigest: string, configDigest: string }> = new Map();
+
     resetStack(stack: string) {
         this.imageInfos.delete(stack);
     }
@@ -37,7 +45,13 @@ export class ImageRepository {
                 return imageInfo;
             }
 
-            imageInfo = new ImageInfo(remoteDigest, imageInfo.localDigest, imageInfo.localId, imageInfo.localDigests);
+            // The config read for this exact manifest still describes it
+            const cached = this.remoteConfigDigests.get(image);
+            const knownConfigDigest = cached?.manifestDigest === remoteDigest ? cached.configDigest : "";
+
+            imageInfo = new ImageInfo(remoteDigest, imageInfo.localDigest, imageInfo.localId, imageInfo.localDigests, knownConfigDigest);
+
+            const manifestDiffers = !!remoteDigest && !imageInfo.localDigests.includes(remoteDigest);
 
             // A manifest digest that does not match is not proof of a new image:
             // registries, mirrors and pull-through caches can hand out a different
@@ -46,10 +60,19 @@ export class ImageRepository {
             // flag never clears. Before reporting an update, confirm it by
             // comparing the image configs, which are identical if and only if the
             // images really are.
-            if (imageInfo.isImageUpdateAvailable()) {
+            if (manifestDiffers && !knownConfigDigest) {
                 const remoteConfigDigest = await this.inspectRemoteConfigDigest(image);
                 imageInfo = new ImageInfo(remoteDigest, imageInfo.localDigest, imageInfo.localId, imageInfo.localDigests, remoteConfigDigest);
 
+                if (remoteConfigDigest) {
+                    this.remoteConfigDigests.set(image, {
+                        manifestDigest: remoteDigest,
+                        configDigest: remoteConfigDigest,
+                    });
+                }
+            }
+
+            if (manifestDiffers) {
                 if (imageInfo.isImageUpdateAvailable()) {
                     log.debug("update", `Image '${image}': update available (local '${imageInfo.localDigest}' remote '${remoteDigest}')`);
                 } else {

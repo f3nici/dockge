@@ -763,11 +763,11 @@ export class Stack {
      */
     async refreshImageUpdateStatus() {
         try {
-            // Pick up the containers that are running now ...
-            await this.updateData();
-            // ... check what the registry holds for their images ...
+            // The same two steps the "check for image updates" button takes. The
+            // service list does not need refreshing first: an update changes
+            // which image a container runs, not which image the compose file
+            // names, and that name is what is looked up here.
             await this.updateImageInfos();
-            // ... and recompute the flags from both
             await this.updateData();
         } catch (e) {
             log.error("refreshImageUpdateStatus", "Stack '" + this.name + "': " + e);

@@ -177,6 +177,50 @@ describe("ImageRepository", () => {
             );
         });
 
+        it("reads the remote config once per remote digest, not once per check", async () => {
+            const repo = new ImageRepository();
+            const config = Buffer.from("{\"architecture\":\"amd64\"}");
+
+            // First check: local inspect, remote digest, remote config
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(OTHER_DIGEST + "\n");
+            spawnMock.mockResolvedValueOnce({ stdout: config } as never);
+            // Second check, same remote digest: local inspect and remote digest only
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(OTHER_DIGEST + "\n");
+
+            await repo.update("stack", "caddy", "caddy");
+            // Every check starts by dropping what is known about the stack
+            repo.resetStack("stack");
+            const info = await repo.update("stack", "caddy", "caddy");
+
+            expect(spawnMock).toHaveBeenCalledTimes(5);
+            expect(info.isImageUpdateAvailable()).toBe(true);
+        });
+
+        it("reads the remote config again once the remote digest moves on", async () => {
+            const repo = new ImageRepository();
+            const thirdDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(OTHER_DIGEST + "\n");
+            spawnMock.mockResolvedValueOnce({ stdout: Buffer.from("{\"a\":1}") } as never);
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(thirdDigest + "\n");
+            spawnMock.mockResolvedValueOnce({ stdout: Buffer.from("{\"a\":2}") } as never);
+
+            await repo.update("stack", "caddy", "caddy");
+            repo.resetStack("stack");
+            await repo.update("stack", "caddy", "caddy");
+
+            expect(spawnMock).toHaveBeenCalledTimes(6);
+            expect(spawnMock).toHaveBeenLastCalledWith(
+                "skopeo",
+                [ "inspect", "--config", "--raw", "docker://caddy" ],
+                expect.anything(),
+            );
+        });
+
         it("keeps reporting the update when the remote config cannot be read", async () => {
             const repo = new ImageRepository();
             mockSpawnOnce(imageInspectOutput);

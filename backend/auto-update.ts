@@ -152,24 +152,29 @@ export class AutoUpdateManager {
             log.info("auto-update", `Auto update started (default for stacks without a preference: ${runOptions.defaultBehaviour}, prune after update: ${runOptions.pruneAfterUpdate})`);
 
             const updated : string[] = [];
+            let localError : unknown;
 
             try {
                 updated.push(...await this.updateLocalStacks(runOptions));
             } catch (e) {
                 // Reading this instance's stacks can fail as a whole, for
                 // instance when docker is unreachable. The agents are separate
-                // machines, so that must not stop them from running.
+                // machines, so that must not stop them from running - the error
+                // is raised once they have had their turn.
                 log.error("auto-update", `Failed to update the local stacks: ${e}`);
-
-                if (options) {
-                    throw e;
-                }
+                localError = e;
             }
 
             // A run an agent was asked to do covers that agent only: the instance
             // that started the run is the one that fans it out.
             if (!options) {
                 updated.push(...await this.updateAgentStacks(runOptions));
+            }
+
+            // Whoever asked for the run has to hear about it: "Update now" reports
+            // success purely on this not throwing
+            if (localError) {
+                throw localError;
             }
 
             log.info("auto-update", `Auto update finished. Updated ${updated.length} stack(s).`);
@@ -297,24 +302,40 @@ export class AutoUpdateManager {
 
         log.info("auto-update", `Running auto update on agent "${endpoint}"${version ? ` (Dockge ${version})` : ""}`);
 
+        // A socket.io acknowledgement does not survive a reconnect: if the
+        // connection drops, the reply to this run is lost even though the agent
+        // carries on with it. Watching for that is what keeps a lost reply from
+        // holding the run - and with it the next scheduled one - open for the
+        // full timeout.
+        const disconnectCount = agentManager.getDisconnectCount(endpoint);
+
         return new Promise((resolve) => {
             let done = false;
+            let timeout : NodeJS.Timeout | undefined;
+            let connectionWatch : NodeJS.Timeout | undefined;
 
             const finish = (updated : string[]) => {
                 if (!done) {
                     done = true;
+                    clearTimeout(timeout);
+                    clearInterval(connectionWatch);
                     resolve(updated);
                 }
             };
 
-            const timeout = setTimeout(() => {
+            connectionWatch = setInterval(() => {
+                if (agentManager.getDisconnectCount(endpoint) !== disconnectCount) {
+                    log.error("auto-update", `Lost the connection to agent "${endpoint}" while it was updating, so its reply can no longer arrive. It may well have finished the update; its stacks are simply not counted in this run.`);
+                    finish([]);
+                }
+            }, 15 * 1000);
+
+            timeout = setTimeout(() => {
                 log.error("auto-update", `Agent "${endpoint}" did not report back within ${AGENT_RUN_TIMEOUT / 60000} minutes, continuing without it. It may still be updating, or be running a version of Dockge older than ${MIN_AGENT_VERSION}, which does not support scheduled updates.`);
                 finish([]);
             }, AGENT_RUN_TIMEOUT);
 
             agentManager.emitToEndpoint(endpoint, "runAutoUpdate", options, (res : LooseObject) => {
-                clearTimeout(timeout);
-
                 if (!res?.ok) {
                     log.error("auto-update", `Agent "${endpoint}" failed to auto update: ${res?.msg}`);
                     finish([]);
@@ -325,7 +346,6 @@ export class AutoUpdateManager {
                 log.info("auto-update", `Agent "${endpoint}" updated ${updated.length} stack(s)${updated.length ? ": " + updated.join(", ") : ""}.`);
                 finish(updated.map((name) => `${endpoint}/${name}`));
             }).catch((e) => {
-                clearTimeout(timeout);
                 log.error("auto-update", `Could not reach agent "${endpoint}": ${e}`);
                 finish([]);
             });
