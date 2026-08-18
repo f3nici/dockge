@@ -259,5 +259,14 @@
     "passwordNumbers": "Numbers (0-9)",
     "passwordSymbols": "Symbols (!@#$%^&*)",
     "passwordNoCharsetSelected": "Please select at least one character type.",
-    "passwordEquivalentCommand": "Equivalent to:"
+    "passwordEquivalentCommand": "Equivalent to:",
+    "Close": "Close",
+    "newVersionTitle": "A new version of Dockge is available",
+    "newVersionReleased": "Released {date}",
+    "newVersionNoNotes": "This release does not have any release notes.",
+    "newVersionNotesTruncated": "These release notes have been shortened. View the release on GitHub for the full text.",
+    "newVersionViewOnGitHub": "View on GitHub",
+    "newVersionLater": "Later",
+    "newVersionSkip": "Skip this version",
+    "newVersionShow": "Show what is new"
 }
