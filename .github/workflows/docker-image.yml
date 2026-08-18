@@ -1,18 +1,28 @@
 name: Build and Push Docker Image
 
+run-name: >-
+  ${{ github.event_name == 'push'
+      && format('beta ({0})', github.sha)
+      || format('{0}{1}', inputs.tag, inputs.latest && ' + latest' || '') }}
+
 on:
+  push:
+    branches:
+      - master
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker tag (e.g. testing, v1.2.3)'
+        description: 'Docker tag (e.g. 1.9.0, rc1)'
         required: true
         type: string
-        default: 'testing'
       latest:
         description: 'Also tag and push as :latest'
         required: false
         type: boolean
         default: false
+
+env:
+  IMAGE: f3nici/dockge
 
 jobs:
   build-and-push:
@@ -21,6 +31,32 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Work out the tags
+      id: tags
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        TAG: ${{ inputs.tag }}
+        PUSH_LATEST: ${{ inputs.latest }}
+      run: |
+        set -euo pipefail
+        if [ "$EVENT_NAME" = "push" ]; then
+          # Every merge to master republishes the beta channel. The sha tag is
+          # immutable, so a bad beta can be pinned back without a rebuild.
+          TAGS="beta beta-${GITHUB_SHA::7}"
+        else
+          TAGS="$TAG"
+          if [ "$PUSH_LATEST" = "true" ]; then
+            TAGS="$TAGS latest"
+          fi
+        fi
+        ARGS=""
+        for t in $TAGS; do
+          ARGS="$ARGS -t ${IMAGE}:${t}"
+        done
+        echo "list=$TAGS" >> "$GITHUB_OUTPUT"
+        echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+        echo "Tagging as: $TAGS"
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
@@ -36,16 +72,38 @@ jobs:
 
     - name: Build and push multi-arch image
       env:
-        TAG: ${{ inputs.tag }}
-        PUSH_LATEST: ${{ inputs.latest }}
+        TAG_ARGS: ${{ steps.tags.outputs.args }}
       run: |
-        TAGS="-t f3nici/dockge:${TAG}"
-        if [ "$PUSH_LATEST" = "true" ]; then
-          TAGS="$TAGS -t f3nici/dockge:latest"
-        fi
+        set -euo pipefail
+        # shellcheck disable=SC2086 # TAG_ARGS is a built list of -t flags
         docker buildx build \
           --platform linux/amd64,linux/arm64,linux/arm/v7 \
           --target release \
           -f docker/Dockerfile \
-          $TAGS \
+          --metadata-file metadata.json \
+          $TAG_ARGS \
           --push .
+
+    - name: Report what was pushed
+      if: always() && hashFiles('metadata.json') != ''
+      env:
+        TAGS: ${{ steps.tags.outputs.list }}
+      run: |
+        set -euo pipefail
+        DIGEST=$(jq -r '."containerimage.digest" // "unknown"' metadata.json)
+        {
+          echo "### Pushed \`${IMAGE}\`"
+          echo
+          echo "| Tag | Pull with |"
+          echo "| --- | --- |"
+          for t in $TAGS; do
+            echo "| \`${t}\` | \`docker pull ${IMAGE}:${t}\` |"
+          done
+          echo
+          echo "Digest: \`${DIGEST}\`"
+          echo
+          echo "Built from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`."
+          echo
+          echo "All of the above tags point at this one digest — check any of them on"
+          echo "[Docker Hub](https://hub.docker.com/r/${IMAGE}/tags)."
+        } >> "$GITHUB_STEP_SUMMARY"
