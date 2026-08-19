@@ -37,6 +37,7 @@ export class Stack {
     protected _composeDocument: ComposeDocument | undefined = undefined;
     protected _unhealthy: boolean = false;
     protected _imageUpdatesAvailable: boolean = false;
+    protected _imageCheckConclusive: boolean = false;
     protected _recreateNecessary: boolean = false;
     protected _services: Map<string, ServiceData> = new Map();
     protected server: DockgeServer;
@@ -148,12 +149,26 @@ export class Stack {
     }
 
     /**
+     * Whether the last check managed to compare every image against its
+     * registry.
+     *
+     * False says the answer is "we do not know", not "there is nothing new":
+     * a registry that could not be reached, or a service whose update checks
+     * are switched off, leaves nothing flagged for reasons that have nothing to
+     * do with the images being current.
+     */
+    get imageCheckConclusive(): boolean {
+        return this._imageCheckConclusive;
+    }
+
+    /**
      * Whether the compose file names a service that has no container at all,
      * which only bringing the stack up can put right.
      *
-     * A service kept behind a compose profile is not counted: it has no
-     * container because nobody asked for one, and bringing the stack up would
-     * not create it either.
+     * A service that is meant to have no container does not count: one kept
+     * behind a compose profile, or one scaled to zero. Bringing the stack up
+     * would not create those either, so treating them as missing would pull the
+     * stack on every single run.
      */
     get servicesMissing(): boolean {
         try {
@@ -164,7 +179,14 @@ export class Stack {
                     return false;
                 }
 
-                return !services.getService(name).has("profiles");
+                const service = services.getService(name);
+
+                if (service.has("profiles")) {
+                    return false;
+                }
+
+                const replicas = service.get("scale") ?? service.get("deploy")?.replicas;
+                return replicas !== 0;
             });
         } catch (e) {
             // Unparseable compose file: there is nothing to compare against
@@ -178,15 +200,6 @@ export class Stack {
      */
     static forgetRemoteImageDigests() {
         Stack.imageRepository.forgetRemoteDigests();
-    }
-
-    /**
-     * Whether the remote side of an image can be looked up at all. False when
-     * skopeo is not installed, in which case nothing is ever flagged as having
-     * an update and callers have to fall back to asking docker itself.
-     */
-    static remoteImageChecksAvailable(): boolean {
-        return Stack.imageRepository.remoteChecksAvailable();
     }
 
     /**
@@ -578,6 +591,11 @@ export class Stack {
             this._recreateNecessary = false;
             this._imageUpdatesAvailable = false;
 
+            // Set to false by any service whose images could not be compared
+            // against the registry, so that "nothing is flagged" is not mistaken
+            // for "everything is up to date"
+            let imageCheckConclusive = true;
+
             for (let line of lines) {
                 if (line != "") {
                     const serviceInfo = JSON.parse(line);
@@ -611,6 +629,18 @@ export class Stack {
                             serviceImageUpdateAvailable = true;
                             this._imageUpdatesAvailable = true;
                         }
+
+                        // No remote digest means the registry was never reached:
+                        // skopeo is missing, it is rate limiting us, the login
+                        // was refused. A pinned image is the one case where
+                        // there is nothing to reach for.
+                        if (!imageInfo.remoteDigest && !ImageRepository.isDigestPinned(serviceInfo.Image)) {
+                            imageCheckConclusive = false;
+                        }
+                    } else if (!recreateNecessary) {
+                        // Checks turned off for this service, so nothing is known
+                        // about whether it is behind
+                        imageCheckConclusive = false;
                     }
 
                     services.set(
@@ -674,6 +704,7 @@ export class Stack {
             }
 
             this._services = services;
+            this._imageCheckConclusive = imageCheckConclusive;
 
             // Detect and notify status changes (skip on first update to avoid spam)
             if (!this._firstUpdate) {
@@ -822,10 +853,12 @@ export class Stack {
      */
     async refreshImageUpdateStatus() {
         try {
-            // The same two steps the "check for image updates" button takes. The
-            // service list does not need refreshing first: an update changes
-            // which image a container runs, not which image the compose file
-            // names, and that name is what is looked up here.
+            // The service list is where the images to look up come from, and it
+            // is read lazily: on a freshly started instance nothing has filled
+            // it in yet, and a check run against an empty one quietly looks up
+            // nothing at all. So read it, look the images up, then read it once
+            // more to recompute the flags from what came back.
+            await this.updateData();
             await this.updateImageInfos();
             await this.updateData();
         } catch (e) {

@@ -334,8 +334,6 @@ describe("ImageRepository", () => {
             expect(spawnMock).toHaveBeenCalledTimes(3);
             expect(info.remoteDigest).toBe("");
             expect(info.isImageUpdateAvailable()).toBe(false);
-            // Remote checks are still possible, this registry is just busy
-            expect(repo.remoteChecksAvailable()).toBe(true);
         });
 
         it("only pauses the registry that refused, not the others", async () => {
@@ -378,6 +376,33 @@ describe("ImageRepository", () => {
             }
         });
 
+        it("reports no remote digest when skopeo writes nothing", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(Buffer.alloc(0));
+
+            const info = await repo.update("stack", "caddy", "caddy");
+
+            // Hashing the empty output would give the digest of nothing at all
+            // and read as an update that could never clear
+            expect(info.remoteDigest).toBe("");
+            expect(info.isImageUpdateAvailable()).toBe(false);
+        });
+
+        it("does not remember an empty answer as the image's digest", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(Buffer.alloc(0));
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(REMOTE.raw);
+            mockSpawnOnce(Buffer.from("{\"config\":{}}"));
+
+            await repo.update("stack", "caddy", "caddy");
+            const info = await repo.update("stack", "caddy", "caddy");
+
+            expect(info.remoteDigest).toBe(REMOTE.digest);
+        });
+
         it("skips the remote check for digest-pinned images", async () => {
             const repo = new ImageRepository();
             mockSpawnOnce(imageInspectOutput);
@@ -403,7 +428,6 @@ describe("ImageRepository", () => {
             expect(info.localDigest).toBe("sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9");
             expect(info.remoteDigest).toBe("");
             expect(warnMock).toHaveBeenCalledTimes(1);
-            expect(repo.remoteChecksAvailable()).toBe(false);
         });
 
         it("rethrows non-ENOENT skopeo errors", async () => {

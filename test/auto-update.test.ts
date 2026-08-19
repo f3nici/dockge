@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../backend/stack", () => ({
     Stack: {
         getStackList: vi.fn(),
-        remoteImageChecksAvailable: vi.fn(() => true),
     },
 }));
 
@@ -21,7 +20,6 @@ import { resolveAutoUpdate } from "../common/util-common";
 import { Stack } from "../backend/stack";
 
 const getStackListMock = vi.mocked(Stack.getStackList);
-const remoteChecksMock = vi.mocked(Stack.remoteImageChecksAvailable);
 
 /**
  * A stack as the auto update run sees it.
@@ -38,6 +36,7 @@ function fakeStack(name: string, overrides: Record<string, unknown> = {}) {
         imageUpdatesAvailable: false,
         recreateNecessary: false,
         servicesMissing: false,
+        imageCheckConclusive: true,
         refreshImageUpdateStatus: vi.fn(async () => {}),
         update: vi.fn(async () => 0),
         ...overrides,
@@ -97,7 +96,6 @@ describe("resolveAutoUpdate", () => {
 describe("AutoUpdateManager.runNow", () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        remoteChecksMock.mockReturnValue(true);
     });
 
     it("pulls a stack whose images have an update waiting", async () => {
@@ -137,11 +135,12 @@ describe("AutoUpdateManager.runNow", () => {
         expect(stopped.refreshImageUpdateStatus).not.toHaveBeenCalled();
     });
 
-    it("falls back to pulling everything when there is no way to check", async () => {
-        remoteChecksMock.mockReturnValue(false);
-        const unknown = fakeStack("unknown");
+    it("pulls a stack whose check could not reach the registry", async () => {
+        // No skopeo, a registry refusing us, checks switched off for a service:
+        // nothing is flagged, and that must not read as "up to date"
+        const unchecked = fakeStack("unchecked", { imageCheckConclusive: false });
 
-        expect(await runOver([ unknown ])).toEqual([ "unknown" ]);
+        expect(await runOver([ unchecked ])).toEqual([ "unchecked" ]);
     });
 
     it("carries on after a stack fails to update", async () => {

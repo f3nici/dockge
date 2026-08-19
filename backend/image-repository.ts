@@ -63,7 +63,7 @@ export class ImageRepository {
      * Check if an image reference is pinned to a specific digest.
      * Images with @sha256: are pinned and don't need update checks.
      */
-    private isDigestPinned(image: string): boolean {
+    static isDigestPinned(image: string): boolean {
         return image.startsWith("sha256:") || image.includes("@sha256:");
     }
 
@@ -72,7 +72,7 @@ export class ImageRepository {
 
         // Skip remote digest check for digest-pinned images
         // (they're explicitly pinned to a specific version, no update possible)
-        if (!!imageInfo.localDigest && !this.isDigestPinned(image)) {
+        if (!!imageInfo.localDigest && !ImageRepository.isDigestPinned(image)) {
             const remoteDigest = await this.inspectRemoteDigest(image);
 
             // skopeo is not installed: keep what we know locally and give up
@@ -131,15 +131,6 @@ export class ImageRepository {
     }
 
     /**
-     * Whether remote update checks can run at all. False once skopeo has turned
-     * out not to be installed, in which case nothing about the remote side of an
-     * image is ever known.
-     */
-    remoteChecksAvailable(): boolean {
-        return !this.skopeoMissing;
-    }
-
-    /**
      * Ask the registry for the digest of the manifest the image reference points at.
      *
      * `--raw` writes the manifest out byte for byte and its digest is the sha256
@@ -191,7 +182,10 @@ export class ImageRepository {
             throw e;
         }
 
-        if (!resRemote.stdout) {
+        // An empty Buffer is truthy, so the length is what says skopeo wrote
+        // nothing. Hashing that would hand back the digest of the empty string
+        // and cache it as the image's, an update that could never clear.
+        if (!resRemote.stdout || resRemote.stdout.length === 0) {
             return "";
         }
 
@@ -229,7 +223,7 @@ export class ImageRepository {
                 maxBuffer: 4 * 1024 * 1024,
             });
 
-            if (!res.stdout) {
+            if (!res.stdout || res.stdout.length === 0) {
                 return "";
             }
 

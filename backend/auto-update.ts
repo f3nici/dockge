@@ -227,13 +227,16 @@ export class AutoUpdateManager {
             await stack.refreshImageUpdateStatus();
 
             // Behind on an image, running one other than the one the compose
-            // file names, or missing a container the compose file asks for:
-            // all three are things bringing the stack up puts right. Without
-            // skopeo nothing is ever flagged, so there is nothing to go on and
-            // every eligible stack is pulled, as it was before.
+            // file names, or missing a container the compose file asks for: all
+            // three are things bringing the stack up puts right.
             const behind = stack.imageUpdatesAvailable || stack.recreateNecessary || stack.servicesMissing;
 
-            if (Stack.remoteImageChecksAvailable() && !behind) {
+            // Only a check that reached every registry can rule an update out.
+            // When it could not - no skopeo, a registry refusing us, checks
+            // switched off for a service - nothing is flagged either, and
+            // reading that as "up to date" would quietly stop updating the
+            // stack altogether. Pull it, the way an update run always did.
+            if (!behind && stack.imageCheckConclusive) {
                 skipped.push(`${stack.name} (no image updates available)`);
                 continue;
             }
