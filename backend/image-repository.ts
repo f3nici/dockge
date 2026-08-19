@@ -3,6 +3,28 @@ import childProcessAsync from "promisify-child-process";
 import crypto from "crypto";
 import { RegistryCredentialManager } from "./registry-credentials";
 
+/**
+ * How long a remote digest read from a registry stays usable.
+ *
+ * The same image is commonly referenced by several services and by several
+ * stacks, and a single check sweep walks all of them back to back. Without this
+ * every one of those references is its own trip to the registry, which is what
+ * turns a routine check into a burst big enough to be rate limited. A few
+ * minutes is far shorter than the check interval, so a scheduled check still
+ * reads fresh digests; it only collapses the duplicates inside one sweep.
+ */
+const REMOTE_DIGEST_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * How long to leave a registry alone after it has told us we are asking too
+ * often.
+ *
+ * Carrying on through the rest of the images only deepens the hole: the
+ * registry is already refusing, and every further request pushes the moment it
+ * starts answering again further out.
+ */
+const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+
 export class ImageRepository {
 
     static INSTANCE = new ImageRepository();
@@ -11,7 +33,19 @@ export class ImageRepository {
 
     private warnedImages: Set<string> = new Set();
 
-    private skopeoMissingWarned = false;
+    private skopeoMissing = false;
+
+    /**
+     * Remote digests read recently, by image reference. Shared by every stack,
+     * so an image used by ten services is looked up once.
+     */
+    private remoteDigests: Map<string, { digest: string, readAt: number }> = new Map();
+
+    /**
+     * Registries that answered with a rate limit error, and the time they may be
+     * asked again.
+     */
+    private registryCooldowns: Map<string, number> = new Map();
 
     /**
      * The config digest last read for an image, and the manifest digest it was
@@ -29,7 +63,7 @@ export class ImageRepository {
      * Check if an image reference is pinned to a specific digest.
      * Images with @sha256: are pinned and don't need update checks.
      */
-    private isDigestPinned(image: string): boolean {
+    static isDigestPinned(image: string): boolean {
         return image.startsWith("sha256:") || image.includes("@sha256:");
     }
 
@@ -38,7 +72,7 @@ export class ImageRepository {
 
         // Skip remote digest check for digest-pinned images
         // (they're explicitly pinned to a specific version, no update possible)
-        if (!!imageInfo.localDigest && !this.isDigestPinned(image)) {
+        if (!!imageInfo.localDigest && !ImageRepository.isDigestPinned(image)) {
             const remoteDigest = await this.inspectRemoteDigest(image);
 
             // skopeo is not installed: keep what we know locally and give up
@@ -88,37 +122,80 @@ export class ImageRepository {
     }
 
     /**
+     * Forget the remembered remote digests, so the next check reads them from
+     * the registries again. For the on-demand check, which somebody runs
+     * precisely because they want to know what the registries have right now.
+     */
+    forgetRemoteDigests() {
+        this.remoteDigests.clear();
+    }
+
+    /**
      * Ask the registry for the digest of the manifest the image reference points at.
+     *
+     * `--raw` writes the manifest out byte for byte and its digest is the sha256
+     * of those bytes, which is the same value `--format "{{ .Digest }}"` reports.
+     * The difference is what it costs: the formatted inspect makes skopeo resolve
+     * the image, which for a multi-arch tag means a second manifest request for
+     * the matching platform plus a download of the config blob - five requests
+     * where one manifest request would do, and two of them counted against the
+     * registry's pull limit instead of one.
      * @param image Image reference, e.g. "caddy:2"
-     * @returns The digest, or undefined when skopeo is not installed
+     * @returns The digest, or undefined when the remote side cannot be reached
      */
     private async inspectRemoteDigest(image: string): Promise<string | undefined> {
+        const cached = this.remoteDigests.get(image);
+        if (cached && Date.now() - cached.readAt < REMOTE_DIGEST_TTL_MS) {
+            return cached.digest;
+        }
+
+        if (this.isRateLimited(image)) {
+            return undefined;
+        }
+
         let resRemote;
         try {
             // Registry logins, when configured, make these checks count against
             // the account's pull limit instead of the (much lower) anonymous one
             const authArgs = RegistryCredentialManager.INSTANCE.skopeoAuthArgs();
 
-            resRemote = await childProcessAsync.spawn("skopeo", [ "inspect", "--no-tags", ...authArgs, "--format", "{{ .Digest }}", "docker://" + image ], {
-                encoding: "utf-8",
+            // maxBuffer instead of encoding, so the manifest is kept as the raw
+            // bytes its digest has to be taken over rather than decoded text
+            resRemote = await childProcessAsync.spawn("skopeo", [ "inspect", "--raw", ...authArgs, "docker://" + image ], {
+                maxBuffer: 4 * 1024 * 1024,
             });
         } catch (e) {
             // skopeo is optional: without it, remote update checks are skipped
             if ((e as NodeJS.ErrnoException).code === "ENOENT") {
-                if (!this.skopeoMissingWarned) {
-                    this.skopeoMissingWarned = true;
+                if (!this.skopeoMissing) {
+                    this.skopeoMissing = true;
                     log.warn("update", "skopeo binary not found, remote image update checks are disabled");
                 }
                 return undefined;
             }
+
+            if (this.isRateLimitError(e)) {
+                this.startCooldown(image, e);
+                return undefined;
+            }
+
             throw e;
         }
 
-        if (!resRemote.stdout) {
+        // An empty Buffer is truthy, so the length is what says skopeo wrote
+        // nothing. Hashing that would hand back the digest of the empty string
+        // and cache it as the image's, an update that could never clear.
+        if (!resRemote.stdout || resRemote.stdout.length === 0) {
             return "";
         }
 
-        return resRemote.stdout.toString().trim();
+        const digest = this.digestOf(resRemote.stdout);
+        this.remoteDigests.set(image, {
+            digest,
+            readAt: Date.now(),
+        });
+
+        return digest;
     }
 
     /**
@@ -133,6 +210,10 @@ export class ImageRepository {
      * @returns The config digest, or an empty string when it cannot be determined
      */
     private async inspectRemoteConfigDigest(image: string): Promise<string> {
+        if (this.isRateLimited(image)) {
+            return "";
+        }
+
         try {
             // maxBuffer instead of encoding, so the output is kept as the raw
             // bytes the digest has to be taken over rather than decoded text
@@ -142,18 +223,98 @@ export class ImageRepository {
                 maxBuffer: 4 * 1024 * 1024,
             });
 
-            if (!res.stdout) {
+            if (!res.stdout || res.stdout.length === 0) {
                 return "";
             }
 
-            const raw = Buffer.isBuffer(res.stdout) ? res.stdout : Buffer.from(res.stdout.toString(), "utf-8");
-            return "sha256:" + crypto.createHash("sha256").update(raw).digest("hex");
+            return this.digestOf(res.stdout);
         } catch (e) {
+            if (this.isRateLimitError(e)) {
+                this.startCooldown(image, e);
+                return "";
+            }
+
             // Only used to rule out a false positive, so a failure here simply
             // leaves the manifest comparison to decide
             log.debug("update", "Image '" + image + "': could not read the remote image config: " + e);
             return "";
         }
+    }
+
+    /**
+     * The sha256 digest of whatever skopeo wrote out, in the form registries
+     * name their content by.
+     * @param stdout Raw output of a skopeo --raw invocation
+     */
+    private digestOf(stdout: string | Buffer): string {
+        const raw = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout.toString(), "utf-8");
+        return "sha256:" + crypto.createHash("sha256").update(raw).digest("hex");
+    }
+
+    /**
+     * Whether a failed skopeo run failed because the registry is throttling us.
+     * @param e The error the run rejected with
+     */
+    private isRateLimitError(e: unknown): boolean {
+        const text = [
+            (e as Error)?.message ?? "",
+            String((e as { stderr?: unknown })?.stderr ?? ""),
+        ].join(" ").toLowerCase();
+
+        return text.includes("toomanyrequests")
+            || text.includes("too many requests")
+            || text.includes("rate limit");
+    }
+
+    /**
+     * Whether the registry an image lives on is currently being left alone.
+     * @param image Image reference
+     */
+    private isRateLimited(image: string): boolean {
+        const registry = this.registryOf(image);
+        const until = this.registryCooldowns.get(registry);
+
+        if (until === undefined) {
+            return false;
+        }
+
+        if (Date.now() >= until) {
+            this.registryCooldowns.delete(registry);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Stop asking a registry for a while, and say so once.
+     * @param image Image whose registry refused the request
+     * @param e The error it refused with
+     */
+    private startCooldown(image: string, e: unknown) {
+        const registry = this.registryOf(image);
+
+        if (this.isRateLimited(image)) {
+            return;
+        }
+
+        this.registryCooldowns.set(registry, Date.now() + RATE_LIMIT_COOLDOWN_MS);
+        log.warn("update", `Registry '${registry}' is rate limiting us, so update checks against it are paused for ${RATE_LIMIT_COOLDOWN_MS / 60000} minutes. Signing in to the registry in Settings raises the limit. (${e})`);
+    }
+
+    /**
+     * The registry host an image reference points at, which is Docker Hub when
+     * the reference does not name one.
+     * @param ref Image reference
+     */
+    private registryOf(ref: string): string {
+        const firstSegment = ref.split("/")[0];
+
+        if (ref.includes("/") && (firstSegment.includes(".") || firstSegment.includes(":") || firstSegment === "localhost")) {
+            return firstSegment.toLowerCase();
+        }
+
+        return "docker.io";
     }
 
     async updateLocal(stack: string, service: string, image: string): Promise<ImageInfo> {

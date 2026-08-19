@@ -645,7 +645,11 @@ export class DockgeServer {
         const stackList = await Stack.getStackList(this, true);
         for (const stack of stackList.values()) {
             if (stack.isManagedByDockge) {
-                await stack.updateImageInfos();
+                // Not updateImageInfos() on its own: that reads whatever service
+                // list the stack happens to hold, which is empty until something
+                // else fills it in, and it leaves the "update available" flags
+                // showing what the previous check found.
+                await stack.refreshImageUpdateStatus();
             }
         }
         log.info("checkImageUpdates", "Check for image updates finished.");

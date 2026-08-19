@@ -280,6 +280,10 @@ export class DockerSocketHandler extends AgentSocketHandler {
 
                 const stack = await Stack.getStack(server, stackName);
 
+                // Asked for by hand, so read the registries rather than reusing
+                // what the last check saw
+                Stack.forgetRemoteImageDigests();
+
                 // Refresh remote digests, then recompute the update-available flags
                 await stack.updateImageInfos();
                 await stack.updateData();
@@ -303,6 +307,11 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 checkLogin(socket);
 
                 const stackList = await Stack.getStackList(server, true);
+
+                // Once for the whole sweep: the registries are asked again, but
+                // an image several stacks share is still only looked up once
+                Stack.forgetRemoteImageDigests();
+
                 for (const stack of stackList.values()) {
                     if (!stack.isManagedByDockge) {
                         continue;
