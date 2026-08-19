@@ -226,9 +226,14 @@ export class AutoUpdateManager {
             // are worth the pull.
             await stack.refreshImageUpdateStatus();
 
-            // Without skopeo nothing is ever flagged, so there is nothing to go
-            // on and every eligible stack is pulled, as it was before.
-            if (Stack.remoteImageChecksAvailable() && !stack.imageUpdatesAvailable && !stack.recreateNecessary) {
+            // Behind on an image, running one other than the one the compose
+            // file names, or missing a container the compose file asks for:
+            // all three are things bringing the stack up puts right. Without
+            // skopeo nothing is ever flagged, so there is nothing to go on and
+            // every eligible stack is pulled, as it was before.
+            const behind = stack.imageUpdatesAvailable || stack.recreateNecessary || stack.servicesMissing;
+
+            if (Stack.remoteImageChecksAvailable() && !behind) {
                 skipped.push(`${stack.name} (no image updates available)`);
                 continue;
             }

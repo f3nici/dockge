@@ -148,6 +148,31 @@ export class Stack {
     }
 
     /**
+     * Whether the compose file names a service that has no container at all,
+     * which only bringing the stack up can put right.
+     *
+     * A service kept behind a compose profile is not counted: it has no
+     * container because nobody asked for one, and bringing the stack up would
+     * not create it either.
+     */
+    get servicesMissing(): boolean {
+        try {
+            const services = this.composeDocument.services;
+
+            return services.names.some((name) => {
+                if (this._services.has(name)) {
+                    return false;
+                }
+
+                return !services.getService(name).has("profiles");
+            });
+        } catch (e) {
+            // Unparseable compose file: there is nothing to compare against
+            return false;
+        }
+    }
+
+    /**
      * Forget the remembered remote digests, so the next check asks the
      * registries rather than answering from what it read a moment ago.
      */

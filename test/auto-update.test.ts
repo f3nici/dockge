@@ -37,6 +37,7 @@ function fakeStack(name: string, overrides: Record<string, unknown> = {}) {
         autoUpdate: true,
         imageUpdatesAvailable: false,
         recreateNecessary: false,
+        servicesMissing: false,
         refreshImageUpdateStatus: vi.fn(async () => {}),
         update: vi.fn(async () => 0),
         ...overrides,
@@ -119,6 +120,12 @@ describe("AutoUpdateManager.runNow", () => {
         const drifted = fakeStack("drifted", { recreateNecessary: true });
 
         expect(await runOver([ drifted ])).toEqual([ "drifted" ]);
+    });
+
+    it("pulls a stack that is missing a container its compose file asks for", async () => {
+        const incomplete = fakeStack("incomplete", { servicesMissing: true });
+
+        expect(await runOver([ incomplete ])).toEqual([ "incomplete" ]);
     });
 
     it("checks nothing for stacks that are not taking part", async () => {
