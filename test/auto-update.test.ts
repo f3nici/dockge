@@ -1,6 +1,65 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("../backend/stack", () => ({
+    Stack: {
+        getStackList: vi.fn(),
+        remoteImageChecksAvailable: vi.fn(() => true),
+    },
+}));
+
+vi.mock("../backend/log", () => ({
+    log: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+    },
+}));
+
 import { AutoUpdateManager, AUTO_UPDATE_DEFAULT_CRON } from "../backend/auto-update";
 import { resolveAutoUpdate } from "../common/util-common";
+import { Stack } from "../backend/stack";
+
+const getStackListMock = vi.mocked(Stack.getStackList);
+const remoteChecksMock = vi.mocked(Stack.remoteImageChecksAvailable);
+
+/**
+ * A stack as the auto update run sees it.
+ * @param name Stack name
+ * @param overrides Anything that should differ from a running, up to date,
+ * auto-updating stack
+ */
+function fakeStack(name: string, overrides: Record<string, unknown> = {}) {
+    return {
+        name,
+        isManagedByDockge: true,
+        isStarted: true,
+        autoUpdate: true,
+        imageUpdatesAvailable: false,
+        recreateNecessary: false,
+        refreshImageUpdateStatus: vi.fn(async () => {}),
+        update: vi.fn(async () => 0),
+        ...overrides,
+    };
+}
+
+/**
+ * Run auto update over the given stacks and report which ones were pulled.
+ * @param stacks The stacks the instance holds
+ */
+async function runOver(stacks: ReturnType<typeof fakeStack>[]) {
+    getStackListMock.mockResolvedValue(new Map(stacks.map((stack) => [ stack.name, stack ])) as never);
+
+    const server = { sendStackList: vi.fn() };
+    const manager = new AutoUpdateManager(server as never);
+
+    const updated = await manager.runNow({
+        defaultBehaviour: "update",
+        pruneAfterUpdate: false,
+    });
+
+    return updated;
+}
 
 describe("AutoUpdateManager.validateCron", () => {
     it("accepts the default weekly cron expression", () => {
@@ -31,5 +90,62 @@ describe("resolveAutoUpdate", () => {
     it("falls back to the global default when the stack has no preference", () => {
         expect(resolveAutoUpdate(null, "none")).toBe(false);
         expect(resolveAutoUpdate(null, "update")).toBe(true);
+    });
+});
+
+describe("AutoUpdateManager.runNow", () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        remoteChecksMock.mockReturnValue(true);
+    });
+
+    it("pulls a stack whose images have an update waiting", async () => {
+        const behind = fakeStack("behind", { imageUpdatesAvailable: true });
+
+        expect(await runOver([ behind ])).toEqual([ "behind" ]);
+        expect(behind.update).toHaveBeenCalledOnce();
+    });
+
+    it("leaves a stack that is already on the current images alone", async () => {
+        const current = fakeStack("current");
+
+        expect(await runOver([ current ])).toEqual([]);
+        // The check still runs, it is the pull of every service that does not
+        expect(current.refreshImageUpdateStatus).toHaveBeenCalledOnce();
+        expect(current.update).not.toHaveBeenCalled();
+    });
+
+    it("pulls a stack running an image other than the one its compose file names", async () => {
+        const drifted = fakeStack("drifted", { recreateNecessary: true });
+
+        expect(await runOver([ drifted ])).toEqual([ "drifted" ]);
+    });
+
+    it("checks nothing for stacks that are not taking part", async () => {
+        const optedOut = fakeStack("opted-out", { autoUpdate: false });
+        const stopped = fakeStack("stopped", { isStarted: false });
+
+        expect(await runOver([ optedOut, stopped ])).toEqual([]);
+        expect(optedOut.refreshImageUpdateStatus).not.toHaveBeenCalled();
+        expect(stopped.refreshImageUpdateStatus).not.toHaveBeenCalled();
+    });
+
+    it("falls back to pulling everything when there is no way to check", async () => {
+        remoteChecksMock.mockReturnValue(false);
+        const unknown = fakeStack("unknown");
+
+        expect(await runOver([ unknown ])).toEqual([ "unknown" ]);
+    });
+
+    it("carries on after a stack fails to update", async () => {
+        const broken = fakeStack("broken", {
+            imageUpdatesAvailable: true,
+            update: vi.fn(async () => {
+                throw new Error("pull failed");
+            }),
+        });
+        const fine = fakeStack("fine", { imageUpdatesAvailable: true });
+
+        expect(await runOver([ broken, fine ])).toEqual([ "fine" ]);
     });
 });

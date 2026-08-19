@@ -132,6 +132,39 @@ export class Stack {
     }
 
     /**
+     * Whether any of this stack's services runs an image the registry has a
+     * newer one for, as of the last check.
+     */
+    get imageUpdatesAvailable(): boolean {
+        return this._imageUpdatesAvailable;
+    }
+
+    /**
+     * Whether a service runs an image other than the one its compose file names,
+     * which "docker compose up" would put right.
+     */
+    get recreateNecessary(): boolean {
+        return this._recreateNecessary;
+    }
+
+    /**
+     * Forget the remembered remote digests, so the next check asks the
+     * registries rather than answering from what it read a moment ago.
+     */
+    static forgetRemoteImageDigests() {
+        Stack.imageRepository.forgetRemoteDigests();
+    }
+
+    /**
+     * Whether the remote side of an image can be looked up at all. False when
+     * skopeo is not installed, in which case nothing is ever flagged as having
+     * an update and callers have to fall back to asking docker itself.
+     */
+    static remoteImageChecksAvailable(): boolean {
+        return Stack.imageRepository.remoteChecksAvailable();
+    }
+
+    /**
      * This stack's auto update preference, read from `x-dockge.auto-update` in
      * its compose file. `null` means the stack does not state one, so the global
      * default in Settings applies.
@@ -756,10 +789,11 @@ export class Stack {
      * Re-read the running services and their images, then recompute the
      * "update available" flags from scratch.
      *
-     * Called right after a stack has been updated: the remote digests are only
+     * Called right after a stack has been updated - the remote digests are only
      * refreshed every few hours, so without this a stack that was just updated
      * keeps its update indicator until the next scheduled check, which reads as
-     * "the update did not happen".
+     * "the update did not happen" - and before an auto update run decides
+     * whether the stack needs pulling at all.
      */
     async refreshImageUpdateStatus() {
         try {

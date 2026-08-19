@@ -44,10 +44,11 @@ const MIN_AGENT_VERSION = "1.8.1";
  * Schedules and runs automatic stack updates.
  *
  * A single cron job is (re)created whenever the settings change. When it fires
- * (or when a user triggers "Update now"), every Dockge-managed, running stack is
- * pulled and recreated if auto update applies to it: `x-dockge.auto-update` in
- * the stack's compose file decides, falling back to the global default setting
- * when the stack does not set it.
+ * (or when a user triggers "Update now"), every Dockge-managed, running stack
+ * auto update applies to is checked, and pulled and recreated when it turns out
+ * to be behind: `x-dockge.auto-update` in the stack's compose file decides
+ * whether it takes part, falling back to the global default setting when the
+ * stack does not set it.
  *
  * Stacks on agents are included: this instance runs its own stacks and then asks
  * every agent to do the same with the same settings, so the whole fleet follows
@@ -186,6 +187,10 @@ export class AutoUpdateManager {
 
     /**
      * Update the eligible stacks of this instance.
+     *
+     * Eligible means managed by Dockge, running, opted in to auto update, and
+     * actually behind: a stack whose images are already the ones the registry
+     * has is left alone rather than pulled for nothing.
      * @param options Settings to run with
      * @returns The names of the stacks that were updated
      */
@@ -209,6 +214,22 @@ export class AutoUpdateManager {
             // Only touch stacks that are currently running
             if (!stack.isStarted) {
                 skipped.push(`${stack.name} (not running)`);
+                continue;
+            }
+
+            // Find out what the registries actually have before pulling anything.
+            // "docker compose pull" fetches a manifest and an image config for
+            // every service whether or not there is a new image, so pulling
+            // every eligible stack is the bulk of the registry traffic a run
+            // causes - and the reason a run can end up rate limited. A check
+            // costs one manifest request per image and tells us which stacks
+            // are worth the pull.
+            await stack.refreshImageUpdateStatus();
+
+            // Without skopeo nothing is ever flagged, so there is nothing to go
+            // on and every eligible stack is pulled, as it was before.
+            if (Stack.remoteImageChecksAvailable() && !stack.imageUpdatesAvailable && !stack.recreateNecessary) {
+                skipped.push(`${stack.name} (no image updates available)`);
                 continue;
             }
 

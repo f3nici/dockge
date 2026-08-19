@@ -25,7 +25,24 @@ const warnMock = vi.mocked(log.warn);
 
 const LOCAL_ID = "sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9";
 const LOCAL_DIGEST = "sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9";
-const OTHER_DIGEST = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+
+/**
+ * A manifest as skopeo --raw writes it, and the digest the registry knows it
+ * by, which is the sha256 of those exact bytes.
+ * @param marker Anything that makes this manifest differ from the others
+ */
+function manifest(marker: string) {
+    const raw = Buffer.from(JSON.stringify({
+        schemaVersion: 2,
+        marker,
+    }));
+    return {
+        raw,
+        digest: "sha256:" + createHash("sha256").update(raw).digest("hex"),
+    };
+}
+
+const REMOTE = manifest("remote");
 
 const imageInspectOutput = JSON.stringify([{
     Id: LOCAL_ID,
@@ -39,8 +56,16 @@ const emptyInspectOutput = JSON.stringify([{
     RepoDigests: null,
 }]);
 
-function mockSpawnOnce(stdout: string) {
+function mockSpawnOnce(stdout: string | Buffer) {
     spawnMock.mockResolvedValueOnce({ stdout } as never);
+}
+
+/** An error shaped like the one skopeo rejects with when a registry throttles us */
+function rateLimitError() {
+    return Object.assign(new Error("Error parsing image name: reading manifest"), {
+        code: 1,
+        stderr: "toomanyrequests: retry-after: 812.888\u00b5s, allowed: 44000/minute",
+    });
 }
 
 describe("ImageRepository", () => {
@@ -98,16 +123,35 @@ describe("ImageRepository", () => {
     });
 
     describe("update", () => {
-        it("detects an available update when digests differ", async () => {
+        it("digests the raw manifest instead of making skopeo resolve the image", async () => {
             const repo = new ImageRepository();
             mockSpawnOnce(imageInspectOutput);
-            mockSpawnOnce(OTHER_DIGEST + "\n");
-            // The remote config, which is a different image than the local one
-            mockSpawnOnce("{\"config\":{}}");
+            mockSpawnOnce(REMOTE.raw);
+            mockSpawnOnce(Buffer.from("{\"config\":{}}"));
 
             const info = await repo.update("stack", "caddy", "caddy");
 
-            expect(info.remoteDigest).toBe(OTHER_DIGEST);
+            // "inspect --format {{ .Digest }}" reports the same digest, but makes
+            // skopeo fetch the platform manifest and the config blob to get there
+            expect(spawnMock).toHaveBeenNthCalledWith(
+                2,
+                "skopeo",
+                [ "inspect", "--raw", "docker://caddy" ],
+                expect.not.objectContaining({ encoding: expect.anything() }),
+            );
+            expect(info.remoteDigest).toBe(REMOTE.digest);
+        });
+
+        it("detects an available update when digests differ", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(REMOTE.raw);
+            // The remote config, which is a different image than the local one
+            mockSpawnOnce(Buffer.from("{\"config\":{}}"));
+
+            const info = await repo.update("stack", "caddy", "caddy");
+
+            expect(info.remoteDigest).toBe(REMOTE.digest);
             expect(info.isImageUpdateAvailable()).toBe(true);
         });
 
@@ -117,16 +161,16 @@ describe("ImageRepository", () => {
                 Id: LOCAL_ID,
                 RepoTags: [ "lscr.io/linuxserver/sonarr:latest" ],
                 RepoDigests: [
-                    "linuxserver/sonarr@" + OTHER_DIGEST,
-                    "lscr.io/linuxserver/sonarr@" + LOCAL_DIGEST,
+                    "linuxserver/sonarr@" + LOCAL_DIGEST,
+                    "lscr.io/linuxserver/sonarr@" + REMOTE.digest,
                 ],
             }]));
-            mockSpawnOnce(LOCAL_DIGEST + "\n");
+            mockSpawnOnce(REMOTE.raw);
 
             const info = await repo.update("stack", "sonarr", "lscr.io/linuxserver/sonarr:latest");
 
             // The digest of the repository the stack references comes first
-            expect(info.localDigest).toBe(LOCAL_DIGEST);
+            expect(info.localDigest).toBe(REMOTE.digest);
             expect(info.isImageUpdateAvailable()).toBe(false);
             // No config check needed: the manifest digests already match
             expect(spawnMock).toHaveBeenCalledTimes(2);
@@ -138,15 +182,15 @@ describe("ImageRepository", () => {
                 Id: LOCAL_ID,
                 RepoTags: [ "caddy:2" ],
                 RepoDigests: [
-                    "mirror.example.com/caddy@" + OTHER_DIGEST,
-                    "caddy@" + LOCAL_DIGEST,
+                    "mirror.example.com/caddy@" + LOCAL_DIGEST,
+                    "caddy@" + REMOTE.digest,
                 ],
             }]));
-            mockSpawnOnce(LOCAL_DIGEST + "\n");
+            mockSpawnOnce(REMOTE.raw);
 
             const info = await repo.update("stack", "caddy", "docker.io/library/caddy:2");
 
-            expect(info.localDigest).toBe(LOCAL_DIGEST);
+            expect(info.localDigest).toBe(REMOTE.digest);
             expect(info.isImageUpdateAvailable()).toBe(false);
         });
 
@@ -162,12 +206,12 @@ describe("ImageRepository", () => {
                 RepoTags: [ "caddy:latest" ],
                 RepoDigests: [ "caddy@" + LOCAL_DIGEST ],
             }]));
-            mockSpawnOnce(OTHER_DIGEST + "\n");
-            spawnMock.mockResolvedValueOnce({ stdout: config } as never);
+            mockSpawnOnce(REMOTE.raw);
+            mockSpawnOnce(config);
 
             const info = await repo.update("stack", "caddy", "caddy");
 
-            expect(info.remoteDigest).toBe(OTHER_DIGEST);
+            expect(info.remoteDigest).toBe(REMOTE.digest);
             expect(info.isImageUpdateAvailable()).toBe(false);
             // The config has to be read as raw bytes, not decoded text
             expect(spawnMock).toHaveBeenLastCalledWith(
@@ -177,59 +221,161 @@ describe("ImageRepository", () => {
             );
         });
 
-        it("reads the remote config once per remote digest, not once per check", async () => {
+        it("asks the registry once for an image several services share", async () => {
             const repo = new ImageRepository();
-            const config = Buffer.from("{\"architecture\":\"amd64\"}");
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(REMOTE.raw);
+            mockSpawnOnce(Buffer.from("{\"config\":{}}"));
+            // The second stack only inspects its local image
+            mockSpawnOnce(imageInspectOutput);
 
-            // First check: local inspect, remote digest, remote config
+            await repo.update("stack-a", "caddy", "caddy");
+            const info = await repo.update("stack-b", "caddy", "caddy");
+
+            expect(spawnMock).toHaveBeenCalledTimes(4);
+            expect(info.remoteDigest).toBe(REMOTE.digest);
+            expect(info.isImageUpdateAvailable()).toBe(true);
+        });
+
+        it("reads the registry again once the remembered digests are dropped", async () => {
+            const repo = new ImageRepository();
             mockSpawnOnce(imageInspectOutput);
-            mockSpawnOnce(OTHER_DIGEST + "\n");
-            spawnMock.mockResolvedValueOnce({ stdout: config } as never);
-            // Second check, same remote digest: local inspect and remote digest only
+            mockSpawnOnce(REMOTE.raw);
+            mockSpawnOnce(Buffer.from("{\"config\":{}}"));
             mockSpawnOnce(imageInspectOutput);
-            mockSpawnOnce(OTHER_DIGEST + "\n");
+            mockSpawnOnce(REMOTE.raw);
 
             await repo.update("stack", "caddy", "caddy");
-            // Every check starts by dropping what is known about the stack
+            // What the on-demand "check for updates" does before it starts
+            repo.forgetRemoteDigests();
             repo.resetStack("stack");
             const info = await repo.update("stack", "caddy", "caddy");
 
             expect(spawnMock).toHaveBeenCalledTimes(5);
-            expect(info.isImageUpdateAvailable()).toBe(true);
+            expect(info.remoteDigest).toBe(REMOTE.digest);
+        });
+
+        it("reads the remote digest again once the cached one has aged out", async () => {
+            vi.useFakeTimers();
+
+            try {
+                const repo = new ImageRepository();
+                mockSpawnOnce(imageInspectOutput);
+                mockSpawnOnce(REMOTE.raw);
+                mockSpawnOnce(Buffer.from("{\"config\":{}}"));
+                mockSpawnOnce(imageInspectOutput);
+                mockSpawnOnce(REMOTE.raw);
+
+                await repo.update("stack", "caddy", "caddy");
+                vi.advanceTimersByTime(10 * 60 * 1000);
+                repo.resetStack("stack");
+                const info = await repo.update("stack", "caddy", "caddy");
+
+                // Local inspect and remote digest, but not the config: that is
+                // still the one already read for this remote digest
+                expect(spawnMock).toHaveBeenCalledTimes(5);
+                expect(info.isImageUpdateAvailable()).toBe(true);
+            } finally {
+                vi.useRealTimers();
+            }
         });
 
         it("reads the remote config again once the remote digest moves on", async () => {
-            const repo = new ImageRepository();
-            const thirdDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+            vi.useFakeTimers();
 
-            mockSpawnOnce(imageInspectOutput);
-            mockSpawnOnce(OTHER_DIGEST + "\n");
-            spawnMock.mockResolvedValueOnce({ stdout: Buffer.from("{\"a\":1}") } as never);
-            mockSpawnOnce(imageInspectOutput);
-            mockSpawnOnce(thirdDigest + "\n");
-            spawnMock.mockResolvedValueOnce({ stdout: Buffer.from("{\"a\":2}") } as never);
+            try {
+                const repo = new ImageRepository();
+                const moved = manifest("moved-on");
 
-            await repo.update("stack", "caddy", "caddy");
-            repo.resetStack("stack");
-            await repo.update("stack", "caddy", "caddy");
+                mockSpawnOnce(imageInspectOutput);
+                mockSpawnOnce(REMOTE.raw);
+                mockSpawnOnce(Buffer.from("{\"a\":1}"));
+                mockSpawnOnce(imageInspectOutput);
+                mockSpawnOnce(moved.raw);
+                mockSpawnOnce(Buffer.from("{\"a\":2}"));
 
-            expect(spawnMock).toHaveBeenCalledTimes(6);
-            expect(spawnMock).toHaveBeenLastCalledWith(
-                "skopeo",
-                [ "inspect", "--config", "--raw", "docker://caddy" ],
-                expect.anything(),
-            );
+                await repo.update("stack", "caddy", "caddy");
+                vi.advanceTimersByTime(10 * 60 * 1000);
+                repo.resetStack("stack");
+                await repo.update("stack", "caddy", "caddy");
+
+                expect(spawnMock).toHaveBeenCalledTimes(6);
+                expect(spawnMock).toHaveBeenLastCalledWith(
+                    "skopeo",
+                    [ "inspect", "--config", "--raw", "docker://caddy" ],
+                    expect.anything(),
+                );
+            } finally {
+                vi.useRealTimers();
+            }
         });
 
         it("keeps reporting the update when the remote config cannot be read", async () => {
             const repo = new ImageRepository();
             mockSpawnOnce(imageInspectOutput);
-            mockSpawnOnce(OTHER_DIGEST + "\n");
+            mockSpawnOnce(REMOTE.raw);
             spawnMock.mockRejectedValueOnce(new Error("manifest unknown"));
 
             const info = await repo.update("stack", "caddy", "caddy");
 
             expect(info.isImageUpdateAvailable()).toBe(true);
+        });
+
+        it("stops asking a registry that is rate limiting us", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(imageInspectOutput);
+            spawnMock.mockRejectedValueOnce(rateLimitError());
+            mockSpawnOnce(imageInspectOutput);
+
+            await repo.update("stack", "caddy", "caddy");
+            const info = await repo.update("stack", "nginx", "nginx");
+
+            // Two local inspects and the one skopeo run that was refused
+            expect(spawnMock).toHaveBeenCalledTimes(3);
+            expect(info.remoteDigest).toBe("");
+            expect(info.isImageUpdateAvailable()).toBe(false);
+            // Remote checks are still possible, this registry is just busy
+            expect(repo.remoteChecksAvailable()).toBe(true);
+        });
+
+        it("only pauses the registry that refused, not the others", async () => {
+            const repo = new ImageRepository();
+            mockSpawnOnce(imageInspectOutput);
+            spawnMock.mockRejectedValueOnce(rateLimitError());
+            mockSpawnOnce(imageInspectOutput);
+            mockSpawnOnce(REMOTE.raw);
+            mockSpawnOnce(Buffer.from("{\"config\":{}}"));
+
+            await repo.update("stack", "caddy", "caddy");
+            const info = await repo.update("stack", "app", "ghcr.io/owner/app:1");
+
+            expect(info.remoteDigest).toBe(REMOTE.digest);
+            expect(spawnMock).toHaveBeenLastCalledWith(
+                "skopeo",
+                [ "inspect", "--config", "--raw", "docker://ghcr.io/owner/app:1" ],
+                expect.anything(),
+            );
+        });
+
+        it("asks the registry again once the pause is over", async () => {
+            vi.useFakeTimers();
+
+            try {
+                const repo = new ImageRepository();
+                mockSpawnOnce(imageInspectOutput);
+                spawnMock.mockRejectedValueOnce(rateLimitError());
+                mockSpawnOnce(imageInspectOutput);
+                mockSpawnOnce(REMOTE.raw);
+                mockSpawnOnce(Buffer.from("{\"config\":{}}"));
+
+                await repo.update("stack", "caddy", "caddy");
+                vi.advanceTimersByTime(31 * 60 * 1000);
+                const info = await repo.update("stack", "caddy", "caddy");
+
+                expect(info.remoteDigest).toBe(REMOTE.digest);
+            } finally {
+                vi.useRealTimers();
+            }
         });
 
         it("skips the remote check for digest-pinned images", async () => {
@@ -257,6 +403,7 @@ describe("ImageRepository", () => {
             expect(info.localDigest).toBe("sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9");
             expect(info.remoteDigest).toBe("");
             expect(warnMock).toHaveBeenCalledTimes(1);
+            expect(repo.remoteChecksAvailable()).toBe(false);
         });
 
         it("rethrows non-ENOENT skopeo errors", async () => {
