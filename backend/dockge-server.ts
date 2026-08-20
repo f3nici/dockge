@@ -641,42 +641,66 @@ export class DockgeServer {
         return jwtSecretBean;
     }
 
+    /**
+     * Check every managed stack for image updates, then schedule the next run.
+     *
+     * Reading the stack list fails as a whole whenever docker is unreachable - a
+     * daemon restart is enough. The next run is therefore scheduled in a finally,
+     * so one such failure costs a single cycle instead of stopping the checks
+     * until Dockge is restarted.
+     * @param updatePeriod How long to wait before the next run
+     */
     async updateAvailableStackImageUpdates(updatePeriod: number) {
-        const stackList = await Stack.getStackList(this, true);
-        for (const stack of stackList.values()) {
-            if (stack.isManagedByDockge) {
-                // Not updateImageInfos() on its own: that reads whatever service
-                // list the stack happens to hold, which is empty until something
-                // else fills it in, and it leaves the "update available" flags
-                // showing what the previous check found.
-                await stack.refreshImageUpdateStatus();
+        try {
+            const stackList = await Stack.getStackList(this, true);
+            for (const stack of stackList.values()) {
+                if (stack.isManagedByDockge) {
+                    // Not updateImageInfos() on its own: that reads whatever service
+                    // list the stack happens to hold, which is empty until something
+                    // else fills it in, and it leaves the "update available" flags
+                    // showing what the previous check found.
+                    await stack.refreshImageUpdateStatus();
+                }
             }
+            log.info("checkImageUpdates", "Check for image updates finished.");
+        } catch (e) {
+            log.error("checkImageUpdates", "Check for image updates failed, trying again next time: " + e);
+        } finally {
+            setTimeout(
+                () => {
+                    this.updateAvailableStackImageUpdates(updatePeriod);
+                },
+                updatePeriod
+            );
         }
-        log.info("checkImageUpdates", "Check for image updates finished.");
-
-        setTimeout(
-            () => {
-                this.updateAvailableStackImageUpdates(updatePeriod);
-            },
-            updatePeriod
-        );
     }
 
+    /**
+     * Refresh the data of every managed stack, then schedule the next run.
+     *
+     * Scheduled in a finally for the same reason as
+     * {@link updateAvailableStackImageUpdates}.
+     * @param updatePeriod How long to wait before the next run
+     */
     async updateStackData(updatePeriod: number) {
-        const stackList = await Stack.getStackList(this, true);
-        for (const stack of stackList.values()) {
-            if (stack.isManagedByDockge) {
-                await stack.updateData();
+        try {
+            const stackList = await Stack.getStackList(this, true);
+            for (const stack of stackList.values()) {
+                if (stack.isManagedByDockge) {
+                    await stack.updateData();
+                }
             }
+            log.debug("updateStackData", "Update all stacks finished.");
+        } catch (e) {
+            log.error("updateStackData", "Updating the stack data failed, trying again next time: " + e);
+        } finally {
+            setTimeout(
+                () => {
+                    this.updateStackData(updatePeriod);
+                },
+                updatePeriod
+            );
         }
-        log.debug("updateStackData", "Update all stacks finished.");
-
-        setTimeout(
-            () => {
-                this.updateStackData(updatePeriod);
-            },
-            updatePeriod
-        );
     }
 
     /**
