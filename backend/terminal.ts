@@ -267,7 +267,7 @@ export class Terminal {
         return new Promise((resolve, reject) => {
             // check if terminal exists
             if (Terminal.terminalMap.has(terminalName)) {
-                reject("Another operation is already running, please try again later.");
+                reject(new Error("Another operation is already running, please try again later."));
                 return;
             }
 
