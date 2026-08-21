@@ -341,16 +341,12 @@ export class MainSocketHandler extends SocketHandler {
         socket.on("getNotificationSettings", async (callback) => {
             try {
                 checkLogin(socket);
-                const settings = Stack.notificationManager.getSettings();
 
+                // Without the token and password: the browser has no use for
+                // them, and it does not have to send them back either
                 callback({
                     ok: true,
-                    data: settings || {
-                        enabled: false,
-                        ntfyServerUrl: "https://ntfy.sh",
-                        ntfyTopic: "",
-                        enabledEvents: []
-                    },
+                    data: Stack.notificationManager.getSettingsForClient(),
                 });
 
             } catch (e) {

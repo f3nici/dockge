@@ -74,10 +74,11 @@
                         </label>
                         <input
                             id="ntfyToken"
-                            v-model="settings.ntfyToken"
+                            v-model="ntfyTokenInput"
                             type="password"
                             class="form-control"
-                            placeholder="tk_..."
+                            autocomplete="new-password"
+                            :placeholder="hasNtfyToken ? 'Leave blank to keep the stored token' : 'tk_...'"
                         />
                         <div class="form-text">
                             NTFY access token for authentication
@@ -103,9 +104,11 @@
                             </label>
                             <input
                                 id="ntfyPassword"
-                                v-model="settings.ntfyPassword"
+                                v-model="ntfyPasswordInput"
                                 type="password"
                                 class="form-control"
+                                autocomplete="new-password"
+                                :placeholder="hasNtfyPassword ? 'Leave blank to keep the stored password' : ''"
                             />
                         </div>
                     </div>
@@ -235,11 +238,16 @@ export default {
                 enabled: false,
                 ntfyServerUrl: "https://ntfy.sh",
                 ntfyTopic: "",
-                ntfyToken: "",
                 ntfyUsername: "",
-                ntfyPassword: "",
                 enabledEvents: []
             },
+            // Kept apart from settings: the server never sends the secrets, so a
+            // blank box means "unchanged" rather than "empty" whenever one is
+            // already stored.
+            ntfyTokenInput: "",
+            ntfyPasswordInput: "",
+            hasNtfyToken: false,
+            hasNtfyPassword: false,
             authMethod: "none",
             testingNotification: false,
             testResult: null
@@ -254,11 +262,21 @@ export default {
         async loadSettings() {
             this.$root.getSocket().emit("getNotificationSettings", (res) => {
                 if (res.ok) {
-                    this.settings = { ...this.settings,
-                        ...res.data };
+                    this.settings = {
+                        enabled: res.data.enabled,
+                        ntfyServerUrl: res.data.ntfyServerUrl,
+                        ntfyTopic: res.data.ntfyTopic,
+                        ntfyUsername: res.data.ntfyUsername,
+                        enabledEvents: res.data.enabledEvents,
+                    };
+
+                    this.hasNtfyToken = res.data.hasNtfyToken;
+                    this.hasNtfyPassword = res.data.hasNtfyPassword;
+                    this.ntfyTokenInput = "";
+                    this.ntfyPasswordInput = "";
 
                     // Determine auth method
-                    if (this.settings.ntfyToken) {
+                    if (this.hasNtfyToken) {
                         this.authMethod = "token";
                     } else if (this.settings.ntfyUsername) {
                         this.authMethod = "basic";
@@ -272,21 +290,39 @@ export default {
         },
 
         async saveNotifications() {
-            // Clear auth fields based on method
-            if (this.authMethod === "none") {
-                this.settings.ntfyToken = "";
-                this.settings.ntfyUsername = "";
-                this.settings.ntfyPassword = "";
-            } else if (this.authMethod === "token") {
-                this.settings.ntfyUsername = "";
-                this.settings.ntfyPassword = "";
+            const payload = {
+                enabled: this.settings.enabled,
+                ntfyServerUrl: this.settings.ntfyServerUrl,
+                ntfyTopic: this.settings.ntfyTopic,
+                enabledEvents: this.settings.enabledEvents,
+            };
+
+            // An omitted secret keeps the stored one, an empty string clears it,
+            // so the auth method decides which of the two each field gets. Only
+            // the fields the chosen method uses can survive.
+            if (this.authMethod === "token") {
+                payload.ntfyUsername = "";
+                payload.ntfyPassword = "";
+                if (this.ntfyTokenInput || !this.hasNtfyToken) {
+                    payload.ntfyToken = this.ntfyTokenInput;
+                }
             } else if (this.authMethod === "basic") {
-                this.settings.ntfyToken = "";
+                payload.ntfyToken = "";
+                payload.ntfyUsername = this.settings.ntfyUsername;
+                if (this.ntfyPasswordInput || !this.hasNtfyPassword) {
+                    payload.ntfyPassword = this.ntfyPasswordInput;
+                }
+            } else {
+                payload.ntfyToken = "";
+                payload.ntfyUsername = "";
+                payload.ntfyPassword = "";
             }
 
-            this.$root.getSocket().emit("saveNotificationSettings", this.settings, (res) => {
+            this.$root.getSocket().emit("saveNotificationSettings", payload, (res) => {
                 if (res.ok) {
                     this.$root.toastSuccess(res.msg);
+                    // Pick up which secrets are on file now
+                    this.loadSettings();
                 } else {
                     this.$root.toastError(res.msg);
                 }
