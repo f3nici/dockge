@@ -892,7 +892,12 @@ export class Stack {
 
         // Use cached stack list?
         if (useCacheForManaged && this.managedStackList.size > 0) {
-            stackList = this.managedStackList;
+            // A copy, not the cache itself. Stacks docker knows about but Dockge
+            // does not are added to this list further down, and writing those
+            // into the cache left them there for good: they kept being sent to
+            // every browser, with the status they last had, long after the
+            // compose project behind them was gone.
+            stackList = new Map(this.managedStackList);
         } else {
             stackList = new Map<string, Stack>();
 

@@ -99,6 +99,25 @@ export const DockerArtefactInfos: Record<string, DockerArtefactInfo> = {
     }
 };
 
+/**
+ * Look up the artefact kind a request names.
+ *
+ * The keys of {@link DockerArtefactInfos} are capitalised while everything on
+ * the wire uses the lower case `name`, so matching on the name is what actually
+ * resolves. Anything not in the list is rejected rather than passed on: the
+ * artefact ends up as a docker subcommand, and only these four are meant to be
+ * reachable.
+ * @param name Artefact name as sent by the client, e.g. "image"
+ * @returns The matching info, or undefined when the name is not one of ours
+ */
+export function getDockerArtefactInfo(name : unknown) : DockerArtefactInfo | undefined {
+    if (typeof(name) !== "string") {
+        return undefined;
+    }
+
+    return Object.values(DockerArtefactInfos).find((info) => info.name === name);
+}
+
 export type DockerArtefactItem = {
     id: string,
     actionIds: Record<string, string>, // Possibly different Ids for some actions
@@ -126,9 +145,25 @@ export type NotificationSettings = {
     enabled: boolean,
     ntfyServerUrl: string,
     ntfyTopic: string,
+    /** Access token. Never sent to the browser. */
     ntfyToken?: string,
     ntfyUsername?: string,
+    /** Password. Never sent to the browser. */
     ntfyPassword?: string,
+    enabledEvents: NotificationEvent[]
+}
+
+/**
+ * The stored notification settings as the browser gets to see them: everything
+ * but the secrets, plus whether a secret is on file so the form can say so.
+ */
+export type NotificationSettingsInfo = {
+    enabled: boolean,
+    ntfyServerUrl: string,
+    ntfyTopic: string,
+    ntfyUsername: string,
+    hasNtfyToken: boolean,
+    hasNtfyPassword: boolean,
     enabledEvents: NotificationEvent[]
 }
 

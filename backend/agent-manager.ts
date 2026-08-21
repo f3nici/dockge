@@ -36,19 +36,31 @@ export class AgentManager {
 
     test(url : string, username : string, password : string) : Promise<void> {
         return new Promise((resolve, reject) => {
+            // Every one of these has to return: rejecting does not stop the
+            // executor, so without it the checks below still ran and a connection
+            // was opened - and leaked - for a URL that had already been refused.
             if (url === "") {
                 reject(new Error("Invalid Dockge URL"));
+                return;
             }
 
-            let obj = new URL(url);
-            let endpoint = obj.host;
+            let endpoint : string;
+
+            try {
+                endpoint = new URL(url).host;
+            } catch (e) {
+                reject(new Error("Invalid Dockge URL"));
+                return;
+            }
 
             if (!endpoint) {
                 reject(new Error("Invalid Dockge URL"));
+                return;
             }
 
             if (this.agentSocketList[endpoint]) {
                 reject(new Error("The Dockge URL already exists"));
+                return;
             }
 
             let client = io(url, {
