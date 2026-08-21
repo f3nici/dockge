@@ -396,15 +396,26 @@ export default {
                 // allowed to kick in on insecure origins. Copy before clearing:
                 // clearSelection() also drops the DOM selection the browser's
                 // own Ctrl+C would have used, so the copy has to be ours.
-                if (this.copyToClipboard(this.terminal.getSelection(), true)) {
-                    // The text really is on the clipboard, so the selection has
-                    // served its purpose and the next Ctrl+C can send SIGINT
-                    // again instead of being swallowed by a stale selection.
-                    // If the copy failed the selection is kept, otherwise the
-                    // key press would interrupt the command without having
-                    // copied anything - exactly what this is meant to prevent.
-                    this.terminal.clearSelection();
-                }
+                //
+                // The clipboard write is asynchronous, so the selection can only
+                // be cleared once it has actually resolved. Clearing on the call
+                // returning - which is all it used to wait for - threw the
+                // selection away even when the write went on to fail, leaving
+                // the key press with neither a copy nor a SIGINT to show for it.
+                this.copyToClipboard(this.terminal.getSelection(), true).then((copied) => {
+                    if (copied) {
+                        // The text really is on the clipboard, so the selection
+                        // has served its purpose and the next Ctrl+C can send
+                        // SIGINT again instead of being swallowed by a stale
+                        // selection. If it failed the selection is kept, so the
+                        // copy can simply be tried again.
+                        this.terminal.clearSelection();
+                    }
+                });
+
+                // Returned synchronously: xterm needs the verdict now, and the
+                // key is swallowed either way so a failed copy never turns into
+                // an unintended interrupt.
                 return false;
             }
 
@@ -433,16 +444,23 @@ export default {
          * user gesture (Ctrl+C). document.execCommand("copy") still works on
          * insecure origins, but only while the gesture is being handled, and
          * it briefly moves focus, so the copy-on-select path stays out of it.
-         * @returns {boolean} whether the text reached the clipboard
+         * @returns {Promise<boolean>} whether the text reached the clipboard.
+         * Resolves only once the write has actually completed, so callers can
+         * tell a real copy from one that was merely started.
          */
-        copyToClipboard(text, allowFallback = false) {
+        async copyToClipboard(text, allowFallback = false) {
             if (navigator.clipboard?.writeText) {
-                navigator.clipboard.writeText(text).then(() => {
-                    console.debug("Text copied to clipboard:", text);
-                }).catch((error) => {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    console.debug("Text copied to clipboard");
+                    return true;
+                } catch (error) {
+                    // Denied permission, an unfocused document, a transient
+                    // failure. The gesture is over by the time this resolves, so
+                    // execCommand is no longer an option either.
                     console.error("Failed to copy to clipboard:", error);
-                });
-                return true;
+                    return false;
+                }
             }
 
             if (!allowFallback) {
@@ -450,6 +468,8 @@ export default {
                 return false;
             }
 
+            // Reached without having awaited anything, so this still runs inside
+            // the key event and execCommand is allowed to work.
             return this.copyToClipboardFallback(text);
         },
 
