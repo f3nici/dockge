@@ -9,6 +9,7 @@ import { generatePasswordHash, needRehashPassword, shake256, SHAKE256_LENGTH, ve
 import { User } from "../models/user";
 import {
     callbackError,
+    callbackResult,
     checkLogin,
     DockgeSocket,
     doubleCheckPassword,
@@ -463,6 +464,34 @@ export class MainSocketHandler extends SocketHandler {
                     ok: true,
                     rateLimit: await RegistryCredentialManager.INSTANCE.getDockerHubRateLimit(),
                 });
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
+        // Log out
+        //
+        // The browser emits this and then drops its token, but the socket it
+        // emitted on stays open. Without clearing the session here it kept its
+        // userID, so every handler's checkLogin() went on passing and the
+        // connection stayed authorised long after the user had logged out.
+        socket.on("logout", async (callback) => {
+            try {
+                if (socket.userID) {
+                    socket.leave(socket.userID.toString());
+                }
+
+                // 0 rather than undefined: checkLogin() treats it as logged out,
+                // and DockgeSocket types userID as a number.
+                socket.userID = 0;
+
+                // These exist on behalf of a logged-in user, so they go too.
+                // Logging back in on this socket connects them again.
+                socket.instanceManager.disconnectAll();
+
+                callbackResult({
+                    ok: true,
+                }, callback);
             } catch (e) {
                 callbackError(e, callback);
             }
