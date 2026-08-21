@@ -38,6 +38,24 @@ describe("callbackError", () => {
         });
     });
 
+    it("still answers when something other than an Error is thrown", () => {
+        // Terminal.exec used to reject with a bare string. Dropping those on the
+        // floor left the browser waiting on an acknowledgement that never came.
+        const callback = vi.fn();
+        callbackError("Another operation is already running, please try again later.", callback);
+        expect(callback).toHaveBeenCalledWith({
+            ok: false,
+            msg: "Another operation is already running, please try again later.",
+        });
+    });
+
+    it("does not mark a non-Error message as translatable", () => {
+        const callback = vi.fn();
+        callbackError({ nope: true }, callback);
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callback.mock.calls[0][0]).not.toHaveProperty("msgi18n");
+    });
+
     it("does nothing useful when the callback is not a function", () => {
         expect(() => callbackError(new Error("boom"), undefined)).not.toThrow();
     });

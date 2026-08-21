@@ -13,6 +13,7 @@ import {
     getAgentMaintenanceTerminalName,
     getCombinedTerminalName,
     getComposeTerminalName,
+    getContainerLogName,
     getContainerTerminalName,
     getCryptoRandomInt,
     getNested,
@@ -118,6 +119,21 @@ describe("terminal name helpers", () => {
     it("builds container terminal names", () => {
         expect(getContainerTerminalName("local", "mystack", "web", "bash", 0))
             .toBe("container-terminal-local-mystack-web-bash-0");
+    });
+
+    it("builds container log names", () => {
+        expect(getContainerLogName("local", "mystack", "web", 0))
+            .toBe("container-log-local-mystack-web-0");
+    });
+
+    it("keeps container log names distinct across stacks sharing a service name", () => {
+        expect(getContainerLogName("", "stack-a", "app", 0))
+            .not.toBe(getContainerLogName("", "stack-b", "app", 0));
+    });
+
+    it("keeps container log names distinct across indexes", () => {
+        expect(getContainerLogName("", "mystack", "app", 0))
+            .not.toBe(getContainerLogName("", "mystack", "app", 1));
     });
 
     it("builds agent maintenance terminal names", () => {
