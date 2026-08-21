@@ -159,21 +159,6 @@ export class MainSocketHandler extends SocketHandler {
                     return;
                 }
 
-                // Two-factor authentication has no server-side enrollment/verification
-                // path in this build. Rather than silently bypassing the second factor
-                // (a security downgrade), deny login for any account that still has it
-                // flagged on. Such accounts can be reset via the reset-password CLI.
-                if (user.twofa_status) {
-                    log.warn("auth", `2FA is enabled for user ${data.username} but not supported by this server. IP=${clientIP}`);
-
-                    callback({
-                        ok: false,
-                        msg: "authInvalidToken",
-                        msgi18n: true,
-                    });
-                    return;
-                }
-
                 await server.afterLogin(socket, user);
 
                 log.info("auth", `Successfully logged in user ${data.username}. IP=${clientIP}`);

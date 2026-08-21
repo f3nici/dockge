@@ -287,7 +287,10 @@ export function getContainerTerminalName(endpoint : string, stackName : string, 
 }
 
 export function getContainerLogName(endpoint : string, stackName : string, container : string, index : number) {
-    return "container-log-" + endpoint + "-" + container;
+    // The stack name has to be part of this: terminals are looked up by name, so
+    // without it two stacks that both have a service called "app" would share one
+    // log terminal and show each other's output.
+    return "container-log-" + endpoint + "-" + stackName + "-" + container + "-" + index;
 }
 
 export function getAgentMaintenanceTerminalName(endpoint : string) {

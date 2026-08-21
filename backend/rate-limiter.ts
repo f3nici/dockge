@@ -72,10 +72,3 @@ export const apiRateLimiter = new KumaRateLimiter({
     fireImmediately: true,
     errorMessage: "Too frequently, try again later."
 });
-
-export const twoFaRateLimiter = new KumaRateLimiter({
-    tokensPerInterval: 30,
-    interval: "minute",
-    fireImmediately: true,
-    errorMessage: "Too frequently, try again later."
-});

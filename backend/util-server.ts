@@ -72,7 +72,14 @@ export function callbackError(error : unknown, callback : unknown) {
             msgi18n: true,
         });
     } else {
-        log.debug("console", "Unknown error: " + error);
+        // Not an Error, but the caller is still waiting on an answer. Staying
+        // silent here leaves the browser on a spinner forever, so whatever was
+        // thrown is passed on as best it can be.
+        log.error("console", "Unknown error: " + error);
+        callback({
+            ok: false,
+            msg: String(error),
+        });
     }
 }
 
