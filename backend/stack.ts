@@ -38,6 +38,7 @@ export class Stack {
     protected _unhealthy: boolean = false;
     protected _imageUpdatesAvailable: boolean = false;
     protected _imageCheckConclusive: boolean = false;
+    protected _imageChecksOptedOut: boolean = false;
     protected _recreateNecessary: boolean = false;
     protected _services: Map<string, ServiceData> = new Map();
     protected server: DockgeServer;
@@ -149,16 +150,30 @@ export class Stack {
     }
 
     /**
-     * Whether the last check managed to compare every image against its
-     * registry.
+     * Whether the last check managed to compare every image it was asked to
+     * against its registry.
      *
-     * False says the answer is "we do not know", not "there is nothing new":
-     * a registry that could not be reached, or a service whose update checks
-     * are switched off, leaves nothing flagged for reasons that have nothing to
-     * do with the images being current.
+     * False says the answer is "we do not know", not "there is nothing new": a
+     * registry that could not be reached leaves nothing flagged for reasons
+     * that have nothing to do with the images being current.
+     *
+     * A service whose checks are switched off is not a failure and does not
+     * count here - see imageChecksOptedOut.
      */
     get imageCheckConclusive(): boolean {
         return this._imageCheckConclusive;
+    }
+
+    /**
+     * Whether at least one service asked not to be checked, via
+     * dockge.imageupdates.check=false.
+     *
+     * Those services are left out of the stack's verdict entirely: the label is
+     * an instruction, not a failed lookup, so honouring it means neither
+     * flagging an update nor pulling "just in case".
+     */
+    get imageChecksOptedOut(): boolean {
+        return this._imageChecksOptedOut;
     }
 
     /**
@@ -596,6 +611,11 @@ export class Stack {
             // for "everything is up to date"
             let imageCheckConclusive = true;
 
+            // Set by any service that asked not to be checked at all. Kept
+            // apart from the above: one is a lookup that failed, the other is
+            // an instruction we are following.
+            let imageChecksOptedOut = false;
+
             for (let line of lines) {
                 if (line != "") {
                     const serviceInfo = JSON.parse(line);
@@ -638,9 +658,12 @@ export class Stack {
                             imageCheckConclusive = false;
                         }
                     } else if (!recreateNecessary) {
-                        // Checks turned off for this service, so nothing is known
-                        // about whether it is behind
-                        imageCheckConclusive = false;
+                        // Checks turned off for this service. Nothing is known
+                        // about whether it is behind, and nothing is meant to
+                        // be: leave it out of the stack's verdict rather than
+                        // letting it make the whole stack inconclusive, which
+                        // would pull every service on every run.
+                        imageChecksOptedOut = true;
                     }
 
                     services.set(
@@ -705,6 +728,7 @@ export class Stack {
 
             this._services = services;
             this._imageCheckConclusive = imageCheckConclusive;
+            this._imageChecksOptedOut = imageChecksOptedOut;
 
             // Detect and notify status changes (skip on first update to avoid spam)
             if (!this._firstUpdate) {
