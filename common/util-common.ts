@@ -23,21 +23,23 @@ export interface BaseRes {
     msg?: string;
 }
 
-let randomBytes : (numBytes: number) => Uint8Array;
-initRandomBytes();
-
-async function initRandomBytes() {
-    if (typeof window !== "undefined" && window.crypto) {
-        randomBytes = function randomBytes(numBytes: number) {
-            const bytes = new Uint8Array(numBytes);
-            for (let i = 0; i < numBytes; i += 65536) {
-                window.crypto.getRandomValues(bytes.subarray(i, i + Math.min(numBytes - i, 65536)));
-            }
-            return bytes;
-        };
-    } else {
-        randomBytes = (await import("node:crypto")).randomBytes;
+/**
+ * Cryptographically strong random bytes.
+ *
+ * The browser and Node both expose WebCrypto as a global, so there is one
+ * implementation for both and nothing to load before the first call. This used
+ * to import node:crypto asynchronously, which left the function undefined until
+ * that resolved - anything calling genSecret() early enough would have thrown.
+ * @param numBytes How many bytes to generate
+ * @returns The bytes
+ */
+function randomBytes(numBytes: number): Uint8Array {
+    const bytes = new Uint8Array(numBytes);
+    // getRandomValues refuses more than 65536 bytes in one call
+    for (let i = 0; i < numBytes; i += 65536) {
+        crypto.getRandomValues(bytes.subarray(i, i + Math.min(numBytes - i, 65536)));
     }
+    return bytes;
 }
 
 export const ALL_ENDPOINTS = "##ALL_DOCKGE_ENDPOINTS##";

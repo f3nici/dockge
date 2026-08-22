@@ -3,6 +3,8 @@ import {
     DEFAULT_NTFY_SERVER_URL,
     assertValidNtfyServerUrl,
     normalizeNotificationSettings,
+    ntfyRootPath,
+    toStoredSettings,
 } from "../backend/notification-manager";
 import { NotificationEvent, NotificationSettings } from "../common/types";
 
@@ -141,5 +143,41 @@ describe("normalizeNotificationSettings", () => {
             }, null);
             expect(result.ntfyServerUrl).toBe(DEFAULT_NTFY_SERVER_URL);
         });
+    });
+});
+
+describe("ntfyRootPath", () => {
+    it("posts to the host root when the url has no path", () => {
+        expect(ntfyRootPath(new URL("https://ntfy.sh"))).toBe("/");
+        expect(ntfyRootPath(new URL("https://ntfy.sh/"))).toBe("/");
+    });
+
+    it("keeps the subpath of a reverse-proxied server", () => {
+        expect(ntfyRootPath(new URL("https://host/ntfy"))).toBe("/ntfy/");
+        expect(ntfyRootPath(new URL("https://host/ntfy/"))).toBe("/ntfy/");
+        expect(ntfyRootPath(new URL("https://host/a/b"))).toBe("/a/b/");
+    });
+});
+
+describe("toStoredSettings", () => {
+    it("stores the generic settings under namespaced keys", () => {
+        const rows = toStoredSettings(stored);
+
+        // "enabled" and "enabledEvents" are unique across every setting type,
+        // so they are too generic to claim
+        expect(rows).not.toHaveProperty("enabled");
+        expect(rows).not.toHaveProperty("enabledEvents");
+        expect(rows.notificationEnabled).toBe(true);
+        expect(rows.notificationEnabledEvents).toEqual([ NotificationEvent.ServiceDown ]);
+    });
+
+    it("keeps the ntfy settings under the names they already have", () => {
+        const rows = toStoredSettings(stored);
+
+        expect(rows.ntfyServerUrl).toBe("https://ntfy.example.com");
+        expect(rows.ntfyTopic).toBe("dockge");
+        expect(rows.ntfyToken).toBe("tk_stored");
+        expect(rows.ntfyUsername).toBe("someone");
+        expect(rows.ntfyPassword).toBe("stored-password");
     });
 });

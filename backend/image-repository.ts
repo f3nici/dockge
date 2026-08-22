@@ -25,12 +25,28 @@ const REMOTE_DIGEST_TTL_MS = 5 * 60 * 1000;
  */
 const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+/**
+ * How long a config digest read for a manifest stays usable.
+ *
+ * Far longer than the manifest TTL on purpose: the entry records which config a
+ * given manifest digest has, and a manifest that has not changed still has the
+ * same config. It is here to expire entries for images nothing references any
+ * more, not to force the config to be read again.
+ */
+const REMOTE_CONFIG_DIGEST_TTL_MS = 24 * 60 * 60 * 1000;
+
 export class ImageRepository {
 
     static INSTANCE = new ImageRepository();
 
     private imageInfos: Map<string, Map<string, ImageInfo>> = new Map();
 
+    /**
+     * Images whose local inspect came back without an id or a digest, so the
+     * warning is only logged once rather than on every poll. Cleared per image
+     * as soon as one inspects cleanly, so this holds at most the configured
+     * images that are currently in that state.
+     */
     private warnedImages: Set<string> = new Set();
 
     private skopeoMissing = false;
@@ -53,7 +69,26 @@ export class ImageRepository {
      * check, so without this the config blob would be fetched again on every
      * poll for every image that has an update pending.
      */
-    private remoteConfigDigests: Map<string, { manifestDigest: string, configDigest: string }> = new Map();
+    private remoteConfigDigests: Map<string, { manifestDigest: string, configDigest: string, readAt: number }> = new Map();
+
+    /**
+     * Drop cache entries that are past their lifetime.
+     *
+     * Run when something is written, so a long-running instance does not hold
+     * on to entries for images that were removed from a compose file months
+     * ago. Both caches are small enough that walking them costs nothing.
+     * @param cache The cache to prune
+     * @param maxAgeMs How long an entry stays usable
+     */
+    private static prune(cache: Map<string, { readAt: number }>, maxAgeMs: number) {
+        const cutoff = Date.now() - maxAgeMs;
+
+        for (const [ key, entry ] of cache) {
+            if (entry.readAt < cutoff) {
+                cache.delete(key);
+            }
+        }
+    }
 
     resetStack(stack: string) {
         this.imageInfos.delete(stack);
@@ -100,9 +135,11 @@ export class ImageRepository {
                 imageInfo = new ImageInfo(remoteDigest, imageInfo.localDigest, imageInfo.localId, imageInfo.localDigests, remoteConfigDigest);
 
                 if (remoteConfigDigest) {
+                    ImageRepository.prune(this.remoteConfigDigests, REMOTE_CONFIG_DIGEST_TTL_MS);
                     this.remoteConfigDigests.set(image, {
                         manifestDigest: remoteDigest,
                         configDigest: remoteConfigDigest,
+                        readAt: Date.now(),
                     });
                 }
             }
@@ -190,6 +227,7 @@ export class ImageRepository {
         }
 
         const digest = this.digestOf(resRemote.stdout);
+        ImageRepository.prune(this.remoteDigests, REMOTE_DIGEST_TTL_MS);
         this.remoteDigests.set(image, {
             digest,
             readAt: Date.now(),

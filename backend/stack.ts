@@ -576,11 +576,11 @@ export class Stack {
                 encoding: "utf-8",
             });
 
-            if (!res.stdout) {
-                return;
-            }
-
-            const lines = res.stdout?.toString().split("\n");
+            // No output means the stack has no containers at all, which is a
+            // result like any other: returning here instead would leave the
+            // status, services and check flags describing containers that are
+            // no longer there.
+            const lines = res.stdout ? res.stdout.toString().split("\n") : [];
 
             let runningCount = 0;
             let ignoredRunningCount = 0;
@@ -1074,7 +1074,7 @@ export class Stack {
         }
 
         // Update image infos
-        this.updateImageInfos();
+        await this.updateImageInfos();
 
         return exitCode;
     }

@@ -289,7 +289,11 @@ export default {
             });
         },
 
-        async saveNotifications() {
+        /**
+         * The form as the server wants it, for saving and for testing alike.
+         * @returns {object} The payload to send
+         */
+        buildPayload() {
             const payload = {
                 enabled: this.settings.enabled,
                 ntfyServerUrl: this.settings.ntfyServerUrl,
@@ -318,6 +322,12 @@ export default {
                 payload.ntfyPassword = "";
             }
 
+            return payload;
+        },
+
+        async saveNotifications() {
+            const payload = this.buildPayload();
+
             this.$root.getSocket().emit("saveNotificationSettings", payload, (res) => {
                 if (res.ok) {
                     this.$root.toastSuccess(res.msg);
@@ -333,7 +343,8 @@ export default {
             this.testingNotification = true;
             this.testResult = null;
 
-            this.$root.getSocket().emit("testNotification", (res) => {
+            // Send the form rather than testing whatever was last saved
+            this.$root.getSocket().emit("testNotification", this.buildPayload(), (res) => {
                 this.testingNotification = false;
 
                 if (res.ok) {
