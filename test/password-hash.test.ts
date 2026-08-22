@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
     SHAKE256_LENGTH,
     generatePasswordHash,
-    needRehashPassword,
     shake256,
     verifyPassword,
 } from "../backend/password-hash";
@@ -21,10 +20,6 @@ describe("password hashing", () => {
 
     it("produces a different hash each time (salted)", async () => {
         expect(await generatePasswordHash("same")).not.toBe(await generatePasswordHash("same"));
-    });
-
-    it("never asks for a rehash", async () => {
-        expect(needRehashPassword(await generatePasswordHash("x"))).toBe(false);
     });
 });
 

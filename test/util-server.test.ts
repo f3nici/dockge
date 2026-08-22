@@ -28,13 +28,13 @@ describe("callbackError", () => {
         });
     });
 
-    it("passes through a generic error message", () => {
+    it("passes through a generic error message untranslated", () => {
+        // A plain Error carries an English sentence, not a translation key
         const callback = vi.fn();
         callbackError(new Error("boom"), callback);
         expect(callback).toHaveBeenCalledWith({
             ok: false,
             msg: "boom",
-            msgi18n: true,
         });
     });
 
