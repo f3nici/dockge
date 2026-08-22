@@ -37,6 +37,7 @@ function fakeStack(name: string, overrides: Record<string, unknown> = {}) {
         recreateNecessary: false,
         servicesMissing: false,
         imageCheckConclusive: true,
+        imageChecksOptedOut: false,
         refreshImageUpdateStatus: vi.fn(async () => {}),
         update: vi.fn(async () => 0),
         ...overrides,
@@ -136,11 +137,30 @@ describe("AutoUpdateManager.runNow", () => {
     });
 
     it("pulls a stack whose check could not reach the registry", async () => {
-        // No skopeo, a registry refusing us, checks switched off for a service:
-        // nothing is flagged, and that must not read as "up to date"
+        // No skopeo, a registry refusing us: nothing is flagged, and that must
+        // not read as "up to date"
         const unchecked = fakeStack("unchecked", { imageCheckConclusive: false });
 
         expect(await runOver([ unchecked ])).toEqual([ "unchecked" ]);
+    });
+
+    it("leaves a stack alone when the only unchecked service asked not to be checked", async () => {
+        // dockge.imageupdates.check=false is an instruction, not a failed
+        // lookup: the services that were checked are up to date, so there is
+        // nothing to pull
+        const partial = fakeStack("partial", { imageChecksOptedOut: true });
+
+        expect(await runOver([ partial ])).toEqual([]);
+        expect(partial.update).not.toHaveBeenCalled();
+    });
+
+    it("still pulls an opted-out stack when a checked service is behind", async () => {
+        const partial = fakeStack("partial-behind", {
+            imageChecksOptedOut: true,
+            imageUpdatesAvailable: true,
+        });
+
+        expect(await runOver([ partial ])).toEqual([ "partial-behind" ]);
     });
 
     it("carries on after a stack fails to update", async () => {

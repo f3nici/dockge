@@ -232,12 +232,19 @@ export class AutoUpdateManager {
             const behind = stack.imageUpdatesAvailable || stack.recreateNecessary || stack.servicesMissing;
 
             // Only a check that reached every registry can rule an update out.
-            // When it could not - no skopeo, a registry refusing us, checks
-            // switched off for a service - nothing is flagged either, and
-            // reading that as "up to date" would quietly stop updating the
-            // stack altogether. Pull it, the way an update run always did.
+            // When it could not - no skopeo, a registry refusing us - nothing
+            // is flagged either, and reading that as "up to date" would quietly
+            // stop updating the stack altogether. Pull it, the way an update
+            // run always did.
+            //
+            // A service carrying dockge.imageupdates.check=false is a different
+            // case: it was left out of the check on purpose, so the stack is
+            // judged on the services that were checked. Pulling it anyway would
+            // recreate the whole stack every run, which is what the label is
+            // there to avoid.
             if (!behind && stack.imageCheckConclusive) {
-                skipped.push(`${stack.name} (no image updates available)`);
+                const optedOut = stack.imageChecksOptedOut ? ", checks off for some services" : "";
+                skipped.push(`${stack.name} (no image updates available${optedOut})`);
                 continue;
             }
 
