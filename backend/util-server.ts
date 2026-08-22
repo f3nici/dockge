@@ -66,10 +66,13 @@ export function callbackError(error : unknown, callback : unknown) {
             msgi18n: true,
         });
     } else if (error instanceof Error) {
+        // No msgi18n: a plain Error carries an English sentence, not a
+        // translation key. Tagging it as one sends it through $t(), which warns
+        // about a missing key and only displays at all because vue-i18n falls
+        // back to passing the key through.
         callback({
             ok: false,
             msg: error.message,
-            msgi18n: true,
         });
     } else {
         // Not an Error, but the caller is still waiting on an answer. Staying

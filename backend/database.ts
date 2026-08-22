@@ -11,8 +11,14 @@ import Dialect from "knex/lib/dialects/sqlite3/index.js";
 import sqlite from "@louislam/sqlite3";
 import { sleep } from "../common/util-common";
 
+/**
+ * db-config.json.
+ *
+ * sqlite is the only type there is. The connection fields are kept because the
+ * file may already carry them, not because anything reads them.
+ */
 interface DBConfig {
-    type?: "sqlite" | "mysql";
+    type?: "sqlite";
     hostname?: string;
     port?: string;
     database?: string;
@@ -127,7 +133,7 @@ export class Database {
                 }
             };
         } else {
-            throw new Error("Unknown Database type: " + dbConfig.type);
+            throw new Error(`Unsupported database type "${dbConfig.type}" in db-config.json. Dockge only supports "sqlite".`);
         }
 
         const knexInstance = knex(config);

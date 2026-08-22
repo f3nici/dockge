@@ -1,6 +1,7 @@
 import { log } from "./log";
 import { Settings } from "./settings";
 import { NotificationSettings, NotificationSettingsInfo, NotificationEvent } from "../common/types";
+import { LooseObject } from "../common/util-common";
 import https from "https";
 import http from "http";
 
@@ -30,6 +31,42 @@ export function assertValidNtfyServerUrl(serverUrl: string | undefined): void {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
         throw new Error("NTFY server URL must use http or https");
     }
+}
+
+/**
+ * The settings as rows of the setting table.
+ *
+ * `setting.key` is unique across every type, so the two settings whose names
+ * are not obviously about notifications are stored under namespaced keys
+ * rather than the generic "enabled" and "enabledEvents" another feature could
+ * later want. The ntfy keys are already namespaced by their prefix.
+ * @param settings The settings to store
+ * @returns The rows to write
+ */
+export function toStoredSettings(settings: NotificationSettings): LooseObject {
+    return {
+        notificationEnabled: settings.enabled,
+        ntfyServerUrl: settings.ntfyServerUrl,
+        ntfyTopic: settings.ntfyTopic,
+        ntfyToken: settings.ntfyToken,
+        ntfyUsername: settings.ntfyUsername,
+        ntfyPassword: settings.ntfyPassword,
+        notificationEnabledEvents: settings.enabledEvents,
+    };
+}
+
+/**
+ * The path to POST a JSON message to, for a given ntfy server URL.
+ *
+ * JSON publishing goes to the root of where ntfy is served, which is not always
+ * the root of the host: behind a reverse proxy on https://host/ntfy the path
+ * has to be kept, or every notification is posted to the wrong endpoint.
+ * @param url The configured server URL
+ * @returns The request path, always ending in a slash
+ */
+export function ntfyRootPath(url: URL): string {
+    const base = url.pathname.replace(/\/+$/, "");
+    return base ? base + "/" : "/";
 }
 
 /**
@@ -154,13 +191,13 @@ export class NotificationManager {
 
             if (settings && Object.keys(settings).length > 0) {
                 this.settings = {
-                    enabled: settings.enabled ?? false,
+                    enabled: settings.notificationEnabled ?? false,
                     ntfyServerUrl: settings.ntfyServerUrl ?? DEFAULT_NTFY_SERVER_URL,
                     ntfyTopic: settings.ntfyTopic ?? "",
                     ntfyToken: settings.ntfyToken,
                     ntfyUsername: settings.ntfyUsername,
                     ntfyPassword: settings.ntfyPassword,
-                    enabledEvents: settings.enabledEvents ?? []
+                    enabledEvents: settings.notificationEnabledEvents ?? []
                 };
                 log.info("notification", "Notification settings loaded successfully");
             } else {
@@ -185,7 +222,7 @@ export class NotificationManager {
     async saveSettings(input: unknown): Promise<void> {
         try {
             const settings = normalizeNotificationSettings(input, this.settings);
-            await Settings.setSettings("notifications", settings);
+            await Settings.setSettings("notifications", toStoredSettings(settings));
             this.settings = settings;
             log.info("notification", "Notification settings saved successfully");
         } catch (error) {
@@ -215,10 +252,20 @@ export class NotificationManager {
     }
 
     /**
-     * Test notification by sending a test message
+     * Send a test message.
+     *
+     * The settings to test with come from the form when the browser sends
+     * them, so pressing Test after editing the topic tests what is on screen
+     * rather than what was last saved. Nothing is stored either way. Secrets
+     * the form left out fall back to the stored ones, the same as saving does.
+     * @param input The settings as received from the client, if any
      */
-    async testNotification(): Promise<boolean> {
-        if (!this.settings || !this.settings.ntfyServerUrl || !this.settings.ntfyTopic) {
+    async testNotification(input?: unknown): Promise<boolean> {
+        const settings = input === undefined
+            ? this.settings
+            : normalizeNotificationSettings(input, this.settings);
+
+        if (!settings || !settings.ntfyServerUrl || !settings.ntfyTopic) {
             throw new Error("Notification settings not configured");
         }
 
@@ -229,7 +276,7 @@ export class NotificationManager {
             tags: [ "white_check_mark" ]
         };
 
-        return await this.sendToNtfy(message);
+        return await this.sendToNtfy(message, settings);
     }
 
     /**
@@ -255,7 +302,7 @@ export class NotificationManager {
         const sent = await this.sendToNtfy(message);
 
         if (sent) {
-            this.lastNotificationTime.set(notificationKey, Date.now());
+            this.markSent(notificationKey);
         }
     }
 
@@ -281,7 +328,7 @@ export class NotificationManager {
         const sent = await this.sendToNtfy(message);
 
         if (sent) {
-            this.lastNotificationTime.set(notificationKey, Date.now());
+            this.markSent(notificationKey);
         }
     }
 
@@ -316,6 +363,26 @@ export class NotificationManager {
         }
 
         return Date.now() - lastTime < this.RATE_LIMIT_MS;
+    }
+
+    /**
+     * Remember that a notification went out, so a repeat of it is held back for
+     * the rate limit window.
+     *
+     * Entries past that window no longer say anything and are dropped, rather
+     * than being kept for every stack and service that has ever notified.
+     * @param key What was sent, as stack, service and event
+     */
+    private markSent(key: string) {
+        const cutoff = Date.now() - this.RATE_LIMIT_MS;
+
+        for (const [ sentKey, sentAt ] of this.lastNotificationTime) {
+            if (sentAt < cutoff) {
+                this.lastNotificationTime.delete(sentKey);
+            }
+        }
+
+        this.lastNotificationTime.set(key, Date.now());
     }
 
     /**
@@ -443,21 +510,23 @@ export class NotificationManager {
 
     /**
      * Send notification to NTFY server
+     * @param message What to send
+     * @param settings Which settings to send it with. The stored ones, unless a
+     * test is exercising the ones on the form.
      */
-    private async sendToNtfy(message: NtfyMessage): Promise<boolean> {
-        if (!this.settings) {
+    private async sendToNtfy(message: NtfyMessage, settings: NotificationSettings | null = this.settings): Promise<boolean> {
+        if (!settings) {
             return false;
         }
 
-        // For JSON publishing, POST to the server root URL, not to the topic path
-        assertValidNtfyServerUrl(this.settings.ntfyServerUrl);
-        const url = new URL(this.settings.ntfyServerUrl);
+        assertValidNtfyServerUrl(settings.ntfyServerUrl);
+        const url = new URL(settings.ntfyServerUrl);
         const isHttps = url.protocol === "https:";
         const httpModule = isHttps ? https : http;
 
         return new Promise((resolve) => {
             const postData = JSON.stringify({
-                topic: this.settings!.ntfyTopic,
+                topic: settings.ntfyTopic,
                 title: message.title,
                 message: message.message,
                 priority: message.priority,
@@ -470,19 +539,22 @@ export class NotificationManager {
             };
 
             // Add authentication if configured
-            if (this.settings!.ntfyToken) {
-                headers["Authorization"] = `Bearer ${this.settings!.ntfyToken}`;
-            } else if (this.settings!.ntfyUsername && this.settings!.ntfyPassword) {
-                const auth = Buffer.from(`${this.settings!.ntfyUsername}:${this.settings!.ntfyPassword}`).toString("base64");
+            if (settings.ntfyToken) {
+                headers["Authorization"] = `Bearer ${settings.ntfyToken}`;
+            } else if (settings.ntfyUsername && settings.ntfyPassword) {
+                const auth = Buffer.from(`${settings.ntfyUsername}:${settings.ntfyPassword}`).toString("base64");
                 headers["Authorization"] = `Basic ${auth}`;
             }
 
             const options: http.RequestOptions = {
                 hostname: url.hostname,
                 port: url.port || (isHttps ? 443 : 80),
-                path: "/",  // Always POST to root for JSON publishing
+                // JSON publishing posts to the server root rather than to a
+                // topic path, but "root" means the root of where ntfy is
+                // served: keep any subpath the configured URL carries, so a
+                // reverse-proxied https://host/ntfy still reaches it.
+                path: ntfyRootPath(url),
                 method: "POST",
-                family: 4,  // Force IPv4
                 headers
             };
 

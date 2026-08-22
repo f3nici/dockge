@@ -118,6 +118,11 @@ export class Settings {
 
     /**
      * Set settings based on type
+     *
+     * A key already stored under a different type is left alone: `setting.key`
+     * is unique across all types, and this is what stops a client from
+     * overwriting something like `jwtSecret` through a settings write. Keys are
+     * therefore worth namespacing per feature - a clash here does not save.
      * @param type Type of settings to set
      * @param data Values of settings
      * @returns {Promise<void>}
@@ -141,6 +146,8 @@ export class Settings {
             if (bean.type === type) {
                 bean.value = JSON.stringify(data[key]);
                 promiseList.push(R.store(bean));
+            } else {
+                log.warn("settings", `Not saving "${key}" as ${type}: it is already stored as ${bean.type}`);
             }
         }
 

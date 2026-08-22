@@ -88,7 +88,7 @@ export default {
                 if (res.ok) {
                     this.processing = true;
 
-                    this.$root.login(this.username, this.password, "", () => {
+                    this.$root.login(this.username, this.password, () => {
                         this.processing = false;
                         this.$router.push("/");
                     });

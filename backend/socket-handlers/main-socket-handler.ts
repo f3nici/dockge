@@ -5,7 +5,7 @@ import { DockgeServer } from "../dockge-server";
 import { log } from "../log";
 import { R } from "redbean-node";
 import { loginRateLimiter } from "../rate-limiter";
-import { generatePasswordHash, needRehashPassword, shake256, SHAKE256_LENGTH, verifyPassword } from "../password-hash";
+import { generatePasswordHash, shake256, SHAKE256_LENGTH, verifyPassword } from "../password-hash";
 import { User } from "../models/user";
 import {
     callbackError,
@@ -366,11 +366,19 @@ export class MainSocketHandler extends SocketHandler {
             }
         });
 
-        // Test notification
-        socket.on("testNotification", async (callback) => {
+        // Test notification. The settings to test with come from the form, so
+        // that editing a field and pressing Test exercises what is on screen
+        // rather than what was last saved.
+        socket.on("testNotification", async (settings : unknown, callback) => {
+            // A browser still running the old page sends the callback alone
+            if (typeof settings === "function" && callback === undefined) {
+                callback = settings as typeof callback;
+                settings = undefined;
+            }
+
             try {
                 checkLogin(socket);
-                const success = await Stack.notificationManager.testNotification();
+                const success = await Stack.notificationManager.testNotification(settings);
 
                 if (success) {
                     callback({
@@ -529,13 +537,6 @@ export class MainSocketHandler extends SocketHandler {
         ]) as User;
 
         if (user && await verifyPassword(password, user.password)) {
-            // Upgrade the hash to bcrypt
-            if (needRehashPassword(user.password)) {
-                await R.exec("UPDATE `user` SET password = ? WHERE id = ? ", [
-                    await generatePasswordHash(password),
-                    user.id,
-                ]);
-            }
             return user;
         }
 
