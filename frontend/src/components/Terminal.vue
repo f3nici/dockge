@@ -71,6 +71,19 @@ export default {
             cursorPosition: 0,
         };
     },
+    computed: {
+        /**
+         * Whether the browser is running on macOS, which pastes with Cmd rather
+         * than Ctrl. userAgentData is the non-deprecated source but is still
+         * Chromium-only, so navigator.platform stays as the fallback.
+         *
+         * @returns {boolean} true on macOS
+         */
+        isMac() {
+            const platform = navigator.userAgentData?.platform || navigator.platform || "";
+            return platform.toLowerCase().includes("mac");
+        },
+    },
     created() {
 
     },
@@ -340,17 +353,23 @@ export default {
          * not: the read was performed by the browser in response to a real user
          * gesture, so there is nothing for it to withhold.
          *
+         * Only mainTerminal is handled here. Everywhere else xterm's own paste
+         * handler is left to do the job, because it reads the same clipboardData
+         * and then normalises newlines and applies bracketed paste before
+         * handing the text to onData - all of which the interactive terminal
+         * wants and mainTerminal, with its hand-rolled line buffer, cannot use.
+         *
          * @param {ClipboardEvent} event
          */
         handleNativePaste(event) {
-            if (this.mode !== "mainTerminal" && this.mode !== "interactive") {
+            if (this.mode !== "mainTerminal") {
                 return;
             }
 
-            // Claim the paste before xterm's own textarea handler sees it, so
-            // the text is not delivered twice and mainTerminal keeps ownership
-            // of its input buffer. Also stops the text landing in the helper
-            // textarea, which preventDefault alone would allow.
+            // Claim the paste before xterm's own handler sees it, so the text is
+            // not delivered twice and mainTerminal keeps ownership of its input
+            // buffer. Also stops the text landing in the helper textarea, which
+            // preventDefault alone would allow.
             event.preventDefault();
             event.stopPropagation();
 
@@ -383,12 +402,13 @@ export default {
                 this.terminal.write(backspaces);
 
             } else if (this.mode === "interactive") {
-                // For interactive terminal, send directly to server
-                this.$root.emitAgent(this.endpoint, "terminalInput", this.name, text, (res) => {
-                    if (!res.ok) {
-                        this.$root.toastRes(res);
-                    }
-                });
+                // Hand it to xterm rather than emitting it raw, so it gets the
+                // same newline normalisation and bracketed-paste framing as a
+                // paste the browser performed itself. Without the framing a
+                // multi-line paste is run line by line as it arrives instead of
+                // being held for the user to confirm. xterm passes the result
+                // to onData, which is what sends it to the server.
+                this.terminal.paste(text);
             }
         },
 
@@ -435,15 +455,20 @@ export default {
          * @returns {boolean} false to swallow the key, true to let xterm handle it
          */
         handleCustomKeyEvent(event) {
-            // Ctrl+V, Ctrl+Shift+V and Cmd+V. altKey is excluded so AltGr+V,
-            // which arrives as ctrl+alt on Windows, still types its character.
+            // Only the modifier the platform actually pastes with: this works
+            // by letting the browser act on the key, so claiming one it does
+            // not treat as paste would swallow it for nothing. On macOS Ctrl+V
+            // is page-down, not paste, and Cmd+V is the real shortcut; the
+            // other way round everywhere else. Shift is allowed through so
+            // Ctrl+Shift+V is covered too, altKey is not, so AltGr+V still
+            // types its character on Windows.
             //
             // The cost is that Ctrl+V can no longer send a literal ^V for
             // readline's quoted-insert, but it never could: it was already
             // bound to paste.
             const isPasteShortcut = event.type === "keydown" &&
                 !event.altKey &&
-                (event.ctrlKey || event.metaKey) &&
+                (this.isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
                 event.key.toLowerCase() === "v";
 
             if (isPasteShortcut) {
