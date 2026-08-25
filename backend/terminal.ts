@@ -115,10 +115,7 @@ export class Terminal {
 
         try {
             // Print command
-            for (const socketID in this.socketList) {
-                const socket = this.socketList[socketID];
-                socket.emitAgent("terminalWrite", this.name, this.file + " " + (Array.isArray(this.args) ? this.args.join(" ") : this.args) + "\n\r");
-            }
+            this.writeToClients(this.file + " " + (Array.isArray(this.args) ? this.args.join(" ") : this.args) + "\n\r");
 
             this._ptyProcess = pty.spawn(this.file, this.args, {
                 name: this.name,
@@ -129,12 +126,7 @@ export class Terminal {
 
             // On Data
             this._ptyProcess.onData((data) => {
-                this.buffer.pushItem(data);
-
-                for (const socketID in this.socketList) {
-                    const socket = this.socketList[socketID];
-                    socket.emitAgent("terminalWrite", this.name, data);
-                }
+                this.writeToClients(data);
             });
 
             // On Exit
@@ -151,11 +143,7 @@ export class Terminal {
                 const errorCode = (error as NodeJS.ErrnoException).code;
                 if (errorCode === "ENOENT") {
                     // Command not found - write helpful error to terminal
-                    const errorMsg = `\r\nError: Command '${this.file}' not found. Please ensure it is installed and in the PATH.\r\n`;
-                    for (const socketID in this.socketList) {
-                        const socket = this.socketList[socketID];
-                        socket.emitAgent("terminalWrite", this.name, errorMsg);
-                    }
+                    this.writeToClients(`\r\nError: Command '${this.file}' not found. Please ensure it is installed and in the PATH.\r\n`);
                     exitCode = 127; // Standard exit code for command not found
                 } else {
                     // Try to parse exit code from error message
@@ -169,6 +157,45 @@ export class Terminal {
                     exitCode,
                 });
             }
+        }
+    }
+
+    /**
+     * Send output to every client watching this terminal, and keep it in the
+     * buffer so a client joining later still sees it.
+     * @param data
+     */
+    protected writeToClients(data : string) {
+        this.buffer.pushItem(data);
+
+        for (const socketID in this.socketList) {
+            const socket = this.socketList[socketID];
+            socket.emitAgent("terminalWrite", this.name, data);
+        }
+    }
+
+    /**
+     * Write a status line to a terminal that has no process running behind it.
+     *
+     * An operation such as an update runs several commands in a row under one
+     * terminal name, and between them nothing is writing to the terminal at
+     * all: the pull ends, and recreating the containers can take a while
+     * before it produces its first line, which reads as the operation having
+     * silently stopped. Announcing the step that is about to run keeps the
+     * terminal talking across those gaps.
+     * @param socket Client that started the operation, told when no terminal
+     * of that name is currently running
+     * @param terminalName
+     * @param message
+     */
+    public static writeStatus(socket : DockgeSocket | undefined, terminalName : string, message : string) {
+        const line = "\r\n" + message + "\r\n";
+        const terminal = Terminal.getTerminal(terminalName);
+
+        if (terminal) {
+            terminal.writeToClients(line);
+        } else {
+            socket?.emitAgent("terminalWrite", terminalName, line);
         }
     }
 

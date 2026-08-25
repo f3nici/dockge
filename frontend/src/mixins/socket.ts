@@ -281,10 +281,14 @@ export default defineComponent({
 
             // Handle terminal exit events - log for debugging but don't show toast
             // (error toasts are handled through the operation callbacks)
+            //
+            // The binding is deliberately kept: an operation such as an update
+            // runs several commands in a row under one terminal name, so the
+            // first command exiting must not stop the output of the ones that
+            // follow. It is dropped when the terminal component unmounts
+            // (unbindTerminal) instead.
             agentSocket.on("terminalExit", (terminalName, exitCode) => {
                 console.debug(`Terminal ${terminalName} exited with code ${exitCode}`);
-                // Remove terminal from map when it exits
-                terminalMap.delete(terminalName);
             });
 
             agentSocket.on("stackList", (res) => {
