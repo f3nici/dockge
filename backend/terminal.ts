@@ -175,28 +175,30 @@ export class Terminal {
     }
 
     /**
-     * Write a status line to a terminal that has no process running behind it.
+     * Tell the client that started an operation which step is running now.
      *
      * An operation such as an update runs several commands in a row under one
      * terminal name, and between them nothing is writing to the terminal at
      * all: the pull ends, and recreating the containers can take a while
      * before it produces its first line, which reads as the operation having
-     * silently stopped. Announcing the step that is about to run keeps the
-     * terminal talking across those gaps.
-     * @param socket Client that started the operation, told when no terminal
-     * of that name is currently running
-     * @param terminalName
-     * @param message
+     * silently stopped. Announcing each step keeps the terminal talking across
+     * those gaps.
+     *
+     * This is a message of its own rather than terminal output, because
+     * between two commands there is no terminal to write into: the one that
+     * has just finished is gone, and the next one does not exist yet. It is
+     * therefore not part of any terminal buffer either, so a client that joins
+     * later does not see it - the same as the output of the commands that have
+     * already finished.
+     * @param socket Client that started the operation. Operations nobody is
+     * watching, such as a scheduled auto update, have none and report nothing.
+     * @param terminalName Terminal the operation is running in
+     * @param translationKey Message to show, translated by the client
+     * @param fallbackText Message to show when the client does not know the
+     * translation key, which happens when it is older than the agent
      */
-    public static writeStatus(socket : DockgeSocket | undefined, terminalName : string, message : string) {
-        const line = "\r\n" + message + "\r\n";
-        const terminal = Terminal.getTerminal(terminalName);
-
-        if (terminal) {
-            terminal.writeToClients(line);
-        } else {
-            socket?.emitAgent("terminalWrite", terminalName, line);
-        }
+    public static writeStatus(socket : DockgeSocket | undefined, terminalName : string, translationKey : string, fallbackText : string) {
+        socket?.emitAgent("terminalStatus", terminalName, translationKey, fallbackText);
     }
 
     /**

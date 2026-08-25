@@ -685,6 +685,15 @@ export default defineComponent({
 
         $route(to, from) {
 
+        },
+
+        // A dropped connection means the callback that would have ended the
+        // running operation is never coming, so the buttons and the message
+        // saying what is running have to be released here instead
+        "$root.socketIO.connected"(connected: boolean) {
+            if (!connected && this.processing) {
+                this.stopComposeAction();
+            }
         }
     },
 

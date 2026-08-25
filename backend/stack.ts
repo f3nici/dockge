@@ -1144,7 +1144,7 @@ export class Stack {
         // If the stack is running, restart it
         await this.updateData();
         if (this.isStarted) {
-            Terminal.writeStatus(socket, terminalName, "Images pulled, redeploying the stack...");
+            Terminal.writeStatus(socket, terminalName, "statusStackRedeploying", "Images pulled, redeploying the stack...");
 
             await sleep(500); // sleep to wait for terminal output finished
 
@@ -1153,11 +1153,11 @@ export class Stack {
                 throw new Error("Failed to restart, please check the terminal output for more information.");
             }
         } else {
-            Terminal.writeStatus(socket, terminalName, "Images pulled. The stack is not running, so nothing was redeployed.");
+            Terminal.writeStatus(socket, terminalName, "statusStackNotRunning", "Images pulled. The stack is not running, so nothing was redeployed.");
         }
 
         if (pruneAfterUpdate) {
-            Terminal.writeStatus(socket, terminalName, "Pruning unused images...");
+            Terminal.writeStatus(socket, terminalName, "statusPruningImages", "Pruning unused images...");
 
             await sleep(500); // sleep to wait for terminal output finished
 
@@ -1174,9 +1174,9 @@ export class Stack {
 
         // The stack now runs whatever the registry had, so clear the update
         // indicator instead of leaving it up until the next scheduled check
-        Terminal.writeStatus(socket, terminalName, "Checking image update status...");
+        Terminal.writeStatus(socket, terminalName, "statusCheckingImageUpdates", "Checking image update status...");
         await this.refreshImageUpdateStatus();
-        Terminal.writeStatus(socket, terminalName, "Update finished.");
+        Terminal.writeStatus(socket, terminalName, "statusUpdateFinished", "Update finished.");
 
         return exitCode;
     }
@@ -1188,7 +1188,7 @@ export class Stack {
             throw new Error("Failed to pull, please check the terminal output for more information.");
         }
 
-        Terminal.writeStatus(socket, terminalName, "Image pulled, redeploying the service...");
+        Terminal.writeStatus(socket, terminalName, "statusServiceRedeploying", "Image pulled, redeploying the service...");
 
         await sleep(500); // sleep to wait for terminal output finished
 
@@ -1198,7 +1198,7 @@ export class Stack {
         }
 
         if (pruneAfterUpdate) {
-            Terminal.writeStatus(socket, terminalName, "Pruning unused images...");
+            Terminal.writeStatus(socket, terminalName, "statusPruningImages", "Pruning unused images...");
 
             await sleep(500); // sleep to wait for terminal output finished
 
@@ -1214,9 +1214,9 @@ export class Stack {
         }
 
         // See update(): the service is on the current image now
-        Terminal.writeStatus(socket, terminalName, "Checking image update status...");
+        Terminal.writeStatus(socket, terminalName, "statusCheckingImageUpdates", "Checking image update status...");
         await this.refreshImageUpdateStatus();
-        Terminal.writeStatus(socket, terminalName, "Update finished.");
+        Terminal.writeStatus(socket, terminalName, "statusUpdateFinished", "Update finished.");
 
         return exitCode;
     }

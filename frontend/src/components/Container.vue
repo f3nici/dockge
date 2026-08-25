@@ -422,6 +422,16 @@ export default defineComponent({
             return this.$parent.$parent.processing;
         }
     },
+    watch: {
+        // The stack-wide state is what ends an action, including when it ends
+        // without its callback ever running, so the message saying what is
+        // happening to this container cannot outlive the action it belongs to
+        processing(processing: boolean) {
+            if (!processing) {
+                this.runningAction = "";
+            }
+        }
+    },
     mounted() {
     },
     methods: {

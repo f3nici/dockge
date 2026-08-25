@@ -279,6 +279,18 @@ export default defineComponent({
                 terminal.write(data);
             });
 
+            // A step of a running operation, sent while no command is
+            // writing to the terminal, so the output does not simply stop
+            // between the commands an operation is made of
+            agentSocket.on("terminalStatus", (terminalName, translationKey, fallbackText) => {
+                const terminal = terminalMap.get(terminalName);
+                if (!terminal) {
+                    return;
+                }
+                const message = this.$te(translationKey) ? this.$t(translationKey) : fallbackText;
+                terminal.write("\r\n" + message + "\r\n");
+            });
+
             // Handle terminal exit events - log for debugging but don't show toast
             // (error toasts are handled through the operation callbacks)
             //
