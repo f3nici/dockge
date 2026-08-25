@@ -115,10 +115,7 @@ export class Terminal {
 
         try {
             // Print command
-            for (const socketID in this.socketList) {
-                const socket = this.socketList[socketID];
-                socket.emitAgent("terminalWrite", this.name, this.file + " " + (Array.isArray(this.args) ? this.args.join(" ") : this.args) + "\n\r");
-            }
+            this.writeToClients(this.file + " " + (Array.isArray(this.args) ? this.args.join(" ") : this.args) + "\n\r");
 
             this._ptyProcess = pty.spawn(this.file, this.args, {
                 name: this.name,
@@ -129,12 +126,7 @@ export class Terminal {
 
             // On Data
             this._ptyProcess.onData((data) => {
-                this.buffer.pushItem(data);
-
-                for (const socketID in this.socketList) {
-                    const socket = this.socketList[socketID];
-                    socket.emitAgent("terminalWrite", this.name, data);
-                }
+                this.writeToClients(data);
             });
 
             // On Exit
@@ -151,11 +143,7 @@ export class Terminal {
                 const errorCode = (error as NodeJS.ErrnoException).code;
                 if (errorCode === "ENOENT") {
                     // Command not found - write helpful error to terminal
-                    const errorMsg = `\r\nError: Command '${this.file}' not found. Please ensure it is installed and in the PATH.\r\n`;
-                    for (const socketID in this.socketList) {
-                        const socket = this.socketList[socketID];
-                        socket.emitAgent("terminalWrite", this.name, errorMsg);
-                    }
+                    this.writeToClients(`\r\nError: Command '${this.file}' not found. Please ensure it is installed and in the PATH.\r\n`);
                     exitCode = 127; // Standard exit code for command not found
                 } else {
                     // Try to parse exit code from error message
@@ -170,6 +158,47 @@ export class Terminal {
                 });
             }
         }
+    }
+
+    /**
+     * Send output to every client watching this terminal, and keep it in the
+     * buffer so a client joining later still sees it.
+     * @param data
+     */
+    protected writeToClients(data : string) {
+        this.buffer.pushItem(data);
+
+        for (const socketID in this.socketList) {
+            const socket = this.socketList[socketID];
+            socket.emitAgent("terminalWrite", this.name, data);
+        }
+    }
+
+    /**
+     * Tell the client that started an operation which step is running now.
+     *
+     * An operation such as an update runs several commands in a row under one
+     * terminal name, and between them nothing is writing to the terminal at
+     * all: the pull ends, and recreating the containers can take a while
+     * before it produces its first line, which reads as the operation having
+     * silently stopped. Announcing each step keeps the terminal talking across
+     * those gaps.
+     *
+     * This is a message of its own rather than terminal output, because
+     * between two commands there is no terminal to write into: the one that
+     * has just finished is gone, and the next one does not exist yet. It is
+     * therefore not part of any terminal buffer either, so a client that joins
+     * later does not see it - the same as the output of the commands that have
+     * already finished.
+     * @param socket Client that started the operation. Operations nobody is
+     * watching, such as a scheduled auto update, have none and report nothing.
+     * @param terminalName Terminal the operation is running in
+     * @param translationKey Message to show, translated by the client
+     * @param fallbackText Message to show when the client does not know the
+     * translation key, which happens when it is older than the agent
+     */
+    public static writeStatus(socket : DockgeSocket | undefined, terminalName : string, translationKey : string, fallbackText : string) {
+        socket?.emitAgent("terminalStatus", terminalName, translationKey, fallbackText);
     }
 
     /**

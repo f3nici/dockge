@@ -67,7 +67,10 @@
             </div>
         </div>
         <div v-if="!isEditMode" class="row">
-            <div v-if="service.recreateNecessary" class="notification mb-2">{{ $t("recreateNecessary") }}</div>
+            <div v-if="runningAction" class="notification-progress mb-2">
+                <font-awesome-icon icon="spinner" spin class="me-1" />{{ $t(runningAction) }}
+            </div>
+            <div v-else-if="service.recreateNecessary" class="notification mb-2">{{ $t("recreateNecessary") }}</div>
             <div class="d-flex flex-wrap justify-content-between gap-3 mb-2">
                 <div class="image">
                     <span class="me-1">{{ composeService.imageName }}:</span><span class="tag">{{ composeService.imageTag }}</span>
@@ -279,6 +282,9 @@ export default defineComponent({
         return {
             showConfig: false,
             expandedStats: false,
+            // Translation key of the action currently running on this service,
+            // shown while it runs so the container says what is happening to it
+            runningAction: "",
             updateDialogData: {
                 pruneAfterUpdate: false,
                 pruneAllAfterUpdate: false
@@ -416,6 +422,16 @@ export default defineComponent({
             return this.$parent.$parent.processing;
         }
     },
+    watch: {
+        // The stack-wide state is what ends an action, including when it ends
+        // without its callback ever running, so the message saying what is
+        // happening to this container cannot outlive the action it belongs to
+        processing(processing: boolean) {
+            if (!processing) {
+                this.runningAction = "";
+            }
+        }
+    },
     mounted() {
     },
     methods: {
@@ -426,12 +442,30 @@ export default defineComponent({
             };
         },
 
-        startComposeAction() {
-            this.$parent.$parent.startComposeAction();
+        startComposeAction(translationKey = "") {
+            this.$parent.$parent.startComposeAction(translationKey);
         },
 
         stopComposeAction() {
             this.$parent.$parent.stopComposeAction();
+        },
+
+        /**
+         * Start an action on this service, showing what is running on the
+         * container itself. The stack-wide "processing" state only disables
+         * the buttons, which says that something is going on but not what -
+         * and an update is several steps long, so the container would
+         * otherwise keep asking to be redeployed while it is being redeployed.
+         * @param {string} translationKey Message to show while the action runs
+         */
+        startServiceAction(translationKey: string) {
+            this.runningAction = translationKey;
+            this.startComposeAction(translationKey);
+        },
+
+        stopServiceAction() {
+            this.runningAction = "";
+            this.stopComposeAction();
         },
 
         parsePort(port: string) {
@@ -446,39 +480,39 @@ export default defineComponent({
             this.composeDocument.services.delete(this.name);
         },
         stopService() {
-            this.startComposeAction();
+            this.startServiceAction("serviceStopping");
             this.$root.emitAgent(this.endpoint, "stopService", this.stack.name, this.name, (res) => {
-                this.stopComposeAction();
+                this.stopServiceAction();
                 this.$root.toastRes(res);
             });
         },
         startService() {
-            this.startComposeAction();
+            this.startServiceAction("serviceStarting");
             this.$root.emitAgent(this.endpoint, "startService", this.stack.name, this.name, (res) => {
-                this.stopComposeAction();
+                this.stopServiceAction();
                 this.$root.toastRes(res);
             });
         },
         restartService() {
-            this.startComposeAction();
+            this.startServiceAction("serviceRestarting");
             this.$root.emitAgent(this.endpoint, "restartService", this.stack.name, this.name, (res) => {
-                this.stopComposeAction();
+                this.stopServiceAction();
                 this.$root.toastRes(res);
             });
         },
         recreateService() {
-            this.startComposeAction();
+            this.startServiceAction("serviceRedeploying");
             this.$root.emitAgent(this.endpoint, "recreateService", this.stack.name, this.name, (res) => {
-                this.stopComposeAction();
+                this.stopServiceAction();
                 this.$root.toastRes(res);
             });
         },
         updateService() {
             this.$refs[this.updateModalId].hide();
 
-            this.startComposeAction();
+            this.startServiceAction("serviceUpdating");
             this.$root.emitAgent(this.endpoint, "updateService", this.stack.name, this.name, this.updateDialogData.pruneAfterUpdate, this.updateDialogData.pruneAllAfterUpdate, (res) => {
-                this.stopComposeAction();
+                this.stopServiceAction();
                 this.$root.toastRes(res);
             });
         },
@@ -545,6 +579,11 @@ export default defineComponent({
     .notification {
         font-size: 1rem;
         color: $danger;
+    }
+
+    .notification-progress {
+        font-size: 1rem;
+        color: #6c757d;
     }
 
     .function {

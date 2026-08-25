@@ -147,7 +147,7 @@
                 </a>
             </div>
 
-            <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" />
+            <ProgressTerminal ref="progressTerminal" :name="terminalName" :endpoint="endpoint" :status="runningAction ? $t(runningAction) : ''" />
 
             <!-- Combined Terminal Output (full width, above the containers/editor) -->
             <div v-if="stack.isManagedByDockge && fullWidthLog" v-show="!isEditMode" class="mt-3">
@@ -470,6 +470,9 @@ export default defineComponent({
             composeDocument: new ComposeDocument(),
             yamlError: "",
             processing: false,
+            // Translation key of the operation currently running on the stack,
+            // shown next to the terminal while it runs
+            runningAction: "",
             combinedTerminalRows: COMBINED_TERMINAL_ROWS,
             combinedTerminalCols: COMBINED_TERMINAL_COLS,
             stack: {},
@@ -682,6 +685,15 @@ export default defineComponent({
 
         $route(to, from) {
 
+        },
+
+        // A dropped connection means the callback that would have ended the
+        // running operation is never coming, so the buttons and the message
+        // saying what is running have to be released here instead
+        "$root.socketIO.connected"(connected: boolean) {
+            if (!connected && this.processing) {
+                this.stopComposeAction();
+            }
         }
     },
 
@@ -882,12 +894,20 @@ export default defineComponent({
             clearTimeout(updateStackDataTimeout);
         },
 
-        startComposeAction() {
+        /**
+         * @param {string} translationKey Message naming the operation, shown
+         * next to the terminal until it finishes. An operation runs as several
+         * docker commands in a row, and the quiet moments between them are
+         * otherwise indistinguishable from nothing happening at all.
+         */
+        startComposeAction(translationKey = "") {
+            this.runningAction = translationKey;
             this.processing = true;
             this.progressTerminal.show();
         },
 
         stopComposeAction() {
+            this.runningAction = "";
             this.processing = false;
             this.progressTerminal.hideWithTimeout();
         },
@@ -920,7 +940,7 @@ export default defineComponent({
                 this.stack.name = service.get("container_name", serviceName);
             }
 
-            this.startComposeAction();
+            this.startComposeAction("stackDeploying");
 
             this.$root.emitAgent(this.stack.endpoint, "deployStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
                 this.stopComposeAction();
@@ -948,7 +968,7 @@ export default defineComponent({
         },
 
         startStack() {
-            this.startComposeAction();
+            this.startComposeAction("stackStarting");
 
             this.$root.emitAgent(this.endpoint, "startStack", this.stack.name, (res) => {
                 this.stopComposeAction();
@@ -957,7 +977,7 @@ export default defineComponent({
         },
 
         stopStack() {
-            this.startComposeAction();
+            this.startComposeAction("stackStopping");
 
             this.$root.emitAgent(this.endpoint, "stopStack", this.stack.name, (res) => {
                 this.stopComposeAction();
@@ -966,7 +986,7 @@ export default defineComponent({
         },
 
         downStack() {
-            this.startComposeAction();
+            this.startComposeAction("stackDowning");
 
             this.$root.emitAgent(this.endpoint, "downStack", this.stack.name, (res) => {
                 this.stopComposeAction();
@@ -975,7 +995,7 @@ export default defineComponent({
         },
 
         restartStack() {
-            this.startComposeAction();
+            this.startComposeAction("stackRestarting");
 
             this.$root.emitAgent(this.endpoint, "restartStack", this.stack.name, (res) => {
                 this.stopComposeAction();
@@ -996,7 +1016,7 @@ export default defineComponent({
 
         updateStack() {
             this.showUpdateDialog = false;
-            this.startComposeAction();
+            this.startComposeAction("stackUpdating");
 
             this.$root.emitAgent(this.endpoint, "updateStack", this.stack.name, this.updateDialogData.pruneAfterUpdate, this.updateDialogData.pruneAllAfterUpdate, (res) => {
                 this.stopComposeAction();
