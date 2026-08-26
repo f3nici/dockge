@@ -71,6 +71,19 @@ export default {
             cursorPosition: 0,
         };
     },
+    computed: {
+        /**
+         * Whether the browser is running on macOS, which pastes with Cmd rather
+         * than Ctrl. userAgentData is the non-deprecated source but is still
+         * Chromium-only, so navigator.platform stays as the fallback.
+         *
+         * @returns {boolean} true on macOS
+         */
+        isMac() {
+            const platform = navigator.userAgentData?.platform || navigator.platform || "";
+            return platform.toLowerCase().includes("mac");
+        },
+    },
     created() {
 
     },
@@ -113,6 +126,16 @@ export default {
         // Add right-click context menu handler for paste
         this.$refs.terminal.addEventListener("contextmenu", this.handleContextMenu);
 
+        // Handle the browser's own paste. Registered on the container during
+        // the capture phase so it runs before xterm's handler, which is bound
+        // to the helper textarea the event actually targets.
+        //
+        // Kept on a plain property rather than in data(): it is a DOM node with
+        // no business being reactive, and $refs is already cleared by the time
+        // unmounted() needs it back.
+        this.pasteTarget = this.$refs.terminal;
+        this.pasteTarget.addEventListener("paste", this.handleNativePaste, true);
+
         // Add selection handler for copy to clipboard
         this.terminal.onSelectionChange(() => {
             this.handleSelection();
@@ -152,6 +175,7 @@ export default {
         console.debug("Terminal " + this.name + " unmounted");
 
         window.removeEventListener("resize", this.onResizeEvent); // Remove the resize event listener from the window object.
+        this.pasteTarget?.removeEventListener("paste", this.handleNativePaste, true);
         this.$root.unbindTerminal(this.endpoint, this.name);
         this.terminal.dispose();
     },
@@ -256,8 +280,6 @@ export default {
                     console.debug("Ctrl + C");
                     this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data);
                     this.removeInput();
-                } else if (data === "\u0016") {      // Ctrl + V
-                    this.handlePaste();
                 } else {
                     // data may be more than one character (e.g. a mobile
                     // IME/autocomplete committing a whole word at once)
@@ -275,12 +297,6 @@ export default {
             // composition deliver typed text via onData without ever
             // firing a keydown, so onKey alone misses that input.
             this.terminal.onData(data => {
-                // Handle Ctrl+V for paste
-                if (data === "\u0016") {
-                    this.handlePaste();
-                    return;
-                }
-
                 this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data, (res) => {
                     if (!res.ok) {
                         this.$root.toastRes(res);
@@ -328,6 +344,43 @@ export default {
         },
 
         /**
+         * Handle a paste performed by the browser itself, from Ctrl+V, Cmd+V or
+         * the native context menu.
+         *
+         * This is the only paste path that works over plain HTTP, which is how
+         * Dockge is usually reached. navigator.clipboard.readText() is gated on
+         * a secure context, but the clipboardData carried by a paste event is
+         * not: the read was performed by the browser in response to a real user
+         * gesture, so there is nothing for it to withhold.
+         *
+         * Only mainTerminal is handled here. Everywhere else xterm's own paste
+         * handler is left to do the job, because it reads the same clipboardData
+         * and then normalises newlines and applies bracketed paste before
+         * handing the text to onData - all of which the interactive terminal
+         * wants and mainTerminal, with its hand-rolled line buffer, cannot use.
+         *
+         * @param {ClipboardEvent} event
+         */
+        handleNativePaste(event) {
+            if (this.mode !== "mainTerminal") {
+                return;
+            }
+
+            // Claim the paste before xterm's own handler sees it, so the text is
+            // not delivered twice and mainTerminal keeps ownership of its input
+            // buffer. Also stops the text landing in the helper textarea, which
+            // preventDefault alone would allow.
+            event.preventDefault();
+            event.stopPropagation();
+
+            const text = event.clipboardData?.getData("text/plain");
+
+            if (text) {
+                this.pasteText(text);
+            }
+        },
+
+        /**
          * Paste text into the terminal based on current mode
          */
         pasteText(text) {
@@ -349,12 +402,13 @@ export default {
                 this.terminal.write(backspaces);
 
             } else if (this.mode === "interactive") {
-                // For interactive terminal, send directly to server
-                this.$root.emitAgent(this.endpoint, "terminalInput", this.name, text, (res) => {
-                    if (!res.ok) {
-                        this.$root.toastRes(res);
-                    }
-                });
+                // Hand it to xterm rather than emitting it raw, so it gets the
+                // same newline normalisation and bracketed-paste framing as a
+                // paste the browser performed itself. Without the framing a
+                // multi-line paste is run line by line as it arrives instead of
+                // being held for the user to confirm. xterm passes the result
+                // to onData, which is what sends it to the server.
+                this.terminal.paste(text);
             }
         },
 
@@ -362,21 +416,37 @@ export default {
          * Handle right-click context menu for paste operation
          */
         handleContextMenu(event) {
+            // Only handle paste for modes that support input
+            if (this.mode !== "mainTerminal" && this.mode !== "interactive") {
+                return;
+            }
+
+            // Without navigator.clipboard there is nothing to replace the menu
+            // with, so suppressing it would only take away the one working way
+            // to paste by mouse. Leave it to the browser, whose own Paste item
+            // reaches handleNativePaste.
+            if (!navigator.clipboard?.readText) {
+                return;
+            }
+
             // Prevent default context menu
             event.preventDefault();
-
-            // Only handle paste for modes that support input
-            if (this.mode === "mainTerminal" || this.mode === "interactive") {
-                this.handlePaste();
-            }
+            this.handlePaste();
         },
 
         /**
          * Intercept Ctrl+C when text is selected so it copies instead of
-         * interrupting the running command.
+         * interrupting the running command, and get out of the way of the
+         * paste shortcuts entirely.
          *
          * Returning false tells xterm.js to swallow the key, so it never
-         * reaches onData and no ^C is sent to the process.
+         * reaches onData and no ^C is sent to the process. xterm bails out on
+         * that verdict before it calls preventDefault(), so the browser still
+         * performs the key's own default action - which is what makes the
+         * paste case work: the browser pastes into xterm's focused helper
+         * textarea and handleNativePaste picks the text up from the resulting
+         * event. Left to xterm, Ctrl+V would instead be encoded as ^V and the
+         * default suppressed, so no paste would ever happen.
          *
          * Cmd+C is deliberately not handled here, so on macOS it stays the
          * browser's own copy, which clearing the selection would break.
@@ -385,6 +455,26 @@ export default {
          * @returns {boolean} false to swallow the key, true to let xterm handle it
          */
         handleCustomKeyEvent(event) {
+            // Only the modifier the platform actually pastes with: this works
+            // by letting the browser act on the key, so claiming one it does
+            // not treat as paste would swallow it for nothing. On macOS Ctrl+V
+            // is page-down, not paste, and Cmd+V is the real shortcut; the
+            // other way round everywhere else. Shift is allowed through so
+            // Ctrl+Shift+V is covered too, altKey is not, so AltGr+V still
+            // types its character on Windows.
+            //
+            // The cost is that Ctrl+V can no longer send a literal ^V for
+            // readline's quoted-insert, but it never could: it was already
+            // bound to paste.
+            const isPasteShortcut = event.type === "keydown" &&
+                !event.altKey &&
+                (this.isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
+                event.key.toLowerCase() === "v";
+
+            if (isPasteShortcut) {
+                return false;
+            }
+
             const isCopyShortcut = event.type === "keydown" &&
                 event.ctrlKey &&
                 !event.metaKey &&
