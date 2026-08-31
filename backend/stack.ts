@@ -46,6 +46,7 @@ export class Stack {
     protected _firstUpdate: boolean = true;
     protected _tags: string[] = [];
     protected _tagsLoaded: boolean = false;
+    protected _resolvedPath?: string;
 
     protected combinedTerminal? : Terminal;
 
@@ -438,8 +439,25 @@ export class Stack {
         return this._composeDocument!;
     }
 
+    /**
+     * This stack's directory, with every symlink along the way resolved and
+     * containment inside stacksDir already checked.
+     *
+     * Resolving here rather than in the callers is the point: a lexical
+     * path.join() is what every read and write used to be built from, so the
+     * containment check at the entry points validated a value nothing went on
+     * to use, and an operation could still follow a symlink out of stacksDir.
+     *
+     * Memoised, and first taken in the constructor, so the resolution happens
+     * once at a known moment: a symlink planted later cannot change where the
+     * operations already in flight are pointed.
+     * @throws {ValidationError} If the name does not resolve inside stacksDir
+     */
     get path() : string {
-        return path.join(this.server.stacksDir, this.name);
+        if (this._resolvedPath === undefined) {
+            this._resolvedPath = Stack.resolveStackDir(this.server, this.name);
+        }
+        return this._resolvedPath;
     }
 
     get metadataPath() : string {
@@ -514,29 +532,15 @@ export class Stack {
         await this.saveMetadata();
     }
 
-    get fullPath() : string {
-        let dir = this.path;
-
-        // Compose up via node-pty
-        let fullPathDir;
-
-        // if dir is relative, make it absolute
-        if (!path.isAbsolute(dir)) {
-            fullPathDir = path.join(process.cwd(), dir);
-        } else {
-            fullPathDir = dir;
-        }
-        return fullPathDir;
-    }
-
     /**
  * Save the stack to the disk
  * @param isAdd
  */
     async save(isAdd : boolean) {
-        // Reject any name that would escape the stacks directory before creating
-        // anything on disk (validate() also enforces the name charset).
-        Stack.resolveStackDir(this.server, this.name);
+        // Taking the path is what rejects a name that would escape the stacks
+        // directory, and it is the same value every write below lands on
+        // (validate() also enforces the name charset).
+        this.path;
 
         // One save of a given stack at a time. Unique temp file names stop two
         // saves clobbering each other's scratch files, but .env and the compose
@@ -1045,26 +1049,33 @@ export class Stack {
         let composeList = JSON.parse(res.stdout.toString());
 
         for (let composeStack of composeList) {
-            let stack = stackList.get(composeStack.Name);
+            // These names come from docker, not from Dockge, so one that cannot
+            // be turned into a usable directory is skipped rather than allowed
+            // to take the whole stack list down with it
+            try {
+                let stack = stackList.get(composeStack.Name);
 
-            // This stack probably is not managed by Dockge, but we still want to show it
-            if (!stack) {
-                // Skip the dockge stack if it is not managed by Dockge
-                if (composeStack.Name === "dockge") {
-                    continue;
+                // This stack probably is not managed by Dockge, but we still want to show it
+                if (!stack) {
+                    // Skip the dockge stack if it is not managed by Dockge
+                    if (composeStack.Name === "dockge") {
+                        continue;
+                    }
+                    stack = new Stack(server, composeStack.Name);
+                    stackList.set(composeStack.Name, stack);
                 }
-                stack = new Stack(server, composeStack.Name);
-                stackList.set(composeStack.Name, stack);
-            }
 
-            stack._configFilePath = composeStack.ConfigFiles;
+                stack._configFilePath = composeStack.ConfigFiles;
 
-            if (composeStack.Status.startsWith("running")) {
-                // Only running containers, nothing more to check
-                stack._status = stack._unhealthy ? UNHEALTHY : RUNNING;
-            } else {
-                // We have to check the stack data, to get the correct status
-                await stack.updateData();
+                if (composeStack.Status.startsWith("running")) {
+                    // Only running containers, nothing more to check
+                    stack._status = stack._unhealthy ? UNHEALTHY : RUNNING;
+                } else {
+                    // We have to check the stack data, to get the correct status
+                    await stack.updateData();
+                }
+            } catch (e) {
+                log.warn("getStackList", `Skipping compose project "${composeStack?.Name}": ${e}`);
             }
         }
 

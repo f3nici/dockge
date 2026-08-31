@@ -104,3 +104,62 @@ describe("Stack.resolveStackDir", () => {
         expect(Stack.resolveStackDir(fakeServer(), "alias")).toBe(path.join(fs.realpathSync(stacksDir), "real"));
     });
 });
+
+// Resolving the name is only worth anything if the resolved value is what the
+// reads and writes actually land on. It used to be checked and then thrown
+// away, with Stack.path rebuilding an unvalidated path.join() for every
+// operation - so a symlink could still be followed straight out of stacksDir.
+describe("Stack.path", () => {
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-stack-path-"));
+        stacksDir = path.join(root, "stacks");
+        outside = path.join(root, "outside");
+        fs.mkdirSync(stacksDir);
+        fs.mkdirSync(outside);
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, {
+            recursive: true,
+            force: true,
+        });
+    });
+
+    it("is the resolved directory the containment check validated", () => {
+        const stack = new Stack(fakeServer(), "my-stack");
+
+        expect(stack.path).toBe(Stack.resolveStackDir(fakeServer(), "my-stack"));
+        expect(stack.path).toBe(path.join(fs.realpathSync(stacksDir), "my-stack"));
+    });
+
+    it("refuses to hand out a path for a stack that escapes the stacks directory", () => {
+        fs.symlinkSync(outside, path.join(stacksDir, "escape"));
+
+        // Thrown when the Stack is built, because the constructor takes the path
+        expect(() => new Stack(fakeServer(), "escape")).toThrow(ValidationError);
+    });
+
+    it("resolves through a symlinked stacks directory rather than rebuilding it lexically", () => {
+        const linkedStacksDir = path.join(root, "linked-stacks");
+        fs.symlinkSync(stacksDir, linkedStacksDir);
+        stacksDir = linkedStacksDir;
+
+        const stack = new Stack(fakeServer(), "my-stack");
+
+        // The lexical join would have kept the link in the path
+        expect(stack.path).not.toContain("linked-stacks");
+        expect(stack.path).toBe(path.join(fs.realpathSync(linkedStacksDir), "my-stack"));
+    });
+
+    // Taken once, in the constructor, so a symlink planted afterwards cannot
+    // redirect operations that are already under way.
+    it("does not re-resolve once it has been taken", () => {
+        const stack = new Stack(fakeServer(), "later");
+        const before = stack.path;
+
+        fs.symlinkSync(outside, path.join(stacksDir, "later"));
+
+        expect(stack.path).toBe(before);
+        expect(stack.path.startsWith(fs.realpathSync(stacksDir) + path.sep)).toBe(true);
+    });
+});
