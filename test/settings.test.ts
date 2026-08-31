@@ -52,43 +52,57 @@ describe("Settings.setSettings", () => {
     });
 
     it("writes keys that are free or already its own", async () => {
-        const skipped = await Settings.setSettings("general", { owned: "yes" });
+        await expect(Settings.setSettings("general", { owned: "yes" })).resolves.toBeUndefined();
 
-        expect(skipped).toEqual([]);
         expect(rows.find((row) => row.key === "owned")?.value).toBe("\"yes\"");
     });
 
     // The uniqueness of `key` is what stops a settings write reaching something
-    // like jwtSecret, so the refusal itself is correct - but a caller that is
-    // told nothing goes on to report success it did not have.
-    it("reports the keys it refused to write", async () => {
+    // like jwtSecret, so the refusal itself is correct - but a caller told
+    // nothing went on to report a success it did not have.
+    it("raises the keys it refused to write", async () => {
         rows.push({
             key: "shared",
             value: "\"from notifications\"",
             type: "notifications",
         });
 
-        const skipped = await Settings.setSettings("general", {
+        await expect(Settings.setSettings("general", {
             owned: "yes",
             shared: "hijacked",
-        });
+        })).rejects.toThrow(/"shared"/);
 
-        expect(skipped).toEqual([ "shared" ]);
         // The value that was already there is untouched
         expect(rows.find((row) => row.key === "shared")?.value).toBe("\"from notifications\"");
-        // and the writable key still went through
-        expect(rows.find((row) => row.key === "owned")?.value).toBe("\"yes\"");
+    });
+
+    // Writing what fits and then reporting failure is the worst of both: the
+    // caller is told it did not happen while some of it did, and skips the work
+    // it does after a successful save.
+    it("writes nothing at all when one key conflicts", async () => {
+        rows.push({
+            key: "shared",
+            value: "\"from notifications\"",
+            type: "notifications",
+        });
+
+        await expect(Settings.setSettings("general", {
+            owned: "yes",
+            shared: "hijacked",
+        })).rejects.toThrow();
+
+        expect(rows.find((row) => row.key === "owned")).toBeUndefined();
     });
 });
 
-describe("Settings.setSettingsStrict", () => {
+describe("Settings.setSettings conflicts", () => {
     beforeEach(() => {
         rows.length = 0;
         Settings.deleteCache([ "owned", "shared", "credentials" ]);
     });
 
     it("saves normally when nothing is in the way", async () => {
-        await expect(Settings.setSettingsStrict("registry", { credentials: [] })).resolves.toBeUndefined();
+        await expect(Settings.setSettings("registry", { credentials: [] })).resolves.toBeUndefined();
         expect(rows.find((row) => row.key === "credentials")?.type).toBe("registry");
     });
 
@@ -102,7 +116,7 @@ describe("Settings.setSettingsStrict", () => {
             type: "general",
         });
 
-        await expect(Settings.setSettingsStrict("registry", { credentials: [] }))
+        await expect(Settings.setSettings("registry", { credentials: [] }))
             .rejects.toThrow(/could not save "credentials"/i);
     });
 
@@ -118,7 +132,7 @@ describe("Settings.setSettingsStrict", () => {
             type: "notifications",
         });
 
-        await expect(Settings.setSettingsStrict("general", {
+        await expect(Settings.setSettings("general", {
             shared: "a",
             owned: "b",
         })).rejects.toThrow(/"shared", "owned"/);

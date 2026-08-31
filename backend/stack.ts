@@ -63,6 +63,40 @@ export class Stack {
     }
 
     /**
+     * In-flight saves, by stack name, so that two of them never overlap.
+     */
+    protected static saveLocks : Map<string, Promise<unknown>> = new Map();
+
+    /**
+     * Run something with a given stack's save lock held.
+     *
+     * Queued behind whatever is already saving that stack, whether it succeeds
+     * or fails, so one bad save does not wedge the stack for good.
+     * @param stackName The stack to lock
+     * @param fn What to run while holding it
+     */
+    protected static withSaveLock<T>(stackName : string, fn : () => Promise<T>) : Promise<T> {
+        const previous = Stack.saveLocks.get(stackName) ?? Promise.resolve();
+
+        // Both handlers are fn: the next save runs whichever way the last one went
+        const result = previous.then(fn, fn);
+
+        // Stored in a form that never rejects, so a failed save waited on by
+        // nothing does not surface as an unhandled rejection
+        const guarded = result.catch(() => {});
+        Stack.saveLocks.set(stackName, guarded);
+
+        guarded.then(() => {
+            // Only if nothing else has queued up behind us in the meantime
+            if (Stack.saveLocks.get(stackName) === guarded) {
+                Stack.saveLocks.delete(stackName);
+            }
+        });
+
+        return result;
+    }
+
+    /**
      * Forget the compose file and .env this stack read from disk, so the next
      * read picks up whatever is there now.
      *
@@ -352,11 +386,13 @@ export class Stack {
 
             throw new ValidationError(valMsg);
         } finally {
-            // delete the temporary files
+            // Both are written unconditionally by saveFiles() above, so both
+            // are removed unconditionally. Removing the env one only when
+            // hasEnvFile left a file behind on every save of a stack whose
+            // .env is empty, which the unique name turned into a new one each
+            // time instead of a single reused temp file.
             await fsAsync.unlink(tempYamlPath).catch(() => {});
-            if (hasEnvFile) {
-                await fsAsync.unlink(tempEnvPath).catch(() => {});
-            }
+            await fsAsync.unlink(tempEnvPath).catch(() => {});
 
             // The real .env is left alone on success: saveFiles() is about to
             // overwrite it with the final version.
@@ -501,6 +537,19 @@ export class Stack {
         // Reject any name that would escape the stacks directory before creating
         // anything on disk (validate() also enforces the name charset).
         Stack.resolveStackDir(this.server, this.name);
+
+        // One save of a given stack at a time. Unique temp file names stop two
+        // saves clobbering each other's scratch files, but .env and the compose
+        // file are shared no matter what they are called: overlapping saves had
+        // one deleting the .env the other was validating against.
+        return Stack.withSaveLock(this.name, () => this.saveUnlocked(isAdd));
+    }
+
+    /**
+     * The body of {@link save}, which holds the stack's save lock around it.
+     * @param isAdd Whether the stack is being created
+     */
+    private async saveUnlocked(isAdd : boolean) {
 
         let dir = this.path;
 
@@ -1070,6 +1119,15 @@ export class Stack {
             try {
                 return path.join(fs.realpathSync(head), ...tail);
             } catch (e) {
+                // Only "it is not there yet" means keep walking up. Anything
+                // else - a permission error, a symlink loop - is a path we
+                // cannot vouch for, and falling back to a lexical resolve would
+                // reinstate exactly the check this replaced.
+                const code = (e as NodeJS.ErrnoException).code;
+                if (code !== "ENOENT" && code !== "ENOTDIR") {
+                    throw new ValidationError(`Cannot resolve the stack path: ${code ?? e}`);
+                }
+
                 const parent = path.dirname(head);
 
                 // Reached the root without finding anything that exists

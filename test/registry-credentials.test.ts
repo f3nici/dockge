@@ -8,13 +8,9 @@ const settingsStore : Record<string, Record<string, unknown>> = {};
 vi.mock("../backend/settings", () => ({
     Settings: {
         getSettings: vi.fn(async (type : string) => settingsStore[type] ?? {}),
+        // Throws on a conflict, so save() cannot report success for a write
+        // that did not land and lose the logins at the next restart
         setSettings: vi.fn(async (type : string, data : Record<string, unknown>) => {
-            settingsStore[type] = data;
-            return [];
-        }),
-        // What save() actually calls: it has to know when a write did not land,
-        // rather than reporting success and losing the logins at the next restart
-        setSettingsStrict: vi.fn(async (type : string, data : Record<string, unknown>) => {
             settingsStore[type] = data;
         }),
     },

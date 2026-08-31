@@ -308,9 +308,12 @@ export class MainSocketHandler extends SocketHandler {
                     await doubleCheckPassword(socket, currentPassword);
                 }
 
-                // Validate the auto-update cron expression before saving so an invalid
-                // pattern never lands in the database.
-                if (data.autoUpdateEnabled && data.autoUpdateCron) {
+                // Validated whenever a pattern is present, not only when auto
+                // update is being switched on in the same save. An invalid
+                // pattern stored while disabled was never re-checked on the save
+                // that enabled it, and schedule() swallows the parse error: the
+                // page then reported auto update as on with no job behind it.
+                if (data.autoUpdateCron) {
                     if (typeof data.autoUpdateCron !== "string") {
                         throw new ValidationError("Auto update cron must be a string");
                     }
@@ -325,7 +328,7 @@ export class MainSocketHandler extends SocketHandler {
                     throw new ValidationError("Auto update default must be \"none\" or \"update\"");
                 }
 
-                await Settings.setSettingsStrict("general", data);
+                await Settings.setSettings("general", data);
 
                 // Reschedule (or cancel) the auto-update job to reflect the new settings
                 await server.autoUpdateManager.schedule();

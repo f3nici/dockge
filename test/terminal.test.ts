@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { Terminal } from "../backend/terminal";
 import { DockgeSocket } from "../backend/util-server";
 
@@ -31,6 +31,13 @@ describe("Terminal.writeStatus", () => {
 });
 
 describe("Terminal.leaveAll", () => {
+    // Terminal's constructor registers it in the static terminalMap and only
+    // exit() removes it. These are never started, so they never exit and would
+    // otherwise be visible to every test that runs after them.
+    afterEach(() => {
+        Terminal["terminalMap"].clear();
+    });
+
     // Logging out does not close the connection: the browser keeps the same
     // socket and drops its token. Nothing else detaches it from the terminals it
     // joined, and the sweep for stale clients only looks at disconnected ones,

@@ -220,6 +220,11 @@ export class DockgeServer {
 
         // Turning the origin check off is a real reduction in protection, so it
         // is said once at startup rather than only in debug output
+        if (!isDev && process.env.UPTIME_KUMA_WS_ORIGIN_CHECK && !process.env.DOCKGE_WS_ORIGIN_CHECK) {
+            log.warn("server", "UPTIME_KUMA_WS_ORIGIN_CHECK is set but is no longer read; it is now DOCKGE_WS_ORIGIN_CHECK. "
+                + "The origin check is therefore ON. If the socket connection now fails, rename the variable.");
+        }
+
         if (!isDev && process.env.DOCKGE_WS_ORIGIN_CHECK === "bypass") {
             log.warn("server", "DOCKGE_WS_ORIGIN_CHECK=bypass: the WebSocket origin check is disabled. "
                 + "Any site a logged-in user visits can drive this instance's API. Unset it unless you know you need it.");

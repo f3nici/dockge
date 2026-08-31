@@ -9,17 +9,19 @@ vi.mock("../backend/log", () => ({
     },
 }));
 
-import { KumaRateLimiter, loginRateLimiter } from "../backend/rate-limiter";
+import { KumaRateLimiter, MAX_BUCKETS, loginRateLimiter } from "../backend/rate-limiter";
 
 /**
  * A limiter with a budget small enough to exhaust in a test.
  * @param tokens How many requests are allowed per minute
  */
-function makeLimiter(tokens : number) {
+function makeLimiter(tokens : number, globalTokens = tokens * 1000) {
     return new KumaRateLimiter({
         tokensPerInterval: tokens,
         interval: "minute",
         fireImmediately: true,
+        // Out of the way unless a case is deliberately exercising the ceiling
+        globalTokensPerInterval: globalTokens,
         errorMessage: "Too frequently, try again later.",
     });
 }
@@ -96,5 +98,57 @@ describe("KumaRateLimiter", () => {
 
         // Another user's login is not collateral damage
         await expect(loginRateLimiter.pass(callback, 1, "10.0.0.10")).resolves.toBe(true);
+    });
+});
+
+describe("KumaRateLimiter ceiling", () => {
+    // The per-client budget is not a limit on its own when the client picks its
+    // own key: behind trustProxy, getClientIP() returns the leftmost
+    // X-Forwarded-For value, which the caller writes. Rotating it mints a fresh
+    // budget every time, so something has to cap the total.
+    it("refuses a caller cycling through keys once the ceiling is spent", async () => {
+        const limiter = makeLimiter(20, 5);
+        const callback = vi.fn();
+
+        // Every attempt uses an address never seen before, so the per-client
+        // bucket is always full and never refuses
+        for (let i = 0; i < 5; i++) {
+            await expect(limiter.pass(callback, 1, `10.0.0.${i}`)).resolves.toBe(true);
+        }
+
+        await expect(limiter.pass(callback, 1, "10.0.0.99")).resolves.toBe(false);
+        expect(callback).toHaveBeenCalledWith({
+            ok: false,
+            msg: "Too frequently, try again later.",
+        });
+    });
+
+    // A client already being refused must not be able to drain the ceiling
+    // everybody else draws on, or one attacker locks the whole instance out.
+    it("does not spend from the ceiling for a client that is already refused", async () => {
+        const limiter = makeLimiter(1, 3);
+        const callback = vi.fn();
+
+        await expect(limiter.pass(callback, 1, "10.0.0.1")).resolves.toBe(true);
+        // Spent its own budget; these are refused without touching the ceiling
+        for (let i = 0; i < 20; i++) {
+            await expect(limiter.pass(callback, 1, "10.0.0.1")).resolves.toBe(false);
+        }
+
+        // Two ceiling tokens are left for everybody else
+        await expect(limiter.pass(callback, 1, "10.0.0.2")).resolves.toBe(true);
+        await expect(limiter.pass(callback, 1, "10.0.0.3")).resolves.toBe(true);
+        await expect(limiter.pass(callback, 1, "10.0.0.4")).resolves.toBe(false);
+    });
+
+    it("keeps the bucket map bounded when keys are being cycled", async () => {
+        const limiter = makeLimiter(20);
+        const callback = vi.fn();
+
+        for (let i = 0; i < MAX_BUCKETS + 500; i++) {
+            await limiter.pass(callback, 1, `10.1.${Math.floor(i / 256)}.${i % 256}`);
+        }
+
+        expect(limiter.bucketCount).toBeLessThanOrEqual(MAX_BUCKETS);
     });
 });
