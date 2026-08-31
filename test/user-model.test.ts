@@ -10,7 +10,8 @@ vi.mock("redbean-node", () => {
     return { R: { exec } };
 });
 
-import { User } from "../backend/models/user";
+import jwt from "jsonwebtoken";
+import { User, JWT_EXPIRES_IN } from "../backend/models/user";
 import { verifyPassword } from "../backend/password-hash";
 
 /**
@@ -61,5 +62,44 @@ describe("User.resetPassword", () => {
 
         expect(hash.startsWith("$2")).toBe(true);
         await expect(verifyPassword("yet another password", hash)).resolves.toBe(true);
+    });
+});
+
+describe("User.createJWT", () => {
+    // The token is a bearer credential that lives in the browser's localStorage
+    // when "remember me" is on. Without an expiry, a copy lifted from there
+    // stayed usable for good: only a password change or a reset of the JWT
+    // secret ever invalidated one.
+    it("gives the token a lifetime", () => {
+        const user = makeUser();
+
+        const decoded = jwt.decode(User.createJWT(user, "test-secret")) as Record<string, number>;
+
+        expect(decoded.exp).toBeTypeOf("number");
+        expect(decoded.exp).toBeGreaterThan(decoded.iat);
+    });
+
+    it("expires the token after the configured window", () => {
+        const user = makeUser();
+
+        const decoded = jwt.decode(User.createJWT(user, "test-secret")) as Record<string, number>;
+
+        expect(JWT_EXPIRES_IN).toBe("30d");
+        expect(decoded.exp - decoded.iat).toBe(30 * 24 * 60 * 60);
+    });
+
+    it("is rejected once it has expired", () => {
+        const expired = jwt.sign({ username: "someone" }, "test-secret", { expiresIn: "-1s" });
+
+        expect(() => jwt.verify(expired, "test-secret")).toThrow(jwt.TokenExpiredError);
+    });
+
+    // Tokens minted before the expiry existed carry no "exp" claim at all, and
+    // jwt.verify() accepts a token without one, so upgrading does not sign
+    // everybody out.
+    it("still accepts a token issued before expiries existed", () => {
+        const legacy = jwt.sign({ username: "someone" }, "test-secret");
+
+        expect(() => jwt.verify(legacy, "test-secret")).not.toThrow();
     });
 });

@@ -36,7 +36,6 @@ import { AgentProxySocketHandler } from "./socket-handlers/agent-proxy-socket-ha
 import { AgentSocketHandler } from "./agent-socket-handler";
 import { AgentSocket } from "../common/agent-socket";
 import { ManageAgentSocketHandler } from "./socket-handlers/manage-agent-socket-handler";
-import { Terminal } from "./terminal";
 import { AgentMaintenanceSocketHandler } from "./agent-socket-handlers/agent-maintenance-socket-handler";
 import { AutoUpdateManager } from "./auto-update";
 import { RegistryCredentialManager } from "./registry-credentials";
@@ -219,12 +218,30 @@ export class DockgeServer {
             };
         }
 
+        // Turning the origin check off is a real reduction in protection, so it
+        // is said once at startup rather than only in debug output
+        if (!isDev && process.env.UPTIME_KUMA_WS_ORIGIN_CHECK && !process.env.DOCKGE_WS_ORIGIN_CHECK) {
+            log.warn("server", "UPTIME_KUMA_WS_ORIGIN_CHECK is set but is no longer read; it is now DOCKGE_WS_ORIGIN_CHECK. "
+                + "The origin check is therefore ON. If the socket connection now fails, rename the variable.");
+        }
+
+        if (!isDev && process.env.DOCKGE_WS_ORIGIN_CHECK === "bypass") {
+            log.warn("server", "DOCKGE_WS_ORIGIN_CHECK=bypass: the WebSocket origin check is disabled. "
+                + "Any site a logged-in user visits can drive this instance's API. Unset it unless you know you need it.");
+        }
+
         // Create Socket.io
         this.io = new socketIO.Server(this.httpServer, {
             cors,
             allowRequest: (req, callback) => {
                 let isOriginValid = true;
-                const bypass = isDev || process.env.UPTIME_KUMA_WS_ORIGIN_CHECK === "bypass";
+                // Named for Dockge on purpose. This used to read
+                // UPTIME_KUMA_WS_ORIGIN_CHECK, inherited from Uptime Kuma: a
+                // variable set for a different application - a shared .env, a
+                // compose env_file - silently turned off this instance's origin
+                // check, which is what stops another site from driving the
+                // socket API with a logged-in user's browser.
+                const bypass = isDev || process.env.DOCKGE_WS_ORIGIN_CHECK === "bypass";
 
                 if (!bypass) {
                     let host = req.headers.host;

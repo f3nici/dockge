@@ -123,15 +123,26 @@ export class Settings {
      * is unique across all types, and this is what stops a client from
      * overwriting something like `jwtSecret` through a settings write. Keys are
      * therefore worth namespacing per feature - a clash here does not save.
+     *
+     * A conflict is refused before anything is written, and raised rather than
+     * only logged. Writing what fits and then reporting failure was worse than
+     * either: the caller was told the save did not happen while some of it had,
+     * and skipped the work it does after a successful save - rescheduling the
+     * auto update job, say - leaving the running state and the database
+     * disagreeing.
      * @param type Type of settings to set
      * @param data Values of settings
      * @returns {Promise<void>}
+     * @throws When a key is already stored under a different type, in which
+     * case nothing at all is written
      */
-    static async setSettings(type : string, data : LooseObject) {
+    static async setSettings(type : string, data : LooseObject) : Promise<void> {
         const keyList = Object.keys(data);
 
-        const promiseList = [];
+        const beanList = [];
+        const skipped : string[] = [];
 
+        // Checked first, in full: a partial write is worse than no write
         for (const key of keyList) {
             let bean = await R.findOne("setting", " `key` = ? ", [
                 key
@@ -144,14 +155,26 @@ export class Settings {
             }
 
             if (bean.type === type) {
-                bean.value = JSON.stringify(data[key]);
-                promiseList.push(R.store(bean));
+                beanList.push({
+                    bean,
+                    key
+                });
             } else {
                 log.warn("settings", `Not saving "${key}" as ${type}: it is already stored as ${bean.type}`);
+                skipped.push(key);
             }
         }
 
-        await Promise.all(promiseList);
+        if (skipped.length > 0) {
+            throw new Error(`Could not save ${skipped.map((key) => `"${key}"`).join(", ")}: `
+                + "already stored under a different setting type. Nothing was saved. "
+                + "Remove the conflicting row and try again.");
+        }
+
+        await Promise.all(beanList.map(({ bean, key }) => {
+            bean.value = JSON.stringify(data[key]);
+            return R.store(bean);
+        }));
 
         Settings.deleteCache(keyList);
     }

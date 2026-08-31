@@ -37,8 +37,6 @@ const REMOTE_CONFIG_DIGEST_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class ImageRepository {
 
-    static INSTANCE = new ImageRepository();
-
     private imageInfos: Map<string, Map<string, ImageInfo>> = new Map();
 
     /**

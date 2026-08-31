@@ -174,8 +174,11 @@ export class RegistryCredentialManager {
             });
         }
 
-        this.credentials = result;
+        // Stored first: a write that does not land must not leave this instance
+        // running on logins that are gone at the next restart
         await Settings.setSettings("registry", { credentials: result });
+
+        this.credentials = result;
         this.writeAuthFile();
 
         log.info("registry", `Saved credentials for ${result.length} registry/registries`);

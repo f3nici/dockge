@@ -37,8 +37,10 @@
                     </div>
 
                     <BForm class="mt-3">
+                        <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                         <BFormCheckbox v-model="updateDialogData.pruneAfterUpdate" switch><span v-html="$t('pruneAfterUpdate')"></span></BFormCheckbox>
                         <div style="margin-left: 2.5rem;">
+                            <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                             <BFormCheckbox v-model="updateDialogData.pruneAllAfterUpdate" :checked="updateDialogData.pruneAfterUpdate && updateDialogData.pruneAllAfterUpdate" :disabled="!updateDialogData.pruneAfterUpdate"><span v-html="$t('pruneAllAfterUpdate')"></span></BFormCheckbox>
                         </div>
                     </BForm>

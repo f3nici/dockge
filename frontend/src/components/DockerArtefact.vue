@@ -18,6 +18,7 @@
 
     <!-- Prune dialog -->
     <BModal v-model="showPruneDialog" :title="$t('prune') + ' ' + $tc(artefact.name, 2)" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('prune')" okVariant="danger" @ok="executeAction(pruneDialogData.all ? DockerArtefactAction.PruneAll : DockerArtefactAction.Prune)" @show="resetPruneDialog" @hidden="resetPruneDialog">
+        <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
         <p class="mb-3" v-html="$t(artefact.name + 'PruneMsg')"></p>
 
         <BForm v-if="artefact.actions.includes(DockerArtefactAction.PruneAll)">
@@ -27,6 +28,7 @@
 
     <!-- Pull dialog -->
     <BModal v-model="showPullDialog" :title="$t('pull') + ' ' + $tc(artefact.name, 2)" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('pull')" okVariant="primary" :ok-disabled="selectedItems.length === 0" @ok="executeAction(DockerArtefactAction.Pull)">
+        <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
         <p v-html="$t('imagePullInfoMsg')"></p>
         <ul>
             <li v-for="(name, i) in pullDialogData.danglingImages" :key="i">{{ name }}</li>
@@ -35,6 +37,7 @@
 
     <!-- Delete dialog -->
     <BModal v-model="showDeleteDialog" :title="$t('delete') + ' ' + $tc(artefact.name, 2)" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('delete')" okVariant="danger" @ok="executeAction(DockerArtefactAction.Remove)">
+        <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
         <p class="mb-3" v-html="$t(artefact.name + 'DeleteMsg')"></p>
     </BModal>
 

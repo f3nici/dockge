@@ -12,6 +12,7 @@
 
             <!-- System prune form -->
             <BModal id="systemPrune" v-model="showSystemPruneDialog" :title="$t('systemPrune')" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('prune')" okVariant="danger" @ok="systemPrune" @show="resetSystemPrune" @hidden="resetSystemPrune">
+                <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                 <p class="mb-3" v-html="$t('systemPruneMsg')"></p>
 
                 <form @submit.prevent>

@@ -3,6 +3,15 @@ import { R } from "redbean-node";
 import { BeanModel } from "redbean-node/dist/bean-model";
 import { generatePasswordHash, shake256, SHAKE256_LENGTH } from "../password-hash";
 
+/**
+ * How long a freshly issued login token stays valid.
+ *
+ * Long enough that "remember me" still means something across a working month,
+ * short enough that a token lifted from browser storage does not stay usable
+ * indefinitely.
+ */
+export const JWT_EXPIRES_IN = "30d";
+
 export class User extends BeanModel {
     /**
      * Reset user password
@@ -37,6 +46,16 @@ export class User extends BeanModel {
 
     /**
      * Create a new JWT for a user
+     *
+     * The token is a bearer credential that sits in the browser's localStorage
+     * when "remember me" is on, so it is given a lifetime. Without one the only
+     * thing that ever invalidated a token was a password change (which moves the
+     * "h" claim) or a reset of the JWT secret, leaving a copied token usable
+     * forever.
+     *
+     * Tokens issued before this existed carry no "exp" claim, and jwt.verify()
+     * accepts a token that does not have one, so upgrading does not sign
+     * everybody out.
      * @param {User} user The User to create a JsonWebToken for
      * @param {string} jwtSecret The key used to sign the JsonWebToken
      * @returns {string} the JsonWebToken as a string
@@ -45,7 +64,9 @@ export class User extends BeanModel {
         return jwt.sign({
             username: user.username,
             h: shake256(user.password, SHAKE256_LENGTH),
-        }, jwtSecret);
+        }, jwtSecret, {
+            expiresIn: JWT_EXPIRES_IN,
+        });
     }
 
 }

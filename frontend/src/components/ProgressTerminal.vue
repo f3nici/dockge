@@ -21,7 +21,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, PropType } from "vue";
+import { defineComponent } from "vue";
 import { PROGRESS_TERMINAL_ROWS } from "../../../common/util-common";
 import Terminal from "./Terminal.vue";
 

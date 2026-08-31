@@ -243,6 +243,24 @@ export class Terminal {
         delete this.socketList[socket.id];
     }
 
+    /**
+     * Detach a socket from every terminal it is watching.
+     *
+     * Logging out does not close the connection - the browser keeps the same
+     * socket and simply drops its token - so nothing here would otherwise stop
+     * the terminals it had joined. They went on writing container and stack
+     * output to a connection that is no longer authorised, and the sweep that
+     * removes stale clients only looks at disconnected ones, which this is not.
+     * @param socket The socket to remove from every terminal
+     */
+    public static leaveAll(socket : DockgeSocket) {
+        for (const terminal of Terminal.terminalMap.values()) {
+            if (socket.id in terminal.socketList) {
+                terminal.leave(socket);
+            }
+        }
+    }
+
     public get ptyProcess() {
         return this._ptyProcess;
     }

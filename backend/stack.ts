@@ -1,5 +1,6 @@
 import { DockgeServer } from "./dockge-server";
 import fs, { promises as fsAsync } from "fs";
+import { randomUUID } from "crypto";
 import { log } from "./log";
 import yaml from "yaml";
 import { DockgeSocket, fileExists, ValidationError } from "./util-server";
@@ -45,6 +46,7 @@ export class Stack {
     protected _firstUpdate: boolean = true;
     protected _tags: string[] = [];
     protected _tagsLoaded: boolean = false;
+    protected _resolvedPath?: string;
 
     protected combinedTerminal? : Terminal;
 
@@ -59,6 +61,54 @@ export class Stack {
      */
     static invalidateCache(stackName: string) : void {
         this.managedStackList.delete(stackName);
+    }
+
+    /**
+     * In-flight saves, by stack name, so that two of them never overlap.
+     */
+    protected static saveLocks : Map<string, Promise<unknown>> = new Map();
+
+    /**
+     * Run something with a given stack's save lock held.
+     *
+     * Queued behind whatever is already saving that stack, whether it succeeds
+     * or fails, so one bad save does not wedge the stack for good.
+     * @param stackName The stack to lock
+     * @param fn What to run while holding it
+     */
+    protected static withSaveLock<T>(stackName : string, fn : () => Promise<T>) : Promise<T> {
+        const previous = Stack.saveLocks.get(stackName) ?? Promise.resolve();
+
+        // Both handlers are fn: the next save runs whichever way the last one went
+        const result = previous.then(fn, fn);
+
+        // Stored in a form that never rejects, so a failed save waited on by
+        // nothing does not surface as an unhandled rejection
+        const guarded = result.catch(() => {});
+        Stack.saveLocks.set(stackName, guarded);
+
+        guarded.then(() => {
+            // Only if nothing else has queued up behind us in the meantime
+            if (Stack.saveLocks.get(stackName) === guarded) {
+                Stack.saveLocks.delete(stackName);
+            }
+        });
+
+        return result;
+    }
+
+    /**
+     * Forget the compose file and .env this stack read from disk, so the next
+     * read picks up whatever is there now.
+     *
+     * Separate from invalidateCache(): that drops the whole Stack and with it
+     * the status and service data, which is a good deal more expensive to
+     * rebuild than re-reading two small files.
+     */
+    clearFileCache() : void {
+        this._composeYAML = undefined;
+        this._composeENV = undefined;
+        this._composeDocument = undefined;
     }
 
     static notificationManager: NotificationManager = new NotificationManager();
@@ -275,8 +325,13 @@ export class Stack {
         }
 
         // save yaml and env as temporary files
-        const tempYamlName = this._composeFileName + ".tmp";
-        const tempEnvName = ".env.temp";
+        //
+        // The suffix is unique per call: the names used to be fixed, so two
+        // saves of the same stack at once wrote over each other's temp files and
+        // the first one to finish deleted the other's out from under it.
+        const tempSuffix = randomUUID().substring(0, 8);
+        const tempYamlName = `${this._composeFileName}.${tempSuffix}.tmp`;
+        const tempEnvName = `.env.${tempSuffix}.temp`;
 
         const tempYamlPath = path.join(this.path, tempYamlName);
         const tempEnvPath = path.join(this.path, tempEnvName);
@@ -292,6 +347,7 @@ export class Stack {
         }
 
         const hasEnvFile = this.composeENV.trim() !== "";
+        let validated = false;
 
         try {
             // check the files with docker compose
@@ -306,6 +362,7 @@ export class Stack {
                 cwd: this.path,
                 encoding: "utf-8",
             });
+            validated = true;
         } catch (e) {
             log.warn("validate", e);
 
@@ -330,14 +387,25 @@ export class Stack {
 
             throw new ValidationError(valMsg);
         } finally {
-            // delete the temporary files
-            await fsAsync.unlink(tempYamlPath);
-            if (hasEnvFile) {
-                await fsAsync.unlink(tempEnvPath);
+            // Both are written unconditionally by saveFiles() above, so both
+            // are removed unconditionally. Removing the env one only when
+            // hasEnvFile left a file behind on every save of a stack whose
+            // .env is empty, which the unique name turned into a new one each
+            // time instead of a single reused temp file.
+            await fsAsync.unlink(tempYamlPath).catch(() => {});
+            await fsAsync.unlink(tempEnvPath).catch(() => {});
+
+            // The real .env is left alone on success: saveFiles() is about to
+            // overwrite it with the final version.
+            //
+            // On failure it is only removed when this call is what created it.
+            // A new stack has its whole directory deleted by save() anyway, but
+            // an update of a stack that had no .env used to leave this one
+            // behind - a file the user never asked for, written from a compose
+            // file that did not validate.
+            if (!validated && !realEnvExistedBefore) {
+                await fsAsync.unlink(realEnvPath).catch(() => {});
             }
-            // Note: We don't delete the real .env file we created because:
-            // - On success, saveFiles() will overwrite it with the final version
-            // - On failure for new stacks, save() deletes the entire directory
         }
     }
 
@@ -371,8 +439,25 @@ export class Stack {
         return this._composeDocument!;
     }
 
+    /**
+     * This stack's directory, with every symlink along the way resolved and
+     * containment inside stacksDir already checked.
+     *
+     * Resolving here rather than in the callers is the point: a lexical
+     * path.join() is what every read and write used to be built from, so the
+     * containment check at the entry points validated a value nothing went on
+     * to use, and an operation could still follow a symlink out of stacksDir.
+     *
+     * Memoised, and first taken in the constructor, so the resolution happens
+     * once at a known moment: a symlink planted later cannot change where the
+     * operations already in flight are pointed.
+     * @throws {ValidationError} If the name does not resolve inside stacksDir
+     */
     get path() : string {
-        return path.join(this.server.stacksDir, this.name);
+        if (this._resolvedPath === undefined) {
+            this._resolvedPath = Stack.resolveStackDir(this.server, this.name);
+        }
+        return this._resolvedPath;
     }
 
     get metadataPath() : string {
@@ -447,29 +532,28 @@ export class Stack {
         await this.saveMetadata();
     }
 
-    get fullPath() : string {
-        let dir = this.path;
-
-        // Compose up via node-pty
-        let fullPathDir;
-
-        // if dir is relative, make it absolute
-        if (!path.isAbsolute(dir)) {
-            fullPathDir = path.join(process.cwd(), dir);
-        } else {
-            fullPathDir = dir;
-        }
-        return fullPathDir;
-    }
-
     /**
  * Save the stack to the disk
  * @param isAdd
  */
     async save(isAdd : boolean) {
-        // Reject any name that would escape the stacks directory before creating
-        // anything on disk (validate() also enforces the name charset).
-        Stack.resolveStackDir(this.server, this.name);
+        // Taking the path is what rejects a name that would escape the stacks
+        // directory, and it is the same value every write below lands on
+        // (validate() also enforces the name charset).
+        this.path;
+
+        // One save of a given stack at a time. Unique temp file names stop two
+        // saves clobbering each other's scratch files, but .env and the compose
+        // file are shared no matter what they are called: overlapping saves had
+        // one deleting the .env the other was validating against.
+        return Stack.withSaveLock(this.name, () => this.saveUnlocked(isAdd));
+    }
+
+    /**
+     * The body of {@link save}, which holds the stack's save lock around it.
+     * @param isAdd Whether the stack is being created
+     */
+    private async saveUnlocked(isAdd : boolean) {
 
         let dir = this.path;
 
@@ -965,26 +1049,33 @@ export class Stack {
         let composeList = JSON.parse(res.stdout.toString());
 
         for (let composeStack of composeList) {
-            let stack = stackList.get(composeStack.Name);
+            // These names come from docker, not from Dockge, so one that cannot
+            // be turned into a usable directory is skipped rather than allowed
+            // to take the whole stack list down with it
+            try {
+                let stack = stackList.get(composeStack.Name);
 
-            // This stack probably is not managed by Dockge, but we still want to show it
-            if (!stack) {
-                // Skip the dockge stack if it is not managed by Dockge
-                if (composeStack.Name === "dockge") {
-                    continue;
+                // This stack probably is not managed by Dockge, but we still want to show it
+                if (!stack) {
+                    // Skip the dockge stack if it is not managed by Dockge
+                    if (composeStack.Name === "dockge") {
+                        continue;
+                    }
+                    stack = new Stack(server, composeStack.Name);
+                    stackList.set(composeStack.Name, stack);
                 }
-                stack = new Stack(server, composeStack.Name);
-                stackList.set(composeStack.Name, stack);
-            }
 
-            stack._configFilePath = composeStack.ConfigFiles;
+                stack._configFilePath = composeStack.ConfigFiles;
 
-            if (composeStack.Status.startsWith("running")) {
-                // Only running containers, nothing more to check
-                stack._status = stack._unhealthy ? UNHEALTHY : RUNNING;
-            } else {
-                // We have to check the stack data, to get the correct status
-                await stack.updateData();
+                if (composeStack.Status.startsWith("running")) {
+                    // Only running containers, nothing more to check
+                    stack._status = stack._unhealthy ? UNHEALTHY : RUNNING;
+                } else {
+                    // We have to check the stack data, to get the correct status
+                    await stack.updateData();
+                }
+            } catch (e) {
+                log.warn("getStackList", `Skipping compose project "${composeStack?.Name}": ${e}`);
             }
         }
 
@@ -1000,8 +1091,13 @@ export class Stack {
      * @returns The resolved, validated absolute stack directory
      */
     static resolveStackDir(server: DockgeServer, stackName: string) : string {
-        const stacksDirResolved = path.resolve(server.stacksDir);
-        const dirResolved = path.resolve(path.join(server.stacksDir, stackName));
+        // realpath, not just path.resolve: resolving lexically only rules out
+        // "..", and says nothing about a symlink. An entry inside stacksDir
+        // pointing somewhere else would pass a lexical check and then be written
+        // through. The stacks directory itself is resolved the same way, so a
+        // symlinked stacksDir still matches its own contents.
+        const stacksDirResolved = Stack.realPath(path.resolve(server.stacksDir));
+        const dirResolved = Stack.realPath(path.resolve(path.join(server.stacksDir, stackName)));
 
         // Must be a strict subdirectory of stacksDir
         if (dirResolved !== stacksDirResolved && !dirResolved.startsWith(stacksDirResolved + path.sep)) {
@@ -1016,6 +1112,46 @@ export class Stack {
         return dirResolved;
     }
 
+    /**
+     * A path with every symlink along it resolved.
+     *
+     * A stack that does not exist yet has nothing to resolve, and neither does
+     * one whose parent is missing, so the deepest part that does exist is
+     * resolved and the rest is appended. That is what makes the check work for
+     * a stack being created: the directory is not there, but the symlink that
+     * would take it out of stacksDir would be.
+     * @param target The path to resolve
+     */
+    private static realPath(target : string) : string {
+        let head = target;
+        const tail : string[] = [];
+
+        for (;;) {
+            try {
+                return path.join(fs.realpathSync(head), ...tail);
+            } catch (e) {
+                // Only "it is not there yet" means keep walking up. Anything
+                // else - a permission error, a symlink loop - is a path we
+                // cannot vouch for, and falling back to a lexical resolve would
+                // reinstate exactly the check this replaced.
+                const code = (e as NodeJS.ErrnoException).code;
+                if (code !== "ENOENT" && code !== "ENOTDIR") {
+                    throw new ValidationError(`Cannot resolve the stack path: ${code ?? e}`);
+                }
+
+                const parent = path.dirname(head);
+
+                // Reached the root without finding anything that exists
+                if (parent === head) {
+                    return target;
+                }
+
+                tail.unshift(path.basename(head));
+                head = parent;
+            }
+        }
+    }
+
     static async getStack(server: DockgeServer, stackName: string, useCache = true) : Promise<Stack> {
         // Reject any name that would escape the stacks directory before touching the filesystem
         Stack.resolveStackDir(server, stackName);
@@ -1025,6 +1161,12 @@ export class Stack {
         if (useCache) {
             const cachedStack = this.managedStackList.get(stackName);
             if (cachedStack) {
+                // The status and service data are what the cache is for, and
+                // they are refreshed on their own schedule. The compose files
+                // are not: they are read once and memoised, so a stack edited
+                // outside Dockge kept serving the old text - and saving from
+                // that screen wrote it straight back over the edit.
+                cachedStack.clearFileCache();
                 return cachedStack;
             }
         }

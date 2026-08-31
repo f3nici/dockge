@@ -23,7 +23,27 @@ import { Settings } from "../settings";
 import { Stack } from "../stack";
 import { AutoUpdateManager } from "../auto-update";
 import { RegistryCredentialManager } from "../registry-credentials";
-import { AUTO_UPDATE_DEFAULT } from "../../common/util-common";
+import { AUTO_UPDATE_DEFAULT, LooseObject } from "../../common/util-common";
+import { Terminal } from "../terminal";
+
+/**
+ * The settings a client is allowed to write under the "general" type.
+ *
+ * `setting.key` is unique across every type, so a key written as "general"
+ * cannot later be stored by the feature that actually owns it. Without this
+ * list, a client could write any key at all and permanently block, say, the
+ * registry logins or the notification settings from ever saving.
+ */
+const GENERAL_SETTING_KEYS = new Set([
+    "disableAuth",
+    "primaryHostname",
+    "trustProxy",
+    "serverTimezone",
+    "autoUpdateEnabled",
+    "autoUpdateCron",
+    "autoUpdatePrune",
+    "autoUpdateDefault",
+]);
 
 export class MainSocketHandler extends SocketHandler {
     create(socket : DockgeSocket, server : DockgeServer) {
@@ -35,6 +55,18 @@ export class MainSocketHandler extends SocketHandler {
         // Setup
         socket.on("setup", async (username, password, callback) => {
             try {
+                // Checked before the strength gate rather than left to bcrypt:
+                // passwordStrength() answers "undefined" for a non-string, which
+                // is not "Too weak", so the gate was simply skipped and the
+                // request died further down on an internal bcrypt error.
+                if (typeof(username) !== "string" || !username.trim()) {
+                    throw new Error("Username is required");
+                }
+
+                if (typeof(password) !== "string") {
+                    throw new Error("Password must be a string");
+                }
+
                 if (passwordStrength(password).value === "Too weak") {
                     throw new Error("Password is too weak. It should contain alphabetic and numeric characters. It must be at least 6 characters in length.");
                 }
@@ -44,7 +76,7 @@ export class MainSocketHandler extends SocketHandler {
                 }
 
                 const user = R.dispense("user");
-                user.username = username;
+                user.username = username.trim();
                 user.password = await generatePasswordHash(password);
                 await R.store(user);
 
@@ -140,8 +172,9 @@ export class MainSocketHandler extends SocketHandler {
                     return;
                 }
 
-                // Login Rate Limit
-                if (!await loginRateLimiter.pass(callback)) {
+                // Login Rate Limit, budgeted per client so one caller cannot
+                // spend everybody else's allowance
+                if (!await loginRateLimiter.pass(callback, 1, clientIP)) {
                     log.info("auth", `Too many failed requests for user ${data.username}. IP=${clientIP}`);
                     return;
                 }
@@ -177,8 +210,18 @@ export class MainSocketHandler extends SocketHandler {
             try {
                 checkLogin(socket);
 
+                if (!password || typeof(password) !== "object") {
+                    throw new Error("Invalid new password");
+                }
+
                 if (! password.newPassword) {
                     throw new Error("Invalid new password");
+                }
+
+                // See the setup handler: a non-string slips past the strength
+                // check, so its type is settled first
+                if (typeof(password.newPassword) !== "string") {
+                    throw new Error("Password must be a string");
                 }
 
                 if (passwordStrength(password.newPassword).value === "Too weak") {
@@ -230,9 +273,30 @@ export class MainSocketHandler extends SocketHandler {
             }
         });
 
-        socket.on("setSettings", async (data, currentPassword, callback) => {
+        socket.on("setSettings", async (requestData, currentPassword, callback) => {
             try {
                 checkLogin(socket);
+
+                if (!requestData || typeof(requestData) !== "object" || Array.isArray(requestData)) {
+                    throw new ValidationError("Settings must be an object");
+                }
+
+                // Only the keys this page owns are written. Anything else would
+                // claim that key name for the "general" type and stop its real
+                // owner from ever saving it.
+                //
+                // Dropped rather than rejected: the settings page sends back
+                // whatever getSettings() gave it, which on an upgraded install
+                // includes keys nothing reads any more. Refusing the whole save
+                // over one of those would break the page outright.
+                const data = {} as LooseObject;
+                for (const [ key, value ] of Object.entries(requestData as LooseObject)) {
+                    if (GENERAL_SETTING_KEYS.has(key)) {
+                        data[key] = value;
+                    } else {
+                        log.debug("settings", `Ignoring unknown general setting "${key}"`);
+                    }
+                }
 
                 // If currently is disabled auth, don't need to check
                 // Disabled Auth + Want to Disable Auth => No Check
@@ -244,9 +308,12 @@ export class MainSocketHandler extends SocketHandler {
                     await doubleCheckPassword(socket, currentPassword);
                 }
 
-                // Validate the auto-update cron expression before saving so an invalid
-                // pattern never lands in the database.
-                if (data.autoUpdateEnabled && data.autoUpdateCron) {
+                // Validated whenever a pattern is present, not only when auto
+                // update is being switched on in the same save. An invalid
+                // pattern stored while disabled was never re-checked on the save
+                // that enabled it, and schedule() swallows the parse error: the
+                // page then reported auto update as on with no job behind it.
+                if (data.autoUpdateCron) {
                     if (typeof data.autoUpdateCron !== "string") {
                         throw new ValidationError("Auto update cron must be a string");
                     }
@@ -477,6 +544,13 @@ export class MainSocketHandler extends SocketHandler {
                 // 0 rather than undefined: checkLogin() treats it as logged out,
                 // and DockgeSocket types userID as a number.
                 socket.userID = 0;
+
+                // The connection stays open across a logout, so anything still
+                // pointed at it keeps delivering. Terminals are the ones that
+                // push on their own: without this they went on streaming
+                // container and stack output to a socket that no longer has a
+                // session behind it.
+                Terminal.leaveAll(socket);
 
                 // These exist on behalf of a logged-in user, so they go too.
                 // Logging back in on this socket connects them again.

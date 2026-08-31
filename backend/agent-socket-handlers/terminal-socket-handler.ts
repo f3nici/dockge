@@ -56,6 +56,14 @@ export class TerminalSocketHandler extends AgentSocketHandler {
                 if (!terminal) {
                     terminal = new MainTerminal(server, terminalName);
                     terminal.rows = 50;
+
+                    // As every other long-lived terminal does. Without it the
+                    // console shell outlived its last client: logging out
+                    // detached the socket but left a root shell running, and
+                    // the next person to open the console was handed it along
+                    // with the previous user's scrollback.
+                    terminal.enableKeepAlive = true;
+
                     log.debug("mainTerminal", "Terminal created");
                 }
 

@@ -68,6 +68,16 @@ RUN npm ci --omit=dev || npm ci --omit=dev
 ############################################
 FROM base AS release
 WORKDIR /app
+
+# Runs as root, deliberately.
+#
+# Dockge drives the host's docker socket, and the gid that owns /var/run/docker.sock
+# differs from host to host, so there is no single non-root uid/gid that works
+# everywhere. Note what this means in practice: anything that can reach the
+# docker socket can start a privileged container, so an account on Dockge is
+# equivalent to root on the host. Put it behind authentication, do not expose it
+# to the internet, and if you want to drop privileges here, run the image with
+# an explicit `user:` plus the host's docker group in `group_add`.
 # Copy healthcheck
 COPY --chown=node:node --from=build_healthcheck /app/extra/healthcheck /app/extra/healthcheck
 

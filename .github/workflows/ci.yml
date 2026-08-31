@@ -34,6 +34,31 @@ jobs:
       - name: Type check
         run: npm run check-ts
 
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # No npm ci: npm audit resolves the tree from package-lock.json and never
+      # reads node_modules, so installing the dev tree and building sqlite3's
+      # native module first would be the slowest part of the job by far.
+      #
+      # --omit=dev because a build-time or test-time package is not reachable by
+      # anything an attacker can send this server. The remaining "low" findings
+      # are all in the node-gyp chain that @louislam/sqlite3 pulls in to build
+      # its native module, whose only offered fix is a downgrade of sqlite3
+      # itself; they are not in the request path.
+      - name: Audit runtime dependencies
+        run: npm run audit-ci
+
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
