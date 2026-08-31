@@ -12,6 +12,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
+        "audit-ci": "npm audit --omit=dev --audit-level=high",
         "start": "tsx ./backend/index.ts",
         "dev": "concurrently -k -r \"wait-on tcp:5000 && npm run dev:backend \" \"npm run dev:frontend\"",
         "dev:backend": "cross-env NODE_ENV=development tsx watch --inspect ./backend/index.ts",
@@ -41,7 +42,7 @@
         "croner": "~8.1.2",
         "dayjs": "~1.11.13",
         "dotenv": "~16.3.2",
-        "express": "~4.21.2",
+        "express": "~4.22.2",
         "express-static-gzip": "~2.1.8",
         "http-graceful-shutdown": "~3.1.14",
         "jsonwebtoken": "~9.0.2",
@@ -57,7 +58,7 @@
         "ts-command-line-args": "~2.5.1",
         "tsx": "~4.19.3",
         "type-fest": "~4.3.3",
-        "yaml": "~2.3.4"
+        "yaml": "~2.9.0"
     },
     "devDependencies": {
         "@actions/github": "^6.0.0",
@@ -100,5 +101,12 @@
         "vue-toastification": "2.0.0-rc.5",
         "wait-on": "^7.2.0",
         "xterm-addon-web-links": "~0.9.0"
+    },
+    "overrides": {
+        "ws": "^8.21.0",
+        "tar": "^7.5.21",
+        "brace-expansion": "^2.1.4",
+        "glob": "^10.5.0",
+        "lodash": "^4.18.1"
     }
 }

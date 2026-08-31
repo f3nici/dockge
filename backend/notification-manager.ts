@@ -222,7 +222,7 @@ export class NotificationManager {
     async saveSettings(input: unknown): Promise<void> {
         try {
             const settings = normalizeNotificationSettings(input, this.settings);
-            await Settings.setSettings("notifications", toStoredSettings(settings));
+            await Settings.setSettingsStrict("notifications", toStoredSettings(settings));
             this.settings = settings;
             log.info("notification", "Notification settings saved successfully");
         } catch (error) {

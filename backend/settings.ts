@@ -123,14 +123,21 @@ export class Settings {
      * is unique across all types, and this is what stops a client from
      * overwriting something like `jwtSecret` through a settings write. Keys are
      * therefore worth namespacing per feature - a clash here does not save.
+     *
+     * The skipped keys are returned rather than only logged. A caller that
+     * cannot do its job without the write - storing registry logins, say - has
+     * to be able to tell the user it did not happen instead of reporting
+     * success and losing the values at the next restart.
      * @param type Type of settings to set
      * @param data Values of settings
-     * @returns {Promise<void>}
+     * @returns {Promise<string[]>} The keys that were not written, because they
+     * are already stored under a different type
      */
-    static async setSettings(type : string, data : LooseObject) {
+    static async setSettings(type : string, data : LooseObject) : Promise<string[]> {
         const keyList = Object.keys(data);
 
         const promiseList = [];
+        const skipped : string[] = [];
 
         for (const key of keyList) {
             let bean = await R.findOne("setting", " `key` = ? ", [
@@ -148,12 +155,33 @@ export class Settings {
                 promiseList.push(R.store(bean));
             } else {
                 log.warn("settings", `Not saving "${key}" as ${type}: it is already stored as ${bean.type}`);
+                skipped.push(key);
             }
         }
 
         await Promise.all(promiseList);
 
         Settings.deleteCache(keyList);
+
+        return skipped;
+    }
+
+    /**
+     * Set settings, and fail loudly if any of them could not be written.
+     *
+     * For the callers whose feature is broken by a silently dropped key.
+     * @param type Type of settings to set
+     * @param data Values of settings
+     * @returns {Promise<void>}
+     * @throws When a key is already stored under a different type
+     */
+    static async setSettingsStrict(type : string, data : LooseObject) : Promise<void> {
+        const skipped = await Settings.setSettings(type, data);
+
+        if (skipped.length > 0) {
+            throw new Error(`Could not save ${skipped.map((key) => `"${key}"`).join(", ")}: `
+                + "already stored under a different setting type. Remove the conflicting row and try again.");
+        }
     }
 
     /**

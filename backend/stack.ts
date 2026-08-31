@@ -1,5 +1,6 @@
 import { DockgeServer } from "./dockge-server";
 import fs, { promises as fsAsync } from "fs";
+import { randomUUID } from "crypto";
 import { log } from "./log";
 import yaml from "yaml";
 import { DockgeSocket, fileExists, ValidationError } from "./util-server";
@@ -59,6 +60,20 @@ export class Stack {
      */
     static invalidateCache(stackName: string) : void {
         this.managedStackList.delete(stackName);
+    }
+
+    /**
+     * Forget the compose file and .env this stack read from disk, so the next
+     * read picks up whatever is there now.
+     *
+     * Separate from invalidateCache(): that drops the whole Stack and with it
+     * the status and service data, which is a good deal more expensive to
+     * rebuild than re-reading two small files.
+     */
+    clearFileCache() : void {
+        this._composeYAML = undefined;
+        this._composeENV = undefined;
+        this._composeDocument = undefined;
     }
 
     static notificationManager: NotificationManager = new NotificationManager();
@@ -275,8 +290,13 @@ export class Stack {
         }
 
         // save yaml and env as temporary files
-        const tempYamlName = this._composeFileName + ".tmp";
-        const tempEnvName = ".env.temp";
+        //
+        // The suffix is unique per call: the names used to be fixed, so two
+        // saves of the same stack at once wrote over each other's temp files and
+        // the first one to finish deleted the other's out from under it.
+        const tempSuffix = randomUUID().substring(0, 8);
+        const tempYamlName = `${this._composeFileName}.${tempSuffix}.tmp`;
+        const tempEnvName = `.env.${tempSuffix}.temp`;
 
         const tempYamlPath = path.join(this.path, tempYamlName);
         const tempEnvPath = path.join(this.path, tempEnvName);
@@ -292,6 +312,7 @@ export class Stack {
         }
 
         const hasEnvFile = this.composeENV.trim() !== "";
+        let validated = false;
 
         try {
             // check the files with docker compose
@@ -306,6 +327,7 @@ export class Stack {
                 cwd: this.path,
                 encoding: "utf-8",
             });
+            validated = true;
         } catch (e) {
             log.warn("validate", e);
 
@@ -331,13 +353,22 @@ export class Stack {
             throw new ValidationError(valMsg);
         } finally {
             // delete the temporary files
-            await fsAsync.unlink(tempYamlPath);
+            await fsAsync.unlink(tempYamlPath).catch(() => {});
             if (hasEnvFile) {
-                await fsAsync.unlink(tempEnvPath);
+                await fsAsync.unlink(tempEnvPath).catch(() => {});
             }
-            // Note: We don't delete the real .env file we created because:
-            // - On success, saveFiles() will overwrite it with the final version
-            // - On failure for new stacks, save() deletes the entire directory
+
+            // The real .env is left alone on success: saveFiles() is about to
+            // overwrite it with the final version.
+            //
+            // On failure it is only removed when this call is what created it.
+            // A new stack has its whole directory deleted by save() anyway, but
+            // an update of a stack that had no .env used to leave this one
+            // behind - a file the user never asked for, written from a compose
+            // file that did not validate.
+            if (!validated && !realEnvExistedBefore) {
+                await fsAsync.unlink(realEnvPath).catch(() => {});
+            }
         }
     }
 
@@ -1000,8 +1031,13 @@ export class Stack {
      * @returns The resolved, validated absolute stack directory
      */
     static resolveStackDir(server: DockgeServer, stackName: string) : string {
-        const stacksDirResolved = path.resolve(server.stacksDir);
-        const dirResolved = path.resolve(path.join(server.stacksDir, stackName));
+        // realpath, not just path.resolve: resolving lexically only rules out
+        // "..", and says nothing about a symlink. An entry inside stacksDir
+        // pointing somewhere else would pass a lexical check and then be written
+        // through. The stacks directory itself is resolved the same way, so a
+        // symlinked stacksDir still matches its own contents.
+        const stacksDirResolved = Stack.realPath(path.resolve(server.stacksDir));
+        const dirResolved = Stack.realPath(path.resolve(path.join(server.stacksDir, stackName)));
 
         // Must be a strict subdirectory of stacksDir
         if (dirResolved !== stacksDirResolved && !dirResolved.startsWith(stacksDirResolved + path.sep)) {
@@ -1016,6 +1052,37 @@ export class Stack {
         return dirResolved;
     }
 
+    /**
+     * A path with every symlink along it resolved.
+     *
+     * A stack that does not exist yet has nothing to resolve, and neither does
+     * one whose parent is missing, so the deepest part that does exist is
+     * resolved and the rest is appended. That is what makes the check work for
+     * a stack being created: the directory is not there, but the symlink that
+     * would take it out of stacksDir would be.
+     * @param target The path to resolve
+     */
+    private static realPath(target : string) : string {
+        let head = target;
+        const tail : string[] = [];
+
+        for (;;) {
+            try {
+                return path.join(fs.realpathSync(head), ...tail);
+            } catch (e) {
+                const parent = path.dirname(head);
+
+                // Reached the root without finding anything that exists
+                if (parent === head) {
+                    return target;
+                }
+
+                tail.unshift(path.basename(head));
+                head = parent;
+            }
+        }
+    }
+
     static async getStack(server: DockgeServer, stackName: string, useCache = true) : Promise<Stack> {
         // Reject any name that would escape the stacks directory before touching the filesystem
         Stack.resolveStackDir(server, stackName);
@@ -1025,6 +1092,12 @@ export class Stack {
         if (useCache) {
             const cachedStack = this.managedStackList.get(stackName);
             if (cachedStack) {
+                // The status and service data are what the cache is for, and
+                // they are refreshed on their own schedule. The compose files
+                // are not: they are read once and memoised, so a stack edited
+                // outside Dockge kept serving the old text - and saving from
+                // that screen wrote it straight back over the edit.
+                cachedStack.clearFileCache();
                 return cachedStack;
             }
         }
