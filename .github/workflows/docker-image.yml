@@ -21,6 +21,16 @@ on:
         type: boolean
         default: false
 
+# Only one beta build runs at a time: a newer merge to master supersedes an
+# in-flight one, the same way CI cancels superseded runs. Manual release builds
+# get a group to themselves so they are never cancelled by anything.
+concurrency:
+  group: >-
+    docker-image-${{ github.event_name == 'push'
+    && 'beta'
+    || format('dispatch-{0}', github.run_id) }}
+  cancel-in-progress: true
+
 env:
   IMAGE: f3nici/dockge
 
