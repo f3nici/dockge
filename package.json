@@ -7,7 +7,7 @@
     },
     "scripts": {
         "fmt": "eslint \"**/*.{ts,vue}\" --fix",
-        "lint": "eslint \"**/*.{ts,vue}\"",
+        "lint": "eslint \"**/*.{ts,vue}\" --max-warnings=0",
         "check-ts": "tsc --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",

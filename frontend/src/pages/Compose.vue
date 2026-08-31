@@ -47,11 +47,14 @@
                     </button>
 
                     <BModal v-model="showUpdateDialog" :title="$t('updateStack')" :close-on-esc="true" @show="resetUpdateDialog" @hidden="resetUpdateDialog">
+                        <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                         <p class="mb-3" v-html="$t('updateStackMsg')"></p>
 
                         <BForm>
+                            <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                             <BFormCheckbox v-model="updateDialogData.pruneAfterUpdate" switch><span v-html="$t('pruneAfterUpdate')"></span></BFormCheckbox>
                             <div style="margin-left: 2.5rem;">
+                                <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                                 <BFormCheckbox v-model="updateDialogData.pruneAllAfterUpdate" :checked="updateDialogData.pruneAfterUpdate && updateDialogData.pruneAllAfterUpdate" :disabled="!updateDialogData.pruneAfterUpdate"><span v-html="$t('pruneAllAfterUpdate')"></span></BFormCheckbox>
                             </div>
                         </BForm>
@@ -142,8 +145,8 @@
 
             <!-- URLs -->
             <div v-if="urls.length > 0" class="mb-3">
-                <a v-for="(url, index) in urls" :key="index" target="_blank" :href="url.url">
-                    <span class="badge bg-secondary text-truncate me-2" style="max-width: 100%;">{{ url.display }}</span>
+                <a v-for="(serviceUrl, index) in urls" :key="index" target="_blank" :href="serviceUrl.url">
+                    <span class="badge bg-secondary text-truncate me-2" style="max-width: 100%;">{{ serviceUrl.display }}</span>
                 </a>
             </div>
 
@@ -180,8 +183,8 @@
                             <div class="mt-3">
                                 <label for="name" class="form-label">{{ $t("dockgeAgent") }}</label>
                                 <select v-model="stack.endpoint" class="form-select">
-                                    <option v-for="(agent, endpoint) in agentList" :key="endpoint" :value="endpoint" :disabled="agentStatusList[endpoint] != 'online'">
-                                        {{ (agent.name !== '') ? agent.name : agent.url || "Master" }} ({{ agentStatusList[endpoint] }})
+                                    <option v-for="(agent, agentEndpoint) in agentList" :key="agentEndpoint" :value="agentEndpoint" :disabled="agentStatusList[agentEndpoint] != 'online'">
+                                        {{ (agent.name !== '') ? agent.name : agent.url || "Master" }} ({{ agentStatusList[agentEndpoint] }})
                                     </option>
                                 </select>
                             </div>

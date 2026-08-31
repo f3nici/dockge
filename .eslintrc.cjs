@@ -22,11 +22,17 @@ module.exports = {
         "linebreak-style": [ "error", "unix" ],
         "camelcase": [ "warn", {
             "properties": "never",
-            "ignoreImports": true
+            "ignoreImports": true,
+            // The ANSI escape constants in backend/log.ts are named for the
+            // codes they carry (CONSOLE_STYLE_FgRed), which is neither camel
+            // nor screaming snake. Allowed by name rather than renamed: the
+            // colour suffixes are what make them readable at the call site.
+            "allow": [ "^CONSOLE_STYLE_" ]
         }],
-        "no-unused-vars": [ "warn", {
-            "args": "none"
-        }],
+        // Off in favour of the @typescript-eslint version below, as
+        // typescript-eslint requires: the base rule does not understand TypeScript
+        // and reports every enum member as unused, which buries the real ones.
+        "no-unused-vars": "off",
         indent: [
             "error",
             4,

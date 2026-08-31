@@ -12,8 +12,11 @@
 
             <div v-else class="alert alert-warning shadow-box" role="alert">
                 <h4 class="alert-heading">{{ $t("Console is not enabled") }}</h4>
+                <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                 <p v-html="$t('ConsoleNotEnabledMSG1')"></p>
+                <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                 <p v-html="$t('ConsoleNotEnabledMSG2')"></p>
+                <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                 <p v-html="$t('ConsoleNotEnabledMSG3')"></p>
             </div>
         </div>

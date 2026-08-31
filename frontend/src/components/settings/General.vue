@@ -93,6 +93,7 @@
                             :readonly="autoUpdatePreset !== 'custom'"
                             placeholder="0 4 * * 0"
                         />
+                        <!-- eslint-disable-next-line vue/no-v-html -- renders a $t() translation, not user input -->
                         <div class="form-text" v-html="$t('autoUpdateCronHint')"></div>
                         <div v-if="autoUpdateStatus" class="form-text">
                             {{ $t("autoUpdateTimezoneHint", {
