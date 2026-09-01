@@ -71,6 +71,9 @@ export default {
             first: true,
             terminalInputBuffer: "",
             cursorPosition: 0,
+            // Width the terminal was last fitted to, so the container being
+            // resized can be told from it merely being re-measured
+            lastFitWidth: 0,
         };
     },
     computed: {
@@ -177,6 +180,7 @@ export default {
         console.debug("Terminal " + this.name + " unmounted");
 
         window.removeEventListener("resize", this.onResizeEvent); // Remove the resize event listener from the window object.
+        this.terminalResizeObserver?.disconnect();
         this.pasteTarget?.removeEventListener("paste", this.handleNativePaste, true);
         this.$root.unbindTerminal(this.endpoint, this.name);
         this.terminal.dispose();
@@ -318,14 +322,80 @@ export default {
                 this.terminalFitAddOn = new FitAddon();
                 this.terminal.loadAddon(this.terminalFitAddOn);
                 window.addEventListener("resize", this.onResizeEvent);
+
+                // A terminal that is hidden when it mounts - the progress
+                // terminal, and the log beside the editor while a stack is
+                // being edited - is only laid out once it is revealed, and
+                // nothing fits it at that point. Watch the container so the
+                // fit happens when it actually gets a width.
+                if (typeof ResizeObserver !== "undefined") {
+                    this.terminalResizeObserver = new ResizeObserver(this.onContainerResize);
+                    this.terminalResizeObserver.observe(this.$refs.terminal);
+                }
             }
-            this.terminalFitAddOn.fit();
+            this.fitTerminal();
         },
+
+        /**
+         * Fit the terminal to its container, unless the container has no size
+         * to be fitted to.
+         *
+         * An element that is display:none - which is what v-show leaves behind
+         * - has no width to read, and getComputedStyle answers with the
+         * specified value rather than a used one. @xterm/addon-fit made that a
+         * NaN column count, which fit() then refused to apply; since 0.12 it
+         * reads the missing width as zero and resizes to its two column
+         * minimum instead, which is where the terminal stays, because nothing
+         * fits it again once it is shown. So do not fit what cannot be
+         * measured, and leave it at the size it already has.
+         *
+         * @returns {boolean} whether the terminal was fitted
+         */
+        fitTerminal() {
+            const container = this.$refs.terminal;
+
+            if (!container || !this.terminalFitAddOn) {
+                return false;
+            }
+
+            if (container.offsetWidth === 0 || container.offsetHeight === 0) {
+                return false;
+            }
+
+            this.lastFitWidth = container.offsetWidth;
+            this.terminalFitAddOn.fit();
+            return true;
+        },
+
+        /**
+         * Handles the container changing size, which includes it going from
+         * hidden to shown - the point at which it has a width for the first
+         * time.
+         *
+         * Only a change of width is acted on. The container of a terminal that
+         * is not given a height of its own is sized by the terminal itself, so
+         * refitting on its height would feed back into itself; the one case
+         * where the height changes on its own, the window being resized, is
+         * handled by onResizeEvent already.
+         */
+        onContainerResize() {
+            const container = this.$refs.terminal;
+
+            if (!container || container.offsetWidth === this.lastFitWidth) {
+                return;
+            }
+
+            this.onResizeEvent();
+        },
+
         /**
          * Handles the resize event of the terminal component.
          */
         onResizeEvent() {
-            this.terminalFitAddOn.fit();
+            if (!this.fitTerminal()) {
+                return;
+            }
+
             let rows = this.terminal.rows;
             let cols = this.terminal.cols;
             this.$root.emitAgent(this.endpoint, "terminalResize", this.name, rows, cols);
