@@ -520,3 +520,75 @@ describe("services the compose file does not declare", () => {
         expect(new ComposeDocument(includeYAML).toYAML()).toContain("./db.yaml");
     });
 });
+
+describe("stack notes", () => {
+    it("is empty when the stack has none", () => {
+        expect(new ComposeDocument(sampleYAML).xDockge.notes).toBe("");
+    });
+
+    it("reads notes written in the compose file", () => {
+        const yaml = `x-dockge:
+  notes: Remember to rotate the API key every 90 days
+services:
+  web:
+    image: nginx
+`;
+        expect(new ComposeDocument(yaml).xDockge.notes).toBe("Remember to rotate the API key every 90 days");
+    });
+
+    it("writes notes into the file, creating the x-dockge block", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "Behind the office reverse proxy";
+
+        const out = doc.toYAML();
+        expect(out).toContain("x-dockge:");
+        expect(out).toContain("Behind the office reverse proxy");
+        expect(new ComposeDocument(out).xDockge.notes).toBe("Behind the office reverse proxy");
+    });
+
+    it("keeps multi-line notes intact", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "first line\nsecond line";
+
+        expect(new ComposeDocument(doc.toYAML()).xDockge.notes).toBe("first line\nsecond line");
+    });
+
+    it("removes the x-dockge block again when the notes are cleared", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "temporary";
+        doc.xDockge.notes = "";
+
+        expect(doc.toYAML()).not.toContain("x-dockge");
+    });
+
+    it("leaves the rest of x-dockge alone when the notes are cleared", () => {
+        const yaml = `x-dockge:
+  notes: gone soon
+  auto-update: true
+services:
+  web:
+    image: nginx
+`;
+        const doc = new ComposeDocument(yaml);
+        doc.xDockge.notes = "";
+
+        const out = doc.toYAML();
+        expect(out).toContain("auto-update: true");
+        expect(out).not.toContain("gone soon");
+    });
+
+    it("trims surrounding whitespace", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "  padded  ";
+
+        expect(doc.xDockge.notes).toBe("padded");
+    });
+
+    it("treats whitespace-only notes as none at all", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "   ";
+
+        expect(doc.xDockge.notes).toBe("");
+        expect(doc.toYAML()).not.toContain("x-dockge");
+    });
+});

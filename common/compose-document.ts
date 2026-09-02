@@ -458,6 +458,8 @@ export class ComposeService extends ComposeMap {
 
 export const AUTO_UPDATE_KEY = "auto-update";
 
+export const NOTES_KEY = "notes";
+
 export class ComposeDockge extends ComposeMap {
 
     constructor(protected baseComposeData: ComposeData) {
@@ -476,6 +478,33 @@ export class ComposeDockge extends ComposeMap {
      */
     get autoUpdate(): boolean | undefined {
         return convertToBoolean(this.get(AUTO_UPDATE_KEY));
+    }
+
+    /**
+     * Free-text notes kept with the stack, `x-dockge.notes`.
+     *
+     * In the compose file rather than Dockge's database so they travel with the
+     * stack: back the directory up, or move it to another host, and the notes
+     * come too.
+     */
+    get notes(): string {
+        const value = this.get(NOTES_KEY, "");
+        return typeof value === "string" ? value : String(value);
+    }
+
+    set notes(value: string) {
+        const trimmed = (value ?? "").trim();
+
+        if (trimmed) {
+            this.set(NOTES_KEY, trimmed);
+            return;
+        }
+
+        this.delete(NOTES_KEY);
+
+        // Cleared notes on a stack with nothing else under x-dockge would
+        // otherwise leave an empty block behind in the file
+        this.removeIfEmpty();
     }
 }
 

@@ -309,5 +309,9 @@
     "filterLogMatches": "{count} matching line(s)",
     "defaultComposeTemplate": "Default compose file for new stacks",
     "defaultComposeTemplateHint": "Used as the starting point when you add a stack. Leave empty for the built-in example.",
-    "defaultComposeTemplatePlaceholder": "services:\n  app:\n    image: nginx:latest\n    restart: unless-stopped"
+    "defaultComposeTemplatePlaceholder": "services:\n  app:\n    image: nginx:latest\n    restart: unless-stopped",
+    "undefinedVariable": "This variable is not set in .env, so Docker Compose replaces it with an empty value.",
+    "notes": "Notes",
+    "notesPlaceholder": "Anything worth remembering about this stack...",
+    "notesHint": "Saved in the compose file, so they travel with the stack."
 }

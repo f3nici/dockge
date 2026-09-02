@@ -229,6 +229,29 @@
                                 </label>
                                 <ArrayInput :composeArray="composeDocument.xDockge.urls" :display-name="$t('url')" placeholder="https://" />
                             </div>
+
+                            <!-- Notes -->
+                            <div class="mb-2">
+                                <label class="form-label" for="stackNotes">
+                                    {{ $t("notes") }}
+                                </label>
+                                <textarea
+                                    id="stackNotes"
+                                    v-model="notes"
+                                    class="form-control"
+                                    rows="4"
+                                    :placeholder="$t('notesPlaceholder')"
+                                ></textarea>
+                                <div class="form-text">{{ $t("notesHint") }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Notes, shown once the stack has some -->
+                    <div v-if="!isEditMode && notes">
+                        <h4 class="mb-3">{{ $t("notes") }}</h4>
+                        <div class="shadow-box big-padding mb-3">
+                            <div class="stack-notes">{{ notes }}</div>
                         </div>
                     </div>
 
@@ -400,7 +423,7 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import { highlight, languages } from "prismjs/components/prism-core";
+import { highlight, hooks, languages } from "prismjs/components/prism-core";
 import { PrismEditor } from "vue-prism-editor";
 import "prismjs/components/prism-yaml";
 
@@ -416,6 +439,7 @@ import {
 } from "../../../common/util-common";
 import { StackData } from "../../../common/types";
 import { ComposeDocument } from "../../../common/compose-document";
+import { definedVariableNames, isUnresolvedVariable } from "../../../common/compose-variables";
 import { BModal } from "bootstrap-vue-next";
 import NetworkInput from "../components/NetworkInput.vue";
 import ProgressTerminal from "../components/ProgressTerminal.vue";
@@ -451,6 +475,46 @@ let prismjsSymbolDefinition = {
         pattern: /(?<!\$)\$(\{[^{}]*\}|\w+)/,
     }
 };
+
+/**
+ * The variable names the .env of the stack being highlighted defines.
+ *
+ * At module level because Prism's wrap hook is global and is handed no context
+ * of its own; set from highlighterYAML() just before each pass.
+ */
+let definedEnvNames = new Set<string>();
+
+let symbolHookAdded = false;
+
+/**
+ * Tooltip for a flagged variable. Held here rather than looked up in the hook,
+ * which runs per token and has no component to translate against.
+ */
+let undefinedVariableTitle = "";
+
+/**
+ * Mark the interpolations that would be substituted with nothing, so a typo in
+ * a variable name is visible rather than silently blanking an image tag or a
+ * port. Registered once: Prism keeps its hooks for the life of the page.
+ */
+function addUndefinedVariableHook() {
+    if (symbolHookAdded) {
+        return;
+    }
+    symbolHookAdded = true;
+
+    hooks.add("wrap", (env : {
+        type : string,
+        content : string,
+        classes : string[],
+        attributes : Record<string, string>,
+    }) => {
+        if (env.type === "symbol" && isUnresolvedVariable(env.content, definedEnvNames)) {
+            env.classes.push("symbol-undefined");
+            env.attributes.title = undefinedVariableTitle;
+        }
+    });
+}
 
 export default defineComponent({
     components: {
@@ -521,6 +585,21 @@ export default defineComponent({
          * the file does not own has no business being added to it.
          * @returns {object} Services keyed by name
          */
+        /**
+         * The stack's free-text notes, read from and written to x-dockge.notes.
+         * @returns {string} The notes, or "" when the stack has none
+         */
+        notes: {
+            get(): string {
+                return this.composeDocument.xDockge.notes;
+            },
+            set(value: string) {
+                // The deep watcher on composeDocument writes the YAML back out,
+                // the same way the URL list above does
+                this.composeDocument.xDockge.notes = value;
+            },
+        },
+
         displayedServices() {
             const declared = this.composeDocument.services.getServices();
 
@@ -1086,6 +1165,11 @@ export default defineComponent({
                     "symbol": prismjsSymbolDefinition["symbol"]
                 });
             }
+
+            addUndefinedVariableHook();
+            definedEnvNames = definedVariableNames(this.stack.composeENV ?? "");
+            undefinedVariableTitle = this.$t("undefinedVariable");
+
             return highlight(code, languages.yaml_with_symbols);
         },
 
@@ -1358,9 +1442,27 @@ export default defineComponent({
     z-index: 10;
 }
 
+.stack-notes {
+    // Notes are typed as plain text, so the line breaks the user put in are the
+    // only structure they have
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .agent-name {
     font-size: 13px;
     color: $dark-font-color3;
+}
+
+// Prism writes the editor's markup itself, so these spans are only reachable
+// from here through :deep()
+:deep(.token.symbol-undefined) {
+    color: $warning;
+    // Underlined as well as coloured: the editor's theme is already colourful,
+    // and this has to read as a warning rather than as one more token type
+    text-decoration: underline wavy;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
 }
 
 :deep(.compose-dropdown-menu) {
