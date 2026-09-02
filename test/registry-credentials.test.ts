@@ -35,6 +35,7 @@ function authOf(username : string, password : string) {
 
 describe("RegistryCredentialManager", () => {
     let dataDir : string;
+    let emptyDockerConfigDir : string;
     let manager : RegistryCredentialManager;
     const originalDockerConfig = process.env.DOCKER_CONFIG;
 
@@ -45,17 +46,25 @@ describe("RegistryCredentialManager", () => {
         }
 
         dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-registry-"));
-        delete process.env.DOCKER_CONFIG;
+
+        // A docker config directory of its own, and an empty one. Left unset,
+        // this would fall back to ~/.docker, so a machine that happens to be
+        // logged in to a registry (a CI runner, say) would change what these
+        // tests see.
+        emptyDockerConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-empty-docker-"));
+        process.env.DOCKER_CONFIG = emptyDockerConfigDir;
 
         manager = new RegistryCredentialManager();
         await manager.init(dataDir);
     });
 
     afterEach(() => {
-        fs.rmSync(dataDir, {
-            recursive: true,
-            force: true,
-        });
+        for (const dir of [ dataDir, emptyDockerConfigDir ]) {
+            fs.rmSync(dir, {
+                recursive: true,
+                force: true,
+            });
+        }
 
         if (originalDockerConfig === undefined) {
             delete process.env.DOCKER_CONFIG;
