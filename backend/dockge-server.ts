@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { MainRouter } from "./routers/main-router";
+import { basePathHref, injectBaseHref, normalizeBasePath, socketIOPath } from "../common/base-path";
 import * as fs from "node:fs";
 import { PackageJson } from "type-fest";
 import { Database } from "./database";
@@ -149,6 +150,10 @@ export class DockgeServer {
                 type: Boolean,
                 optional: true,
                 defaultValue: false,
+            },
+            basePath: {
+                type: String,
+                optional: true,
             }
         });
 
@@ -163,14 +168,21 @@ export class DockgeServer {
         this.config.dataDir = args.dataDir || process.env.DOCKGE_DATA_DIR || "./data/";
         this.config.stacksDir = args.stacksDir || process.env.DOCKGE_STACKS_DIR || defaultStacksDir;
         this.config.enableConsole = args.enableConsole || process.env.DOCKGE_ENABLE_CONSOLE === "true" || false;
+        this.config.basePath = normalizeBasePath(args.basePath || process.env.DOCKGE_BASE_PATH);
         this.stacksDir = this.config.stacksDir;
+
+        if (this.config.basePath) {
+            log.info("server", `Base path: ${this.config.basePath}`);
+        }
 
         log.debug("server", this.config);
 
         this.packageJSON = packageJSON as PackageJson;
 
         try {
-            this.indexHTML = fs.readFileSync("./frontend-dist/index.html").toString();
+            // The assets are built as relative URLs, so the browser is told
+            // here what to resolve them against
+            this.indexHTML = injectBaseHref(fs.readFileSync("./frontend-dist/index.html").toString(), this.config.basePath);
         } catch (e) {
             // "dist/index.html" is not necessary for development
             if (process.env.NODE_ENV !== "development") {
@@ -197,13 +209,21 @@ export class DockgeServer {
 
         // Binding Routers
         for (const router of this.routerList) {
-            this.app.use(router.create(this.app, this));
+            this.app.use(this.config.basePath || "/", router.create(this.app, this));
         }
 
         // Static files
-        this.app.use("/", expressStaticGzip("frontend-dist", {
+        this.app.use(this.config.basePath || "/", expressStaticGzip("frontend-dist", {
             enableBrotli: true,
         }));
+
+        // Someone who typed the bare domain has no way of knowing about the
+        // prefix, so send them to it rather than showing them an empty app
+        if (this.config.basePath) {
+            this.app.get("/", (_request, response) => {
+                response.redirect(basePathHref(this.config.basePath));
+            });
+        }
 
         // Universal Route Handler, must be at the end of all express routes.
         this.app.get("*", async (_request, response) => {
@@ -232,6 +252,7 @@ export class DockgeServer {
 
         // Create Socket.io
         this.io = new socketIO.Server(this.httpServer, {
+            path: socketIOPath(this.config.basePath),
             cors,
             allowRequest: (req, callback) => {
                 let isOriginValid = true;

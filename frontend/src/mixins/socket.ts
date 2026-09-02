@@ -5,6 +5,7 @@ import jwtDecode from "jwt-decode";
 import { AgentSocket } from "../../../common/agent-socket";
 import { AgentData, SimpleStackData } from "../../../common/types";
 import { StackFilter, StackStatusInfo } from "../../../common/util-common";
+import { basePathFromBaseURI, socketIOPath } from "../../../common/base-path";
 
 let socket : Socket;
 
@@ -205,7 +206,11 @@ export default defineComponent({
                 this.socketIO.connecting = true;
             }, 1500);
 
-            socket = io(url);
+            // Served from under the base path, so the client has to ask for it
+            // there rather than at the default /socket.io
+            socket = io(url, {
+                path: socketIOPath(basePathFromBaseURI(document.baseURI)),
+            });
 
             // Handling events from agents
             let agentSocket = new AgentSocket();
