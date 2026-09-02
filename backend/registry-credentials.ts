@@ -369,7 +369,16 @@ export class RegistryCredentialManager {
                 recursive: true,
                 mode: 0o700,
             });
-            fs.writeFileSync(this.authFilePath(), JSON.stringify(config, null, 4), { mode: 0o600 });
+            if (managedKeys.length > 0) {
+                // Taken away first: when there were no logins a moment ago this
+                // is a link to the user's own config, and writing would follow it
+                // and put Dockge's logins in their file
+                fs.rmSync(this.authFilePath(), { force: true });
+                fs.writeFileSync(this.authFilePath(), JSON.stringify(config, null, 4), { mode: 0o600 });
+            } else {
+                this.linkBaseConfig();
+            }
+
             this.linkBaseConfigEntries();
             this.authFileReady = managedKeys.length > 0;
             process.env.DOCKER_CONFIG = this.configDir;
@@ -425,6 +434,43 @@ export class RegistryCredentialManager {
         }
 
         config.credHelpers = credHelpers;
+    }
+
+    /**
+     * Point at the user's own config.json instead of copying it.
+     *
+     * With no logins of our own there is nothing to merge into it, and copying
+     * would put whatever registry credentials they have into a second file on
+     * disk. A link keeps them in the one place they were put while still giving
+     * docker a writable directory to keep its own state in.
+     */
+    private linkBaseConfig() {
+        const target = this.authFilePath();
+
+        // A copy written back when there were logins would otherwise stay behind
+        // and shadow the real one
+        try {
+            fs.rmSync(target, { force: true });
+        } catch (e) {
+            log.warn("registry", `Could not remove the generated docker config: ${e}`);
+            return;
+        }
+
+        if (!this.baseConfigDir) {
+            return;
+        }
+
+        const source = path.join(this.baseConfigDir, "config.json");
+
+        if (!fs.existsSync(source)) {
+            return;
+        }
+
+        try {
+            fs.symlinkSync(source, target);
+        } catch (e) {
+            log.warn("registry", `Could not link the existing docker config at ${source}: ${e}`);
+        }
     }
 
     /**

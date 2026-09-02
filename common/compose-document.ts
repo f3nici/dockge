@@ -77,11 +77,24 @@ export class ComposeDocument {
             // (<<: *common) resolved, so a service that inherits its image from
             // a shared block reports that image rather than nothing.
             //
-            // Kept apart from mainDoc.data, which is what toYAML() rebuilds the
-            // file from: resolving a merge key there would write the shared
+            // Resolved apart from mainDoc.data, which is what toYAML() rebuilds
+            // the file from: resolving a merge key there would write the shared
             // block out again inline under every service that referenced it.
-            const resolvedYAML = composeENV ? envsubstYAML(composeYAML, dotenv.parse(composeENV)) : composeYAML;
-            const envsubstData = this.parseYAML(resolvedYAML, true).data;
+            //
+            // With neither substitution nor merge keys to apply, the two stay
+            // the same object, as they always have: readers go through
+            // envsubstData while writers go through data, so a stack with no
+            // .env would otherwise stop showing edits made in the GUI.
+            const hasMergeKeys = containsMergeKey(mainDoc.data);
+            let envsubstData;
+
+            if (composeENV) {
+                envsubstData = this.parseYAML(envsubstYAML(composeYAML, dotenv.parse(composeENV)), hasMergeKeys).data;
+            } else if (hasMergeKeys) {
+                envsubstData = this.parseYAML(composeYAML, true).data;
+            } else {
+                envsubstData = mainDoc.data;
+            }
 
             this.doc = mainDoc.doc;
             this.composeData = {
@@ -159,6 +172,31 @@ export class ComposeDocument {
 
         return doc.toString();
     }
+}
+
+/**
+ * Whether a parsed compose file uses a merge key anywhere.
+ *
+ * Resolving them needs a second parse, which costs the read view its identity
+ * with the write view, so it is only done for the files that actually need it.
+ * @param data A document parsed without merge resolution, where a merge key is
+ * still present as a literal "<<" entry
+ * @returns true when at least one merge key is there
+ */
+function containsMergeKey(data: any): boolean {
+    if (!data || typeof data !== "object") {
+        return false;
+    }
+
+    if (Array.isArray(data)) {
+        return data.some(containsMergeKey);
+    }
+
+    if ("<<" in data) {
+        return true;
+    }
+
+    return Object.values(data).some(containsMergeKey);
 }
 
 export abstract class ComposeNode {
@@ -493,10 +531,12 @@ export class ComposeDockge extends ComposeMap {
     }
 
     set notes(value: string) {
-        const trimmed = (value ?? "").trim();
+        const text = value ?? "";
 
-        if (trimmed) {
-            this.set(NOTES_KEY, trimmed);
+        // Stored as typed. This runs on every keystroke behind a v-model, so
+        // trimming here would take away the space the user just pressed.
+        if (text.trim()) {
+            this.set(NOTES_KEY, text);
             return;
         }
 

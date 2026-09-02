@@ -22,8 +22,16 @@ export function normalizeBasePath(value? : string | null) : string {
     }
 
     // Collapse repeated slashes and drop the ones on either end, then put a
-    // single leading one back: "//dockge/ui//" becomes "/dockge/ui"
-    const segments = trimmed.split("/").filter(segment => segment !== "");
+    // single leading one back: "//dockge/ui//" becomes "/dockge/ui".
+    //
+    // Anything outside the characters a path segment is normally written with
+    // is dropped as it goes: this ends up inside an HTML attribute and a
+    // socket.io path, and neither is a place to be passing through a stray
+    // quote or angle bracket.
+    const segments = trimmed
+        .split("/")
+        .map(segment => segment.replace(/[^A-Za-z0-9._~%-]/g, ""))
+        .filter(segment => segment !== "");
 
     if (segments.length === 0) {
         return "";
@@ -61,7 +69,15 @@ export function socketIOPath(basePath : string) : string {
  * @returns index.html with a base tag at the top of its head
  */
 export function injectBaseHref(html : string, basePath : string) : string {
-    const tag = `<base href="${basePathHref(basePath)}">`;
+    // normalizeBasePath has already taken out everything that would matter here,
+    // but this is what actually goes into the page, so it escapes too
+    const href = basePathHref(basePath)
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const tag = `<base href="${href}">`;
 
     // Replaced rather than added to, so restarting with a different base path
     // does not leave the previous one behind
@@ -78,13 +94,14 @@ export function injectBaseHref(html : string, basePath : string) : string {
 }
 
 /**
- * The base path the page is being served under, read from the tag above.
- * @param baseURI document.baseURI
+ * The base path a URL points into: the page's own, from document.baseURI, or an
+ * agent's, from the address it was added under.
+ * @param url An absolute URL
  * @returns The normalised base path
  */
-export function basePathFromBaseURI(baseURI : string) : string {
+export function basePathFromURL(url : string) : string {
     try {
-        return normalizeBasePath(new URL(baseURI).pathname);
+        return normalizeBasePath(new URL(url).pathname);
     } catch (e) {
         return "";
     }

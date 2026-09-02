@@ -46,7 +46,7 @@
                     </BForm>
 
                     <template #footer>
-                        <button class="btn btn-normal" data-toggle="tooltip" :title="$t('tooltipServiceUpdateIgnore')" @click="skipCurrentUpdate">
+                        <button v-if="composeService.exists" class="btn btn-normal" data-toggle="tooltip" :title="$t('tooltipServiceUpdateIgnore')" @click="skipCurrentUpdate">
                             <font-awesome-icon icon="ban" class="me-1" />{{ $t("ignoreUpdate") }}
                         </button>
                         <button class="btn btn-primary" data-toggle="tooltip" :title="$t('tooltipDoServiceUpdate')" @click="updateService">
@@ -545,6 +545,15 @@ export default defineComponent({
         },
         skipCurrentUpdate() {
             this.$refs[this.updateModalId].hide();
+
+            // Skipping is recorded as a label on the service, so there has to be
+            // one in this compose file to put it on. A service that came from an
+            // `include:` is only shown here, not owned here: writing the label
+            // would add a stub service to the file that docker compose would
+            // then reject for having no image.
+            if (!this.composeService.exists) {
+                return;
+            }
 
             this.composeService.labels.set(LABEL_IMAGEUPDATES_IGNORE, this.service.remoteImageDigest);
 

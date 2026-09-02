@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-    basePathFromBaseURI,
+    basePathFromURL,
     basePathHref,
     injectBaseHref,
     normalizeBasePath,
@@ -34,6 +34,21 @@ describe("normalizeBasePath", () => {
 
     it("ignores surrounding whitespace", () => {
         expect(normalizeBasePath("  /dockge  ")).toBe("/dockge");
+    });
+
+    it("drops characters that have no business in a path segment", () => {
+        // This ends up in an HTML attribute and a socket.io path
+        expect(normalizeBasePath("/dock\"ge")).toBe("/dockge");
+        expect(normalizeBasePath("/<script>")).toBe("/script");
+    });
+
+    it("keeps the punctuation a path legitimately uses", () => {
+        expect(normalizeBasePath("/my-apps/dockge_v2.0")).toBe("/my-apps/dockge_v2.0");
+        expect(normalizeBasePath("/a%20b")).toBe("/a%20b");
+    });
+
+    it("is empty when nothing usable is left", () => {
+        expect(normalizeBasePath("/<>")).toBe("");
     });
 });
 
@@ -84,26 +99,35 @@ describe("injectBaseHref", () => {
             .toContain("<head lang=\"en\"><base href=\"/dockge/\">");
     });
 
+    it("escapes what it puts in the attribute", () => {
+        // normalizeBasePath already takes these out; this is the last line of
+        // defence for whatever reaches injectBaseHref another way
+        const out = injectBaseHref(html, "/a\"><script>");
+
+        expect(out).not.toContain("<script>");
+        expect(out).toContain("&quot;");
+    });
+
     it("still produces the tag when there is no head at all", () => {
         expect(injectBaseHref("<p>hi</p>", "/dockge")).toBe("<base href=\"/dockge/\"><p>hi</p>");
     });
 });
 
-describe("basePathFromBaseURI", () => {
+describe("basePathFromURL", () => {
     it("reads the path back out of a base URI", () => {
-        expect(basePathFromBaseURI("https://example.com/dockge/")).toBe("/dockge");
+        expect(basePathFromURL("https://example.com/dockge/")).toBe("/dockge");
     });
 
     it("is empty at the root", () => {
-        expect(basePathFromBaseURI("https://example.com/")).toBe("");
+        expect(basePathFromURL("https://example.com/")).toBe("");
     });
 
     it("survives something that is not a URL", () => {
-        expect(basePathFromBaseURI("not a url")).toBe("");
+        expect(basePathFromURL("not a url")).toBe("");
     });
 
     it("round-trips what the server wrote", () => {
         const basePath = normalizeBasePath("/apps/dockge/");
-        expect(basePathFromBaseURI("https://example.com" + basePathHref(basePath))).toBe(basePath);
+        expect(basePathFromURL("https://example.com" + basePathHref(basePath))).toBe(basePath);
     });
 });

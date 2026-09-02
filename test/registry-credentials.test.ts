@@ -169,7 +169,9 @@ describe("RegistryCredentialManager", () => {
 
             await manager.save([]);
 
-            expect(readConfig().auths).toEqual({});
+            // The generated config goes with them: there is nothing of ours left
+            // to put in it, and the user has no config of their own to link to
+            expect(fs.existsSync(configFile())).toBe(false);
             expect(manager.skopeoAuthArgs()).toEqual([]);
 
             // DOCKER_CONFIG stays pointed at the writable directory even with no
@@ -180,9 +182,57 @@ describe("RegistryCredentialManager", () => {
         it("points docker at a writable config directory before any login exists", async () => {
             // buildx creates $DOCKER_CONFIG/buildx on every docker compose call,
             // which fails wherever /root/.docker is not writable
-            expect(process.env.DOCKER_CONFIG).toBe(path.join(dataDir, "docker-config"));
-            expect(fs.existsSync(configFile())).toBe(true);
+            const configDir = path.join(dataDir, "docker-config");
+
+            expect(process.env.DOCKER_CONFIG).toBe(configDir);
+            expect(fs.existsSync(configDir)).toBe(true);
             expect(manager.skopeoAuthArgs()).toEqual([]);
+        });
+
+        it("links a mounted docker config rather than copying the credentials in it", async () => {
+            const homeConfigDir = makeHomeConfig({
+                auths: {
+                    "quay.io": { auth: authOf("other", "secret") },
+                },
+            });
+
+            const withBase = new RegistryCredentialManager();
+            await withBase.init(dataDir);
+
+            // Their credentials stay in the one file they put them in
+            expect(fs.lstatSync(configFile()).isSymbolicLink()).toBe(true);
+            expect(fs.realpathSync(configFile())).toBe(fs.realpathSync(path.join(homeConfigDir, "config.json")));
+
+            fs.rmSync(homeConfigDir, {
+                recursive: true,
+                force: true,
+            });
+        });
+
+        it("replaces that link with a real file once a login is added", async () => {
+            const homeConfigDir = makeHomeConfig({
+                auths: {
+                    "quay.io": { auth: authOf("other", "secret") },
+                },
+            });
+
+            const withBase = new RegistryCredentialManager();
+            await withBase.init(dataDir);
+            await withBase.save([{
+                registry: "docker.io",
+                username: "user",
+                password: "token",
+            }]);
+
+            // Writing through the link would edit the user's own config
+            expect(fs.lstatSync(configFile()).isSymbolicLink()).toBe(false);
+            expect(readConfig().auths["quay.io"]).toEqual({ auth: authOf("other", "secret") });
+            expect(JSON.parse(fs.readFileSync(path.join(homeConfigDir, "config.json"), "utf-8")).auths["docker.io"]).toBeUndefined();
+
+            fs.rmSync(homeConfigDir, {
+                recursive: true,
+                force: true,
+            });
         });
 
         it("carries over a mounted docker config when there are no logins", async () => {

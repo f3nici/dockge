@@ -437,6 +437,40 @@ describe("integers written with a leading zero", () => {
     });
 });
 
+describe("editing through the GUI", () => {
+    it("reads back an image that was just set, with no .env", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.services.getService("web").image = "nginx:1.27";
+
+        // The getter goes through the read view and the setter through the write
+        // view, so a stack with no .env depends on those being the same object
+        expect(doc.services.getService("web").image).toBe("nginx:1.27");
+    });
+
+    it("reads back an image on a stack that uses merge keys", () => {
+        const yaml = `x-common: &common
+  restart: unless-stopped
+services:
+  web:
+    <<: *common
+    image: nginx:1.25
+`;
+        const doc = new ComposeDocument(yaml);
+        doc.services.getService("web").image = "nginx:1.27";
+
+        expect(doc.toYAML()).toContain("nginx:1.27");
+    });
+
+    it("shows a container added in the GUI", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        const added = doc.services.getService("cache");
+        added.image = "redis:7";
+
+        expect(doc.services.getService("cache").image).toBe("redis:7");
+        expect(doc.toYAML()).toContain("redis:7");
+    });
+});
+
 describe("shared configuration via merge keys", () => {
     // A common block reused with "<<: *common" is how compose files avoid
     // repeating themselves; the image has to be read through it
@@ -577,11 +611,13 @@ services:
         expect(out).not.toContain("gone soon");
     });
 
-    it("trims surrounding whitespace", () => {
+    it("stores the notes exactly as typed", () => {
         const doc = new ComposeDocument(sampleYAML);
-        doc.xDockge.notes = "  padded  ";
+        // The setter runs on every keystroke behind a v-model, so trimming here
+        // would take away the space the user just pressed
+        doc.xDockge.notes = "a word ";
 
-        expect(doc.xDockge.notes).toBe("padded");
+        expect(doc.xDockge.notes).toBe("a word ");
     });
 
     it("treats whitespace-only notes as none at all", () => {

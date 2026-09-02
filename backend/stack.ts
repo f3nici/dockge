@@ -120,6 +120,10 @@ export class Stack {
         this._composeYAML = undefined;
         this._composeENV = undefined;
         this._composeDocument = undefined;
+
+        // Left stale, a cached Stack would report no override for a stack that
+        // has one, and the next save would send "" back and delete the file
+        this._composeOverrideYAML = undefined;
     }
 
     static notificationManager: NotificationManager = new NotificationManager();
