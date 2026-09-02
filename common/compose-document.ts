@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Alias, Document, isAlias, isMap, isSeq, Node, Pair, parseDocument, Scalar } from "yaml";
+import { Alias, Document, isAlias, isMap, isScalar, isSeq, Node, Pair, parseDocument, Scalar, ScalarTag, Tags } from "yaml";
 import dotenv, { DotenvParseOutput } from "dotenv";
 import { LooseObject } from "./util-common";
 // @ts-ignore
@@ -23,6 +23,46 @@ export type ComposeData = {
 }
 
 export const X_DOCKGE = "x-dockge";
+
+/**
+ * The format marker put on integers written with a leading zero.
+ *
+ * `yaml` implements the YAML 1.2 core schema, in which a plain integer with a
+ * leading zero (`0755`, `0644`) is read as decimal and, crucially, written back
+ * out from the parsed number: `mode: 0755` becomes `mode: 755`. Docker compose
+ * reads the same token as octal, so that rewrite silently changes the value, and
+ * every compose file we write back is one the user maintains by hand.
+ */
+const LEGACY_LEADING_ZERO_FORMAT = "LEGACY_LEADING_ZERO";
+
+/**
+ * Claims exactly the integers above and stringifies them from the text they were
+ * parsed from, so they survive a round trip byte for byte. `resolve` matches the
+ * built-in decimal tag, so nothing reading the parsed document sees a different
+ * value than it did before.
+ */
+const legacyLeadingZeroInt: ScalarTag = {
+    // Has to claim numbers: the stringifier only considers tags whose identify()
+    // accepts the value, and without this it falls back to the built-in int tag,
+    // which writes the parsed number and drops the original text
+    identify: (value: unknown) => typeof value === "number",
+    default: true,
+    tag: "tag:yaml.org,2002:int",
+    format: LEGACY_LEADING_ZERO_FORMAT,
+    // A strict subset of the built-in decimal int test, /^[-+]?[0-9]+$/, so this
+    // only ever claims tokens that tag would have claimed (and mangled) anyway
+    test: /^[-+]?0[0-9]+$/,
+    resolve: (str: string) => parseInt(str, 10),
+    stringify: (item: Scalar) => typeof item.source === "string" ? item.source : String(item.value),
+};
+
+/**
+ * Every parseDocument() and Document in this module has to be given these, or a
+ * value parsed with the tag above is stringified without it and mangled anyway.
+ */
+const YAML_OPTIONS = {
+    customTags: (tags: Tags): Tags => [ legacyLeadingZeroInt, ...tags ],
+};
 
 export class ComposeDocument {
 
@@ -49,7 +89,7 @@ export class ComposeDocument {
     }
 
     private parseYAML(yaml: string) {
-        const doc = parseDocument(yaml);
+        const doc = parseDocument(yaml, YAML_OPTIONS);
         if (doc.errors.length > 0) {
             throw doc.errors[0];
         }
@@ -88,13 +128,18 @@ export class ComposeDocument {
         // the ones the user actually wrote, which we restore below from the original
         // document. Without this, toJS() flattens anchors (scalars lose them entirely)
         // and the rebuilt document either drops them or renames them to "a1", "a2"...
-        const doc = new Document(this.composeData.data, { aliasDuplicateObjects: false });
+        const doc = new Document(this.composeData.data, { aliasDuplicateObjects: false,
+            ...YAML_OPTIONS });
 
         // Stick back the yaml comments
         copyYAMLComments(doc, this.doc);
 
         // Restore the original YAML anchors and aliases (e.g. &env / *env)
         restoreYAMLAnchors(doc, this.doc);
+
+        // Restore integers written with a leading zero, which are only numbers by
+        // the time they reach composeData and would be rebuilt without the zero
+        restoreYAMLScalarSources(doc, this.doc);
 
         return doc.toString();
     }
@@ -432,7 +477,7 @@ export class ComposeDockge extends ComposeMap {
  * @returns The updated compose file contents
  */
 export function setAutoUpdateInYAML(composeYAML: string, autoUpdate: boolean | undefined): string {
-    const doc = parseDocument(composeYAML);
+    const doc = parseDocument(composeYAML, YAML_OPTIONS);
     if (doc.errors.length > 0) {
         throw doc.errors[0];
     }
@@ -572,7 +617,7 @@ function envsubst(string : string, variables : LooseObject) : string {
  * @returns string Yaml string with environment variables replaced
  */
 function envsubstYAML(content : string, env : DotenvParseOutput) : string {
-    const doc = parseDocument(content);
+    const doc = parseDocument(content, YAML_OPTIONS);
     if (doc.contents) {
         // @ts-ignore
         for (const item of doc.contents.items) {
@@ -678,6 +723,76 @@ function restoreYAMLAnchors(doc : Document, src : Document) {
     for (const entry of entries.filter(e => e.kind === "alias")) {
         if (entry.path.length > 0 && doc.hasIn(entry.path)) {
             doc.setIn(entry.path, new Alias(entry.name));
+        }
+    }
+}
+
+type ScalarSourceEntry = {
+    path: YAMLPath;
+    value: unknown;
+    source: string;
+};
+
+/**
+ * Walk the source YAML tree and record the original text of every scalar the
+ * stringifier would not reproduce on its own, keyed by its path from the
+ * document root. Currently that means integers written with a leading zero;
+ * see legacyLeadingZeroInt.
+ */
+function collectYAMLScalarSources(node : unknown, path : YAMLPath, out : ScalarSourceEntry[]) {
+    if (!node || typeof node !== "object") {
+        return;
+    }
+
+    if (isScalar(node)) {
+        if (node.format === LEGACY_LEADING_ZERO_FORMAT && typeof node.source === "string") {
+            out.push({ path,
+                value: node.value,
+                source: node.source });
+        }
+        return;
+    }
+
+    if (isMap(node)) {
+        for (const pair of node.items) {
+            // Only follow scalar keys, which is all docker compose ever uses
+            if (pair.key && typeof pair.key === "object" && "value" in pair.key) {
+                collectYAMLScalarSources(pair.value, [ ...path, pair.key.value as string ], out);
+            }
+        }
+    } else if (isSeq(node)) {
+        node.items.forEach((item, index) => collectYAMLScalarSources(item, [ ...path, index ], out));
+    }
+}
+
+/**
+ * Re-apply those original scalar texts onto a freshly rebuilt document, matching
+ * nodes by their path. ComposeDocument.toYAML() builds from plain JS data, where
+ * `0755` has already collapsed to the number 755, so without this an edit made
+ * anywhere in the GUI rewrites every such value in the file.
+ *
+ * Only a node whose value still matches is restored, so a field the user actually
+ * changed is written out normally rather than reverting to the old text.
+ * @param doc Document rebuilt from the JS data
+ * @param src Original parsed document that still carries the scalar sources
+ */
+function restoreYAMLScalarSources(doc : Document, src : Document) {
+    if (!src.contents) {
+        return;
+    }
+
+    const entries : ScalarSourceEntry[] = [];
+    collectYAMLScalarSources(src.contents, [], entries);
+
+    for (const entry of entries) {
+        if (entry.path.length === 0) {
+            continue;
+        }
+
+        const node = doc.getIn(entry.path, true);
+        if (isScalar(node) && node.value === entry.value) {
+            node.format = LEGACY_LEADING_ZERO_FORMAT;
+            node.source = entry.source;
         }
     }
 }

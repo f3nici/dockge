@@ -158,6 +158,7 @@
                 <Terminal
                     ref="combinedTerminal"
                     class="mb-3 terminal"
+                    filterable
                     :name="combinedTerminalName"
                     :endpoint="endpoint"
                     :rows="combinedTerminalRows"
@@ -237,6 +238,7 @@
                         <Terminal
                             ref="combinedTerminal"
                             class="mb-3 terminal"
+                            filterable
                             :name="combinedTerminalName"
                             :endpoint="endpoint"
                             :rows="combinedTerminalRows"

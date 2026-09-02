@@ -313,24 +313,19 @@ export class RegistryCredentialManager {
 
     /**
      * Write the stored logins into a docker config.json and point the docker
-     * CLI at it. With no logins left, the original DOCKER_CONFIG is restored so
-     * Dockge stays out of the way entirely.
+     * CLI at it.
+     *
+     * This happens even with no logins configured, because DOCKER_CONFIG is
+     * also where the docker CLI keeps its own state: left pointing at the
+     * default ~/.docker, buildx tries to create /root/.docker/buildx on every
+     * `docker compose` call, which fails noisily wherever that path is not
+     * writable (a read-only root filesystem, or a container not running as
+     * root). Pointing it into the data directory, which Dockge must be able to
+     * write to anyway, keeps that out of the user's way. Anything the original
+     * config held is carried across, so this stays invisible either way.
      */
     private writeAuthFile() {
         if (!this.initialized) {
-            return;
-        }
-
-        if (this.credentials.length === 0) {
-            this.authFileReady = false;
-            this.restoreDockerConfigEnv();
-
-            try {
-                fs.rmSync(this.authFilePath(), { force: true });
-            } catch (e) {
-                log.warn("registry", "Could not remove the generated docker config: " + e);
-            }
-
             return;
         }
 
@@ -363,7 +358,11 @@ export class RegistryCredentialManager {
             auths,
         };
 
-        this.dropConflictingCredentialHelpers(config, managedKeys);
+        if (managedKeys.length > 0) {
+            // With no logins of our own, nothing can be shadowed, and the user's
+            // own helpers are theirs to keep
+            this.dropConflictingCredentialHelpers(config, managedKeys);
+        }
 
         try {
             fs.mkdirSync(this.configDir, {
@@ -372,14 +371,23 @@ export class RegistryCredentialManager {
             });
             fs.writeFileSync(this.authFilePath(), JSON.stringify(config, null, 4), { mode: 0o600 });
             this.linkBaseConfigEntries();
-            this.authFileReady = true;
+            this.authFileReady = managedKeys.length > 0;
             process.env.DOCKER_CONFIG = this.configDir;
 
-            log.debug("registry", `Wrote registry logins to ${this.authFilePath()}`);
+            log.debug("registry", `Wrote the docker config to ${this.authFilePath()}`);
         } catch (e) {
             this.authFileReady = false;
-            log.error("registry", "Failed to write the docker config with the registry logins: " + e);
-            throw e;
+
+            if (managedKeys.length > 0) {
+                // A login the user just asked us to save went nowhere, so say so
+                log.error("registry", "Failed to write the docker config with the registry logins: " + e);
+                throw e;
+            }
+
+            // Only the buildx redirect is lost, which is not worth failing a
+            // startup over: carry on with whatever DOCKER_CONFIG was in effect
+            this.restoreDockerConfigEnv();
+            log.warn("registry", "Could not write the docker config, so docker keeps using its default: " + e);
         }
     }
 

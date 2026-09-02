@@ -360,3 +360,79 @@ services:
         expect(out).toContain("<<: *common");
     });
 });
+
+describe("integers written with a leading zero", () => {
+    // Docker compose reads these as octal, so rewriting 0755 as 755 changes the
+    // value. Dockge writes compose files the user maintains by hand, so whatever
+    // they typed has to come back out unchanged.
+    const octalYAML = `services:
+  web:
+    image: nginx
+    configs:
+      - source: site
+        mode: 0755
+    environment:
+      UMASK: 0022
+      PUID: 1000
+`;
+
+    it("keeps them intact when writing x-dockge.auto-update", () => {
+        const out = setAutoUpdateInYAML(octalYAML, true);
+
+        expect(out).toContain("mode: 0755");
+        expect(out).toContain("UMASK: 0022");
+        expect(out).toContain("auto-update: true");
+    });
+
+    it("restores the file exactly when switching back to inherit", () => {
+        const enabled = setAutoUpdateInYAML(octalYAML, true);
+        expect(setAutoUpdateInYAML(enabled, undefined)).toBe(octalYAML);
+    });
+
+    it("leaves ordinary integers alone", () => {
+        const out = setAutoUpdateInYAML(octalYAML, false);
+
+        expect(out).toContain("PUID: 1000");
+        expect(out).not.toContain("PUID: 01000");
+    });
+
+    it("does not change the value seen by the rest of Dockge", () => {
+        const doc = new ComposeDocument(octalYAML);
+        const env = doc.services.getService("web").composeData.data.environment;
+
+        // Parsed as decimal, exactly as the built-in tag did before
+        expect(env.UMASK).toBe(22);
+        expect(env.PUID).toBe(1000);
+    });
+
+    it("keeps them intact when an unrelated field is edited in the GUI", () => {
+        const doc = new ComposeDocument(octalYAML);
+        doc.services.getService("web").image = "nginx:1.27";
+        const out = doc.toYAML();
+
+        expect(out).toContain("nginx:1.27");
+        expect(out).toContain("mode: 0755");
+        expect(out).toContain("UMASK: 0022");
+    });
+
+    it("writes the new value normally when the field itself is edited", () => {
+        const doc = new ComposeDocument(octalYAML);
+        doc.services.getService("web").composeData.data.environment.UMASK = 27;
+
+        expect(doc.toYAML()).toContain("UMASK: 27");
+    });
+
+    it("leaves quoted and explicitly octal values as they were", () => {
+        const yaml = `services:
+  web:
+    image: nginx
+    environment:
+      QUOTED: "0755"
+      EXPLICIT: 0o755
+`;
+        const out = setAutoUpdateInYAML(yaml, true);
+
+        expect(out).toContain("QUOTED: \"0755\"");
+        expect(out).toContain("EXPLICIT: 0o755");
+    });
+});

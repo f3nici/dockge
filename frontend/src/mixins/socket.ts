@@ -2,14 +2,22 @@ import { io } from "socket.io-client";
 import { Socket } from "socket.io-client";
 import { defineComponent } from "vue";
 import jwtDecode from "jwt-decode";
-import { Terminal } from "@xterm/xterm";
 import { AgentSocket } from "../../../common/agent-socket";
 import { AgentData, SimpleStackData } from "../../../common/types";
 import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 
 let socket : Socket;
 
-let terminalMap : Map<string, Terminal> = new Map();
+/**
+ * What a bound terminal has to offer this mixin. The Terminal component binds
+ * itself rather than its xterm instance, so it can see everything written to it
+ * (the log filter needs the lines it is not currently showing).
+ */
+export interface TerminalSink {
+    write(data : string) : void;
+}
+
+let terminalMap : Map<string, TerminalSink> = new Map();
 
 export default defineComponent({
     data() {
@@ -448,7 +456,7 @@ export default defineComponent({
 
         },
 
-        bindTerminal(endpoint : string, terminalName : string, terminal : Terminal) {
+        bindTerminal(endpoint : string, terminalName : string, terminal : TerminalSink) {
             // Load terminal, get terminal screen
             this.emitAgent(endpoint, "terminalJoin", terminalName, (res) => {
                 if (res.ok) {
