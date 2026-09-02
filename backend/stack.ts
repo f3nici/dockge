@@ -7,6 +7,8 @@ import { DockgeSocket, fileExists, ValidationError } from "./util-server";
 import path from "path";
 import {
     acceptedComposeFileNames,
+    acceptedComposeOverrideFileNames,
+    DEFAULT_COMPOSE_OVERRIDE_FILE_NAME,
     COMBINED_TERMINAL_COLS,
     COMBINED_TERMINAL_ROWS,
     CREATED_FILE,
@@ -35,6 +37,15 @@ export class Stack {
     protected _composeENV?: string;
     protected _configFilePath?: string;
     protected _composeFileName: string = "compose.yaml";
+
+    /**
+     * The override file docker compose merges over the main one, if this stack
+     * has one. Held apart from the compose file: Dockge writes it back verbatim
+     * and never parses it for services, the way the main file is parsed.
+     */
+    protected _composeOverrideFileName: string = DEFAULT_COMPOSE_OVERRIDE_FILE_NAME;
+
+    protected _composeOverrideYAML: string | undefined = undefined;
     protected _composeDocument: ComposeDocument | undefined = undefined;
     protected _unhealthy: boolean = false;
     protected _imageUpdatesAvailable: boolean = false;
@@ -119,6 +130,15 @@ export class Stack {
         this._composeYAML = composeYAML;
         this._composeENV = composeENV;
 
+        // Whichever override file the stack already has, so it is written back
+        // under the name it came in with rather than a second one appearing
+        for (const filename of acceptedComposeOverrideFileNames) {
+            if (fs.existsSync(path.join(this.path, filename))) {
+                this._composeOverrideFileName = filename;
+                break;
+            }
+        }
+
         // Check if compose file name is different from compose.yaml
         for (const filename of acceptedComposeFileNames) {
             if (fs.existsSync(path.join(this.path, filename))) {
@@ -151,6 +171,8 @@ export class Stack {
             ...simpleData,
             composeYAML: this.composeYAML,
             composeENV: this.composeENV,
+            composeOverrideYAML: this.composeOverrideYAML,
+            composeOverrideFileName: this.composeOverrideFileName,
             primaryHostname,
             services: Object.fromEntries(this._services),
         };
@@ -306,6 +328,39 @@ export class Stack {
         Stack.invalidateCache(this.name);
     }
 
+    /**
+     * Write the compose override file, or take it away when the editor is left
+     * empty.
+     *
+     * Kept out of save(): the override is not parsed for services, is not sent
+     * back through saveStack(), and a stack that never had one must not end up
+     * with an empty file that docker compose would still merge.
+     * @param content The override file's new contents
+     */
+    async saveComposeOverride(content : string) : Promise<void> {
+        if (!this.isManagedByDockge) {
+            throw new ValidationError("Stack is not managed by Dockge");
+        }
+
+        const filePath = path.join(this.path, this._composeOverrideFileName);
+        const trimmed = content.trim();
+
+        if (!trimmed) {
+            await fsAsync.rm(filePath, { force: true });
+            this._composeOverrideYAML = "";
+            Stack.invalidateCache(this.name);
+            return;
+        }
+
+        // Refused here rather than by docker later, where it would come back as
+        // a failed deploy with the reason buried in the terminal
+        yaml.parse(content);
+
+        await fsAsync.writeFile(filePath, content);
+        this._composeOverrideYAML = content;
+        Stack.invalidateCache(this.name);
+    }
+
     async validate() {
         // Check name, allows [a-z][0-9] _ - only
         if (!this.name.match(/^[a-z0-9_-]+$/)) {
@@ -418,6 +473,22 @@ export class Stack {
             }
         }
         return this._composeYAML;
+    }
+
+    get composeOverrideYAML() : string {
+        if (this._composeOverrideYAML === undefined) {
+            try {
+                this._composeOverrideYAML = fs.readFileSync(path.join(this.path, this._composeOverrideFileName), "utf-8");
+            } catch (e) {
+                // No override file, which is the normal case
+                this._composeOverrideYAML = "";
+            }
+        }
+        return this._composeOverrideYAML;
+    }
+
+    get composeOverrideFileName() : string {
+        return this._composeOverrideFileName;
     }
 
     get composeENV() : string {

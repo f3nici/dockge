@@ -312,6 +312,22 @@
                         </div>
                     </BModal>
 
+                    <!-- Compose override editor -->
+                    <div v-if="isEditMode && supportsComposeOverride" class="mb-3">
+                        <h4 class="mb-3">{{ stack.composeOverrideFileName }}</h4>
+                        <div class="shadow-box mb-1 editor-box" :class="{'edit-mode' : isEditMode}">
+                            <prism-editor
+                                v-model="stack.composeOverrideYAML"
+                                class="yaml-editor"
+                                :highlight="highlighterYAML"
+                                line-numbers
+                                @focus="editorFocus = true"
+                                @blur="editorFocus = false"
+                            ></prism-editor>
+                        </div>
+                        <div class="form-text">{{ $t("composeOverrideHint") }}</div>
+                    </div>
+
                     <!-- ENV editor -->
                     <div v-if="isEditMode">
                         <div class="d-flex align-items-center mb-3">
@@ -598,6 +614,19 @@ export default defineComponent({
                 // the same way the URL list above does
                 this.composeDocument.xDockge.notes = value;
             },
+        },
+
+        /**
+         * Whether this stack's agent sends the compose override file.
+         *
+         * An agent from before this existed simply leaves the field out, which
+         * is how the editor knows not to offer something the other end cannot
+         * save. New stacks are left out too: there is no directory to write an
+         * override into until the stack itself has been saved.
+         * @returns {boolean} true when the override editor should be shown
+         */
+        supportsComposeOverride() {
+            return !this.isAdd && typeof this.stack.composeOverrideFileName === "string";
         },
 
         displayedServices() {
@@ -1063,28 +1092,64 @@ export default defineComponent({
 
             this.startComposeAction("stackDeploying");
 
-            this.$root.emitAgent(this.stack.endpoint, "deployStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
-                this.stopComposeAction();
-                this.$root.toastRes(res);
+            // Ahead of the deploy: docker compose merges the override file as it
+            // brings the stack up, so it has to be on disk by then
+            this.withComposeOverrideSaved(() => {
+                this.$root.emitAgent(this.stack.endpoint, "deployStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
+                    this.stopComposeAction();
+                    this.$root.toastRes(res);
 
-                if (res.ok) {
-                    this.isEditMode = false;
-                    this.$router.push(this.url);
-                }
-            });
+                    if (res.ok) {
+                        this.isEditMode = false;
+                        this.$router.push(this.url);
+                    }
+                });
+            }, () => this.stopComposeAction());
         },
 
         saveStack() {
             this.processing = true;
 
-            this.$root.emitAgent(this.stack.endpoint, "saveStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
-                this.processing = false;
-                this.$root.toastRes(res);
+            this.withComposeOverrideSaved(() => {
+                this.$root.emitAgent(this.stack.endpoint, "saveStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
+                    this.processing = false;
+                    this.$root.toastRes(res);
 
-                if (res.ok) {
-                    this.isEditMode = false;
-                    this.$router.push(this.url);
+                    if (res.ok) {
+                        this.isEditMode = false;
+                        this.$router.push(this.url);
+                    }
+                });
+            }, () => {
+                this.processing = false;
+            });
+        },
+
+        /**
+         * Write the compose override file, then carry on with saving or
+         * deploying the stack itself.
+         *
+         * Its own event rather than another argument to saveStack, whose
+         * callback is positional and so could not take one without breaking
+         * agents that have not been upgraded.
+         * @param {Function} next Called once the override is stored
+         * @param {Function} onError Called instead when it could not be
+         * @returns {void}
+         */
+        withComposeOverrideSaved(next, onError) {
+            if (!this.supportsComposeOverride) {
+                next();
+                return;
+            }
+
+            this.$root.emitAgent(this.stack.endpoint, "saveStackOverride", this.stack.name, this.stack.composeOverrideYAML ?? "", (res) => {
+                if (!res.ok) {
+                    this.$root.toastRes(res);
+                    onError();
+                    return;
                 }
+
+                next();
             });
         },
 

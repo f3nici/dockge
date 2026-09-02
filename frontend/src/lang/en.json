@@ -313,5 +313,6 @@
     "undefinedVariable": "This variable is not set in .env, so Docker Compose replaces it with an empty value.",
     "notes": "Notes",
     "notesPlaceholder": "Anything worth remembering about this stack...",
-    "notesHint": "Saved in the compose file, so they travel with the stack."
+    "notesHint": "Saved in the compose file, so they travel with the stack.",
+    "composeOverrideHint": "Merged over the compose file by Docker Compose. Leave empty to remove the file."
 }
