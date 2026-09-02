@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { basePathFromURL, basePathHref } from "../../common/base-path";
 
 import Layout from "./layouts/Layout.vue";
 import Setup from "./pages/Setup.vue";
@@ -142,6 +143,8 @@ const routes = [
 
 export const router = createRouter({
     linkActiveClass: "active",
-    history: createWebHistory(),
+    // Taken from the <base> tag the server writes, so the same build works
+    // whatever prefix Dockge is served under
+    history: createWebHistory(basePathHref(basePathFromURL(document.baseURI))),
     routes,
 });

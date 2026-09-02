@@ -58,6 +58,14 @@ export type StackData = SimpleStackData & {
     composeENV: string,
     primaryHostname: string,
     services: Record<string, ServiceData>
+
+    /**
+     * Contents of the compose override file, and the name it has (or would be
+     * given). Absent when the stack came from an agent too old to send them,
+     * which is how the UI knows not to offer the override editor.
+     */
+    composeOverrideYAML?: string,
+    composeOverrideFileName?: string,
 }
 
 export type AgentData = {

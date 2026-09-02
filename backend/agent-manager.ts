@@ -7,6 +7,7 @@ import semver from "semver";
 import { R } from "redbean-node";
 import dayjs, { Dayjs } from "dayjs";
 import { AgentData } from "../common/types";
+import { basePathFromURL, socketIOPath } from "../common/base-path";
 
 /**
  * Dockge Instance Manager
@@ -178,6 +179,9 @@ export class AgentManager {
 
         log.info("agent-manager", "Connecting to the socket server: " + endpoint);
         let client = io(url, {
+            // An agent may itself be served under a base path, in which case
+            // its socket.io lives under that prefix rather than at the root
+            path: socketIOPath(basePathFromURL(url)),
             extraHeaders: {
                 endpoint,
             }

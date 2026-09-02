@@ -158,6 +158,7 @@
                 <Terminal
                     ref="combinedTerminal"
                     class="mb-3 terminal"
+                    filterable
                     :name="combinedTerminalName"
                     :endpoint="endpoint"
                     :rows="combinedTerminalRows"
@@ -208,7 +209,7 @@
 
                     <div ref="containerList">
                         <Container
-                            v-for="(service, name) in composeDocument.services.getServices()"
+                            v-for="(service, name) in displayedServices"
                             :key="name"
                             :name="name"
                             :is-edit-mode="isEditMode"
@@ -228,6 +229,29 @@
                                 </label>
                                 <ArrayInput :composeArray="composeDocument.xDockge.urls" :display-name="$t('url')" placeholder="https://" />
                             </div>
+
+                            <!-- Notes -->
+                            <div class="mb-2">
+                                <label class="form-label" for="stackNotes">
+                                    {{ $t("notes") }}
+                                </label>
+                                <textarea
+                                    id="stackNotes"
+                                    v-model="notes"
+                                    class="form-control"
+                                    rows="4"
+                                    :placeholder="$t('notesPlaceholder')"
+                                ></textarea>
+                                <div class="form-text">{{ $t("notesHint") }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Notes, shown once the stack has some -->
+                    <div v-if="!isEditMode && notes">
+                        <h4 class="mb-3">{{ $t("notes") }}</h4>
+                        <div class="shadow-box big-padding mb-3">
+                            <div class="stack-notes">{{ notes }}</div>
                         </div>
                     </div>
 
@@ -237,6 +261,7 @@
                         <Terminal
                             ref="combinedTerminal"
                             class="mb-3 terminal"
+                            filterable
                             :name="combinedTerminalName"
                             :endpoint="endpoint"
                             :rows="combinedTerminalRows"
@@ -286,6 +311,22 @@
                             {{ yamlError }}
                         </div>
                     </BModal>
+
+                    <!-- Compose override editor -->
+                    <div v-if="isEditMode && supportsComposeOverride" class="mb-3">
+                        <h4 class="mb-3">{{ stack.composeOverrideFileName }}</h4>
+                        <div class="shadow-box mb-1 editor-box" :class="{'edit-mode' : isEditMode}">
+                            <prism-editor
+                                v-model="stack.composeOverrideYAML"
+                                class="yaml-editor"
+                                :highlight="highlighterYAML"
+                                line-numbers
+                                @focus="editorFocus = true"
+                                @blur="editorFocus = false"
+                            ></prism-editor>
+                        </div>
+                        <div class="form-text">{{ $t("composeOverrideHint") }}</div>
+                    </div>
 
                     <!-- ENV editor -->
                     <div v-if="isEditMode">
@@ -398,7 +439,7 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import { highlight, languages } from "prismjs/components/prism-core";
+import { highlight, hooks, languages } from "prismjs/components/prism-core";
 import { PrismEditor } from "vue-prism-editor";
 import "prismjs/components/prism-yaml";
 
@@ -414,6 +455,7 @@ import {
 } from "../../../common/util-common";
 import { StackData } from "../../../common/types";
 import { ComposeDocument } from "../../../common/compose-document";
+import { definedVariableNames, isUnresolvedVariable } from "../../../common/compose-variables";
 import { BModal } from "bootstrap-vue-next";
 import NetworkInput from "../components/NetworkInput.vue";
 import ProgressTerminal from "../components/ProgressTerminal.vue";
@@ -449,6 +491,46 @@ let prismjsSymbolDefinition = {
         pattern: /(?<!\$)\$(\{[^{}]*\}|\w+)/,
     }
 };
+
+/**
+ * The variable names the .env of the stack being highlighted defines.
+ *
+ * At module level because Prism's wrap hook is global and is handed no context
+ * of its own; set from highlighterYAML() just before each pass.
+ */
+let definedEnvNames = new Set<string>();
+
+let symbolHookAdded = false;
+
+/**
+ * Tooltip for a flagged variable. Held here rather than looked up in the hook,
+ * which runs per token and has no component to translate against.
+ */
+let undefinedVariableTitle = "";
+
+/**
+ * Mark the interpolations that would be substituted with nothing, so a typo in
+ * a variable name is visible rather than silently blanking an image tag or a
+ * port. Registered once: Prism keeps its hooks for the life of the page.
+ */
+function addUndefinedVariableHook() {
+    if (symbolHookAdded) {
+        return;
+    }
+    symbolHookAdded = true;
+
+    hooks.add("wrap", (env : {
+        type : string,
+        content : string,
+        classes : string[],
+        attributes : Record<string, string>,
+    }) => {
+        if (env.type === "symbol" && isUnresolvedVariable(env.content, definedEnvNames)) {
+            env.classes.push("symbol-undefined");
+            env.attributes.title = undefinedVariableTitle;
+        }
+    });
+}
 
 export default defineComponent({
     components: {
@@ -507,6 +589,63 @@ export default defineComponent({
     },
 
     computed: {
+        /**
+         * The services to render, keyed by name.
+         *
+         * A compose file that pulls its services in with `include:` declares
+         * none of them itself, so nothing was shown for such a stack at all.
+         * Anything docker reports for this stack is therefore shown alongside
+         * what the file declares.
+         *
+         * Not in edit mode: the editor writes the file back out, and a service
+         * the file does not own has no business being added to it.
+         * @returns {object} Services keyed by name
+         */
+        /**
+         * The stack's free-text notes, read from and written to x-dockge.notes.
+         * @returns {string} The notes, or "" when the stack has none
+         */
+        notes: {
+            get(): string {
+                return this.composeDocument.xDockge.notes;
+            },
+            set(value: string) {
+                // The deep watcher on composeDocument writes the YAML back out,
+                // the same way the URL list above does
+                this.composeDocument.xDockge.notes = value;
+            },
+        },
+
+        /**
+         * Whether this stack's agent sends the compose override file.
+         *
+         * An agent from before this existed simply leaves the field out, which
+         * is how the editor knows not to offer something the other end cannot
+         * save. New stacks are left out too: there is no directory to write an
+         * override into until the stack itself has been saved.
+         * @returns {boolean} true when the override editor should be shown
+         */
+        supportsComposeOverride() {
+            return !this.isAdd && typeof this.stack.composeOverrideFileName === "string";
+        },
+
+        displayedServices() {
+            const declared = this.composeDocument.services.getServices();
+
+            if (this.isEditMode) {
+                return declared;
+            }
+
+            const shown = { ...declared };
+
+            for (const name of Object.keys(this.stack.services ?? {})) {
+                if (!(name in shown)) {
+                    shown[name] = this.composeDocument.services.getService(name);
+                }
+            }
+
+            return shown;
+        },
 
         passwordCharsetSelected(): boolean {
             const o = this.passwordOptions;
@@ -708,7 +847,11 @@ export default defineComponent({
             let composeYAML: string;
             let composeENV: string;
 
-            if (this.$root.composeTemplate) {
+            // Set when arriving from the "convert docker run" dialog, which has
+            // already produced the compose file this stack should start from
+            const fromConverter = !!this.$root.composeTemplate;
+
+            if (fromConverter) {
                 composeYAML = this.$root.composeTemplate;
                 this.$root.composeTemplate = "";
             } else {
@@ -737,6 +880,10 @@ export default defineComponent({
                 services: {}
             };
             this.yamlCodeChange();
+
+            if (!fromConverter) {
+                this.applyDefaultComposeTemplate();
+            }
         } else {
             this.stack.name = this.$route.params.stackName;
             this.loadStack();
@@ -945,28 +1092,64 @@ export default defineComponent({
 
             this.startComposeAction("stackDeploying");
 
-            this.$root.emitAgent(this.stack.endpoint, "deployStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
-                this.stopComposeAction();
-                this.$root.toastRes(res);
+            // Ahead of the deploy: docker compose merges the override file as it
+            // brings the stack up, so it has to be on disk by then
+            this.withComposeOverrideSaved(() => {
+                this.$root.emitAgent(this.stack.endpoint, "deployStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
+                    this.stopComposeAction();
+                    this.$root.toastRes(res);
 
-                if (res.ok) {
-                    this.isEditMode = false;
-                    this.$router.push(this.url);
-                }
-            });
+                    if (res.ok) {
+                        this.isEditMode = false;
+                        this.$router.push(this.url);
+                    }
+                });
+            }, () => this.stopComposeAction());
         },
 
         saveStack() {
             this.processing = true;
 
-            this.$root.emitAgent(this.stack.endpoint, "saveStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
-                this.processing = false;
-                this.$root.toastRes(res);
+            this.withComposeOverrideSaved(() => {
+                this.$root.emitAgent(this.stack.endpoint, "saveStack", this.stack.name, this.stack.composeYAML, this.stack.composeENV, this.isAdd, (res) => {
+                    this.processing = false;
+                    this.$root.toastRes(res);
 
-                if (res.ok) {
-                    this.isEditMode = false;
-                    this.$router.push(this.url);
+                    if (res.ok) {
+                        this.isEditMode = false;
+                        this.$router.push(this.url);
+                    }
+                });
+            }, () => {
+                this.processing = false;
+            });
+        },
+
+        /**
+         * Write the compose override file, then carry on with saving or
+         * deploying the stack itself.
+         *
+         * Its own event rather than another argument to saveStack, whose
+         * callback is positional and so could not take one without breaking
+         * agents that have not been upgraded.
+         * @param {Function} next Called once the override is stored
+         * @param {Function} onError Called instead when it could not be
+         * @returns {void}
+         */
+        withComposeOverrideSaved(next, onError) {
+            if (!this.supportsComposeOverride) {
+                next();
+                return;
+            }
+
+            this.$root.emitAgent(this.stack.endpoint, "saveStackOverride", this.stack.name, this.stack.composeOverrideYAML ?? "", (res) => {
+                if (!res.ok) {
+                    this.$root.toastRes(res);
+                    onError();
+                    return;
                 }
+
+                next();
             });
         },
 
@@ -1047,6 +1230,11 @@ export default defineComponent({
                     "symbol": prismjsSymbolDefinition["symbol"]
                 });
             }
+
+            addUndefinedVariableHook();
+            definedEnvNames = definedVariableNames(this.stack.composeENV ?? "");
+            undefinedVariableTitle = this.$t("undefinedVariable");
+
             return highlight(code, languages.yaml_with_symbols);
         },
 
@@ -1079,6 +1267,32 @@ export default defineComponent({
                 };
             }
             return highlight(code, languages.docker_env);
+        },
+
+        /**
+         * Start a new stack from the template configured in Settings, when there
+         * is one.
+         *
+         * Fetched here rather than kept on $root: it is only ever wanted on the
+         * way to a new stack, so there is no reason for every page to carry it.
+         * @returns {void}
+         */
+        applyDefaultComposeTemplate() {
+            this.$root.getSocket().emit("getSettings", (res) => {
+                const configured = res?.data?.defaultComposeTemplate;
+
+                if (!res?.ok || !configured || !this.isAdd) {
+                    return;
+                }
+
+                // Only while the editor still holds the built-in example: the
+                // settings arrive after the page does, and overwriting something
+                // the user has already typed would lose it
+                if (this.stack.composeYAML === template) {
+                    this.stack.composeYAML = configured;
+                    this.yamlCodeChange();
+                }
+            });
         },
 
         yamlCodeChange() {
@@ -1293,9 +1507,27 @@ export default defineComponent({
     z-index: 10;
 }
 
+.stack-notes {
+    // Notes are typed as plain text, so the line breaks the user put in are the
+    // only structure they have
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .agent-name {
     font-size: 13px;
     color: $dark-font-color3;
+}
+
+// Prism writes the editor's markup itself, so these spans are only reachable
+// from here through :deep()
+:deep(.token.symbol-undefined) {
+    color: $warning;
+    // Underlined as well as coloured: the editor's theme is already colourful,
+    // and this has to read as a warning rather than as one more token type
+    text-decoration: underline wavy;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
 }
 
 :deep(.compose-dropdown-menu) {

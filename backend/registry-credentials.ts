@@ -313,24 +313,19 @@ export class RegistryCredentialManager {
 
     /**
      * Write the stored logins into a docker config.json and point the docker
-     * CLI at it. With no logins left, the original DOCKER_CONFIG is restored so
-     * Dockge stays out of the way entirely.
+     * CLI at it.
+     *
+     * This happens even with no logins configured, because DOCKER_CONFIG is
+     * also where the docker CLI keeps its own state: left pointing at the
+     * default ~/.docker, buildx tries to create /root/.docker/buildx on every
+     * `docker compose` call, which fails noisily wherever that path is not
+     * writable (a read-only root filesystem, or a container not running as
+     * root). Pointing it into the data directory, which Dockge must be able to
+     * write to anyway, keeps that out of the user's way. Anything the original
+     * config held is carried across, so this stays invisible either way.
      */
     private writeAuthFile() {
         if (!this.initialized) {
-            return;
-        }
-
-        if (this.credentials.length === 0) {
-            this.authFileReady = false;
-            this.restoreDockerConfigEnv();
-
-            try {
-                fs.rmSync(this.authFilePath(), { force: true });
-            } catch (e) {
-                log.warn("registry", "Could not remove the generated docker config: " + e);
-            }
-
             return;
         }
 
@@ -363,23 +358,45 @@ export class RegistryCredentialManager {
             auths,
         };
 
-        this.dropConflictingCredentialHelpers(config, managedKeys);
+        if (managedKeys.length > 0) {
+            // With no logins of our own, nothing can be shadowed, and the user's
+            // own helpers are theirs to keep
+            this.dropConflictingCredentialHelpers(config, managedKeys);
+        }
 
         try {
             fs.mkdirSync(this.configDir, {
                 recursive: true,
                 mode: 0o700,
             });
-            fs.writeFileSync(this.authFilePath(), JSON.stringify(config, null, 4), { mode: 0o600 });
+            if (managedKeys.length > 0) {
+                // Taken away first: when there were no logins a moment ago this
+                // is a link to the user's own config, and writing would follow it
+                // and put Dockge's logins in their file
+                fs.rmSync(this.authFilePath(), { force: true });
+                fs.writeFileSync(this.authFilePath(), JSON.stringify(config, null, 4), { mode: 0o600 });
+            } else {
+                this.linkBaseConfig();
+            }
+
             this.linkBaseConfigEntries();
-            this.authFileReady = true;
+            this.authFileReady = managedKeys.length > 0;
             process.env.DOCKER_CONFIG = this.configDir;
 
-            log.debug("registry", `Wrote registry logins to ${this.authFilePath()}`);
+            log.debug("registry", `Wrote the docker config to ${this.authFilePath()}`);
         } catch (e) {
             this.authFileReady = false;
-            log.error("registry", "Failed to write the docker config with the registry logins: " + e);
-            throw e;
+
+            if (managedKeys.length > 0) {
+                // A login the user just asked us to save went nowhere, so say so
+                log.error("registry", "Failed to write the docker config with the registry logins: " + e);
+                throw e;
+            }
+
+            // Only the buildx redirect is lost, which is not worth failing a
+            // startup over: carry on with whatever DOCKER_CONFIG was in effect
+            this.restoreDockerConfigEnv();
+            log.warn("registry", "Could not write the docker config, so docker keeps using its default: " + e);
         }
     }
 
@@ -417,6 +434,43 @@ export class RegistryCredentialManager {
         }
 
         config.credHelpers = credHelpers;
+    }
+
+    /**
+     * Point at the user's own config.json instead of copying it.
+     *
+     * With no logins of our own there is nothing to merge into it, and copying
+     * would put whatever registry credentials they have into a second file on
+     * disk. A link keeps them in the one place they were put while still giving
+     * docker a writable directory to keep its own state in.
+     */
+    private linkBaseConfig() {
+        const target = this.authFilePath();
+
+        // A copy written back when there were logins would otherwise stay behind
+        // and shadow the real one
+        try {
+            fs.rmSync(target, { force: true });
+        } catch (e) {
+            log.warn("registry", `Could not remove the generated docker config: ${e}`);
+            return;
+        }
+
+        if (!this.baseConfigDir) {
+            return;
+        }
+
+        const source = path.join(this.baseConfigDir, "config.json");
+
+        if (!fs.existsSync(source)) {
+            return;
+        }
+
+        try {
+            fs.symlinkSync(source, target);
+        } catch (e) {
+            log.warn("registry", `Could not link the existing docker config at ${source}: ${e}`);
+        }
     }
 
     /**

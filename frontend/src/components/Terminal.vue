@@ -1,5 +1,17 @@
 <template>
-    <div class="shadow-box">
+    <div class="shadow-box" :class="{ 'has-filter': filterable }">
+        <div v-if="filterable" class="terminal-filter">
+            <font-awesome-icon icon="search" class="terminal-filter-icon" />
+            <input
+                v-model="filter"
+                type="search"
+                class="form-control form-control-sm"
+                :placeholder="$t('filterLogPlaceholder')"
+            />
+            <span v-if="filter" class="terminal-filter-count">
+                {{ $t("filterLogMatches", { count: matchingLineCount }) }}
+            </span>
+        </div>
         <div v-pre ref="terminal" class="main-terminal"></div>
     </div>
 </template>
@@ -8,6 +20,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { TERMINAL_COLS, TERMINAL_ROWS } from "../../../common/util-common";
+import { LogFilter } from "../../../common/log-filter";
 
 export default {
     /**
@@ -63,7 +76,14 @@ export default {
         mode: {
             type: String,
             default: "displayOnly",
-        }
+        },
+
+        // Show a box that narrows the output down to the lines matching what is
+        // typed into it. Only meaningful for logs, so it stays off by default.
+        filterable: {
+            type: Boolean,
+            default: false,
+        },
     },
     emits: [ "has-data" ],
     data() {
@@ -74,6 +94,8 @@ export default {
             // Width the terminal was last fitted to, so the container being
             // resized can be told from it merely being re-measured
             lastFitWidth: 0,
+            filter: "",
+            matchingLineCount: 0,
         };
     },
     computed: {
@@ -89,6 +111,13 @@ export default {
             return platform.toLowerCase().includes("mac");
         },
     },
+    watch: {
+        filter(value) {
+            this.terminal.reset();
+            this.terminal.write(this.logFilter.setFilter(value));
+            this.matchingLineCount = this.logFilter.matchingLineCount;
+        },
+    },
     created() {
 
     },
@@ -100,6 +129,10 @@ export default {
         if (this.mode === "displayOnly") {
             cursorBlink = false;
         }
+
+        // Not in data(): it holds the whole log and has no business being
+        // reactive, the same way pasteTarget below is kept off it
+        this.logFilter = new LogFilter();
 
         this.terminal = new Terminal({
             fontSize: 14,
@@ -191,11 +224,11 @@ export default {
             // Workaround: normally this.name should be set, but it is not sometimes, so we use the parameter, but eventually this.name and name must be the same name
             if (name) {
                 //this.$root.unbindTerminal(endpoint, name);
-                this.$root.bindTerminal(endpoint, name, this.terminal);
+                this.$root.bindTerminal(endpoint, name, this.sink());
                 console.debug("Terminal bound via parameter: " + name);
             } else if (this.name) {
                 //this.$root.unbindTerminal(this.endpoint, this.name);
-                this.$root.bindTerminal(this.endpoint, this.name, this.terminal);
+                this.$root.bindTerminal(this.endpoint, this.name, this.sink());
                 console.debug("Terminal bound: " + this.name);
             } else {
                 console.debug("Terminal name not set");
@@ -206,6 +239,38 @@ export default {
             this.terminal.clear();
             this.terminalInputBuffer = "";
             this.cursorPosition = 0;
+            this.logFilter.clear();
+            this.matchingLineCount = 0;
+        },
+
+        /**
+         * What the socket mixin writes incoming output to.
+         *
+         * Bound instead of the xterm instance so a filter can see the lines it
+         * is not currently showing.
+         *
+         * @returns {{write: (function(string): void)}} The sink to bind
+         */
+        sink() {
+            return { write: (data) => this.write(data) };
+        },
+
+        /**
+         * Take one chunk of terminal output.
+         *
+         * @param {string} data Raw output, which may hold any number of lines
+         * and may stop in the middle of one
+         * @returns {void}
+         */
+        write(data) {
+            if (!this.filterable) {
+                // Nothing to filter by, so stay out of the way entirely
+                this.terminal.write(data);
+                return;
+            }
+
+            this.terminal.write(this.logFilter.write(data));
+            this.matchingLineCount = this.logFilter.matchingLineCount;
         },
 
         removeInput() {
@@ -679,6 +744,43 @@ export default {
 <style scoped lang="scss">
 .main-terminal {
     height: 100%;
+}
+
+// Only when the filter bar is there: it and the terminal have to share the
+// fixed height the page gives this box
+.shadow-box.has-filter {
+    display: flex;
+    flex-direction: column;
+
+    .main-terminal {
+        flex: 1 1 auto;
+        // Lets the terminal shrink inside the flex column rather than
+        // overflowing the box it was given
+        min-height: 0;
+    }
+}
+
+.terminal-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    padding: 0 0 8px;
+
+    .form-control {
+        flex: 1 1 auto;
+    }
+}
+
+.terminal-filter-icon {
+    opacity: 0.6;
+}
+
+.terminal-filter-count {
+    flex: 0 0 auto;
+    font-size: 0.85em;
+    opacity: 0.7;
+    white-space: nowrap;
 }
 </style>
 

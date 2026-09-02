@@ -35,6 +35,7 @@ function authOf(username : string, password : string) {
 
 describe("RegistryCredentialManager", () => {
     let dataDir : string;
+    let emptyDockerConfigDir : string;
     let manager : RegistryCredentialManager;
     const originalDockerConfig = process.env.DOCKER_CONFIG;
 
@@ -45,17 +46,25 @@ describe("RegistryCredentialManager", () => {
         }
 
         dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-registry-"));
-        delete process.env.DOCKER_CONFIG;
+
+        // A docker config directory of its own, and an empty one. Left unset,
+        // this would fall back to ~/.docker, so a machine that happens to be
+        // logged in to a registry (a CI runner, say) would change what these
+        // tests see.
+        emptyDockerConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-empty-docker-"));
+        process.env.DOCKER_CONFIG = emptyDockerConfigDir;
 
         manager = new RegistryCredentialManager();
         await manager.init(dataDir);
     });
 
     afterEach(() => {
-        fs.rmSync(dataDir, {
-            recursive: true,
-            force: true,
-        });
+        for (const dir of [ dataDir, emptyDockerConfigDir ]) {
+            fs.rmSync(dir, {
+                recursive: true,
+                force: true,
+            });
+        }
 
         if (originalDockerConfig === undefined) {
             delete process.env.DOCKER_CONFIG;
@@ -160,7 +169,7 @@ describe("RegistryCredentialManager", () => {
             ])).rejects.toThrow(/Duplicate/);
         });
 
-        it("steps out of the way again when the last login is removed", async () => {
+        it("stops using the logins when the last one is removed", async () => {
             await manager.save([{
                 registry: "docker.io",
                 username: "user",
@@ -169,9 +178,94 @@ describe("RegistryCredentialManager", () => {
 
             await manager.save([]);
 
+            // The generated config goes with them: there is nothing of ours left
+            // to put in it, and the user has no config of their own to link to
             expect(fs.existsSync(configFile())).toBe(false);
-            expect(process.env.DOCKER_CONFIG).toBeUndefined();
             expect(manager.skopeoAuthArgs()).toEqual([]);
+
+            // DOCKER_CONFIG stays pointed at the writable directory even with no
+            // logins left, or buildx goes back to writing to /root/.docker
+            expect(process.env.DOCKER_CONFIG).toBe(path.join(dataDir, "docker-config"));
+        });
+
+        it("points docker at a writable config directory before any login exists", async () => {
+            // buildx creates $DOCKER_CONFIG/buildx on every docker compose call,
+            // which fails wherever /root/.docker is not writable
+            const configDir = path.join(dataDir, "docker-config");
+
+            expect(process.env.DOCKER_CONFIG).toBe(configDir);
+            expect(fs.existsSync(configDir)).toBe(true);
+            expect(manager.skopeoAuthArgs()).toEqual([]);
+        });
+
+        it("links a mounted docker config rather than copying the credentials in it", async () => {
+            const homeConfigDir = makeHomeConfig({
+                auths: {
+                    "quay.io": { auth: authOf("other", "secret") },
+                },
+            });
+
+            const withBase = new RegistryCredentialManager();
+            await withBase.init(dataDir);
+
+            // Their credentials stay in the one file they put them in
+            expect(fs.lstatSync(configFile()).isSymbolicLink()).toBe(true);
+            expect(fs.realpathSync(configFile())).toBe(fs.realpathSync(path.join(homeConfigDir, "config.json")));
+
+            fs.rmSync(homeConfigDir, {
+                recursive: true,
+                force: true,
+            });
+        });
+
+        it("replaces that link with a real file once a login is added", async () => {
+            const homeConfigDir = makeHomeConfig({
+                auths: {
+                    "quay.io": { auth: authOf("other", "secret") },
+                },
+            });
+
+            const withBase = new RegistryCredentialManager();
+            await withBase.init(dataDir);
+            await withBase.save([{
+                registry: "docker.io",
+                username: "user",
+                password: "token",
+            }]);
+
+            // Writing through the link would edit the user's own config
+            expect(fs.lstatSync(configFile()).isSymbolicLink()).toBe(false);
+            expect(readConfig().auths["quay.io"]).toEqual({ auth: authOf("other", "secret") });
+            expect(JSON.parse(fs.readFileSync(path.join(homeConfigDir, "config.json"), "utf-8")).auths["docker.io"]).toBeUndefined();
+
+            fs.rmSync(homeConfigDir, {
+                recursive: true,
+                force: true,
+            });
+        });
+
+        it("carries over a mounted docker config when there are no logins", async () => {
+            const homeConfigDir = makeHomeConfig({
+                auths: {
+                    "quay.io": { auth: authOf("other", "secret") },
+                },
+                credsStore: "desktop",
+            });
+
+            const withBase = new RegistryCredentialManager();
+            await withBase.init(dataDir);
+
+            const config = readConfig();
+
+            // The user's own auths still reach the docker CLI...
+            expect(config.auths["quay.io"]).toEqual({ auth: authOf("other", "secret") });
+            // ...and with no logins of ours to shadow, so does their helper
+            expect(config.credsStore).toBe("desktop");
+
+            fs.rmSync(homeConfigDir, {
+                recursive: true,
+                force: true,
+            });
         });
 
         it("carries over an existing docker config", async () => {
@@ -261,8 +355,9 @@ describe("RegistryCredentialManager", () => {
         });
 
         it("leaves skopeo alone when the config could not be written", async () => {
-            // A file where the directory should go makes the write fail
-            fs.writeFileSync(path.join(dataDir, "docker-config"), "");
+            // A directory where the config.json should go makes the write fail
+            fs.rmSync(configFile(), { force: true });
+            fs.mkdirSync(configFile());
 
             await expect(manager.save([{
                 registry: "docker.io",
