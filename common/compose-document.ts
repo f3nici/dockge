@@ -72,7 +72,16 @@ export class ComposeDocument {
     constructor(composeYAML?: string, composeENV?: string) {
         if (composeYAML) {
             const mainDoc = this.parseYAML(composeYAML);
-            const envsubstData = composeENV ? this.parseYAML(envsubstYAML(composeYAML, dotenv.parse(composeENV))).data : mainDoc.data;
+
+            // The read view: environment variables substituted and merge keys
+            // (<<: *common) resolved, so a service that inherits its image from
+            // a shared block reports that image rather than nothing.
+            //
+            // Kept apart from mainDoc.data, which is what toYAML() rebuilds the
+            // file from: resolving a merge key there would write the shared
+            // block out again inline under every service that referenced it.
+            const resolvedYAML = composeENV ? envsubstYAML(composeYAML, dotenv.parse(composeENV)) : composeYAML;
+            const envsubstData = this.parseYAML(resolvedYAML, true).data;
 
             this.doc = mainDoc.doc;
             this.composeData = {
@@ -88,8 +97,15 @@ export class ComposeDocument {
         }
     }
 
-    private parseYAML(yaml: string) {
-        const doc = parseDocument(yaml, YAML_OPTIONS);
+    /**
+     * @param yaml The YAML to parse
+     * @param merge Resolve merge keys into the maps that reference them. Only
+     * for the read view: it flattens the file, which must not reach anything
+     * that writes it back out.
+     */
+    private parseYAML(yaml: string, merge = false) {
+        const doc = parseDocument(yaml, { ...YAML_OPTIONS,
+            merge });
         if (doc.errors.length > 0) {
             throw doc.errors[0];
         }

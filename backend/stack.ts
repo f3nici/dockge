@@ -707,7 +707,13 @@ export class Stack {
                     const composeService = composeDocument.services.getService(serviceInfo.Service);
                     const composeServiceLabels = composeService.labels;
 
-                    const recreateNecessary = serviceInfo.Image !== composeService.image;
+                    // A service docker knows about that this compose file does
+                    // not declare, which is what `include:` produces: the file
+                    // says nothing about the image it should be running, so
+                    // there is nothing to compare the running one against.
+                    // Without this the service would claim a recreate was due
+                    // on every single refresh.
+                    const recreateNecessary = composeService.exists && serviceInfo.Image !== composeService.image;
                     if (recreateNecessary) {
                         this._recreateNecessary = true;
                     }

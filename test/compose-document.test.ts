@@ -436,3 +436,87 @@ describe("integers written with a leading zero", () => {
         expect(out).toContain("EXPLICIT: 0o755");
     });
 });
+
+describe("shared configuration via merge keys", () => {
+    // A common block reused with "<<: *common" is how compose files avoid
+    // repeating themselves; the image has to be read through it
+    const mergeYAML = `x-common: &common
+  image: nginx:1.25
+  restart: unless-stopped
+services:
+  first:
+    <<: *common
+    container_name: a
+  second:
+    <<: *common
+    container_name: b
+  third:
+    image: redis:7
+`;
+
+    it("reads an image inherited from a shared block", () => {
+        const doc = new ComposeDocument(mergeYAML);
+
+        expect(doc.services.getService("first").image).toBe("nginx:1.25");
+        expect(doc.services.getService("second").image).toBe("nginx:1.25");
+    });
+
+    it("splits an inherited image into name and tag", () => {
+        const service = new ComposeDocument(mergeYAML).services.getService("first");
+
+        expect(service.imageName).toBe("nginx");
+        expect(service.imageTag).toBe("1.25");
+    });
+
+    it("still reads a service that sets its own image", () => {
+        expect(new ComposeDocument(mergeYAML).services.getService("third").image).toBe("redis:7");
+    });
+
+    it("does not write the shared block out under every service", () => {
+        const out = new ComposeDocument(mergeYAML).toYAML();
+
+        // The file has to keep saying "<<: *common" rather than being flattened
+        expect(out).toContain("<<: *common");
+        expect(out.match(/restart: unless-stopped/g)?.length).toBe(1);
+    });
+
+    it("resolves merge keys alongside environment variables", () => {
+        const yaml = `x-common: &common
+  image: nginx:\${NGINX_TAG}
+services:
+  web:
+    <<: *common
+`;
+        const doc = new ComposeDocument(yaml, "NGINX_TAG=1.27");
+
+        expect(doc.services.getService("web").image).toBe("nginx:1.27");
+    });
+});
+
+describe("services the compose file does not declare", () => {
+    // What "include:" produces: the services live in another file, so this one
+    // declares none of them itself
+    const includeYAML = `include:
+  - path: ./db.yaml
+`;
+
+    it("reports no declared services", () => {
+        expect(new ComposeDocument(includeYAML).services.names).toEqual([]);
+    });
+
+    it("says a service it does not declare does not exist", () => {
+        const doc = new ComposeDocument(includeYAML);
+
+        expect(doc.services.getService("db").exists).toBe(false);
+    });
+
+    it("says a declared service does exist", () => {
+        const doc = new ComposeDocument(sampleYAML);
+
+        expect(doc.services.getService("web").exists).toBe(true);
+    });
+
+    it("keeps the include block when writing the file back", () => {
+        expect(new ComposeDocument(includeYAML).toYAML()).toContain("./db.yaml");
+    });
+});

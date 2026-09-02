@@ -29,7 +29,7 @@
                 <BModal :id="updateModalId" :ref="updateModalId" :title="$tc('imageUpdate', 1)">
                     <div>
                         <h5>{{ $t("image") }}</h5>
-                        <span>{{ composeService.image }}</span>
+                        <span>{{ displayImage }}</span>
                     </div>
                     <div v-if="changelogLink" class="mt-3">
                         <h5>{{ $t("changelog") }}</h5>
@@ -75,7 +75,7 @@
             <div v-else-if="service.recreateNecessary" class="notification mb-2">{{ $t("recreateNecessary") }}</div>
             <div class="d-flex flex-wrap justify-content-between gap-3 mb-2">
                 <div class="image">
-                    <span class="me-1">{{ composeService.imageName }}:</span><span class="tag">{{ composeService.imageTag }}</span>
+                    <span class="me-1">{{ displayImageName }}:</span><span class="tag">{{ displayImageTag }}</span>
                 </div>
                 <div v-if="started" class="status">
                     {{ service.status }}
@@ -402,6 +402,31 @@ export default defineComponent({
 
         composeService(this: { composeDocument: ComposeDocument, name: string }): ComposeService {
             return this.composeDocument.services.getService(this.name);
+        },
+
+        /**
+         * The image to show for this service.
+         *
+         * Normally the one the compose file asks for. A service pulled in with
+         * `include:` is not in this file at all, so the image docker is
+         * actually running it from is shown instead of nothing.
+         */
+        displayImage(): string {
+            if (this.composeService.exists) {
+                return this.composeService.image;
+            }
+
+            return this.service?.image ?? "";
+        },
+
+        /** The repository half of {@link displayImage} */
+        displayImageName(): string {
+            return this.displayImage.split(":")[0];
+        },
+
+        /** The tag half of {@link displayImage}, defaulting to latest */
+        displayImageTag(): string {
+            return this.displayImage.split(":")[1] || "latest";
         },
 
         updateModalId(): string {

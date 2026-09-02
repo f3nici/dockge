@@ -209,7 +209,7 @@
 
                     <div ref="containerList">
                         <Container
-                            v-for="(service, name) in composeDocument.services.getServices()"
+                            v-for="(service, name) in displayedServices"
                             :key="name"
                             :name="name"
                             :is-edit-mode="isEditMode"
@@ -509,6 +509,35 @@ export default defineComponent({
     },
 
     computed: {
+        /**
+         * The services to render, keyed by name.
+         *
+         * A compose file that pulls its services in with `include:` declares
+         * none of them itself, so nothing was shown for such a stack at all.
+         * Anything docker reports for this stack is therefore shown alongside
+         * what the file declares.
+         *
+         * Not in edit mode: the editor writes the file back out, and a service
+         * the file does not own has no business being added to it.
+         * @returns {object} Services keyed by name
+         */
+        displayedServices() {
+            const declared = this.composeDocument.services.getServices();
+
+            if (this.isEditMode) {
+                return declared;
+            }
+
+            const shown = { ...declared };
+
+            for (const name of Object.keys(this.stack.services ?? {})) {
+                if (!(name in shown)) {
+                    shown[name] = this.composeDocument.services.getService(name);
+                }
+            }
+
+            return shown;
+        },
 
         passwordCharsetSelected(): boolean {
             const o = this.passwordOptions;
@@ -710,7 +739,11 @@ export default defineComponent({
             let composeYAML: string;
             let composeENV: string;
 
-            if (this.$root.composeTemplate) {
+            // Set when arriving from the "convert docker run" dialog, which has
+            // already produced the compose file this stack should start from
+            const fromConverter = !!this.$root.composeTemplate;
+
+            if (fromConverter) {
                 composeYAML = this.$root.composeTemplate;
                 this.$root.composeTemplate = "";
             } else {
@@ -739,6 +772,10 @@ export default defineComponent({
                 services: {}
             };
             this.yamlCodeChange();
+
+            if (!fromConverter) {
+                this.applyDefaultComposeTemplate();
+            }
         } else {
             this.stack.name = this.$route.params.stackName;
             this.loadStack();
@@ -1081,6 +1118,32 @@ export default defineComponent({
                 };
             }
             return highlight(code, languages.docker_env);
+        },
+
+        /**
+         * Start a new stack from the template configured in Settings, when there
+         * is one.
+         *
+         * Fetched here rather than kept on $root: it is only ever wanted on the
+         * way to a new stack, so there is no reason for every page to carry it.
+         * @returns {void}
+         */
+        applyDefaultComposeTemplate() {
+            this.$root.getSocket().emit("getSettings", (res) => {
+                const configured = res?.data?.defaultComposeTemplate;
+
+                if (!res?.ok || !configured || !this.isAdd) {
+                    return;
+                }
+
+                // Only while the editor still holds the built-in example: the
+                // settings arrive after the page does, and overwriting something
+                // the user has already typed would lose it
+                if (this.stack.composeYAML === template) {
+                    this.stack.composeYAML = configured;
+                    this.yamlCodeChange();
+                }
+            });
         },
 
         yamlCodeChange() {
