@@ -63,7 +63,13 @@ export class LogFilter {
         }
 
         if (this.lines.length > this.maxLines) {
-            this.lines.splice(0, this.lines.length - this.maxLines);
+            const dropped = this.lines.splice(0, this.lines.length - this.maxLines);
+
+            // The count is of the lines still being shown, so lines that have
+            // aged out of the buffer have to come back off it
+            if (this.text) {
+                this.matches -= dropped.filter(line => this.matchesLine(line)).length;
+            }
         }
 
         if (!this.text) {

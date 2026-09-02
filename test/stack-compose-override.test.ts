@@ -115,6 +115,29 @@ describe("compose override file", () => {
         expect(stack().composeOverrideYAML).toContain("9090:80");
     });
 
+    it("notices an override that appeared after the stack was first read", async () => {
+        const s = stack();
+        expect(s.composeOverrideYAML).toBe("");
+
+        write("docker-compose.override.yml", "services: {}\n");
+        s.clearFileCache();
+
+        // Both the contents and the name have to be looked at again, or a save
+        // would write compose.override.yaml and leave this one in place
+        expect(s.composeOverrideFileName).toBe("docker-compose.override.yml");
+        expect(s.composeOverrideYAML).toBe("services: {}\n");
+    });
+
+    it("does not delete an override it never saw", async () => {
+        const s = stack();
+        expect(s.composeOverrideYAML).toBe("");
+
+        write("compose.override.yaml", "services: {}\n");
+        s.clearFileCache();
+
+        expect(s.composeOverrideYAML).toBe("services: {}\n");
+    });
+
     it("refuses to write into a directory Dockge does not manage", async () => {
         const missing = new Stack(server, "not-there");
 

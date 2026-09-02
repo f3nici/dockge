@@ -73,28 +73,7 @@ export class ComposeDocument {
         if (composeYAML) {
             const mainDoc = this.parseYAML(composeYAML);
 
-            // The read view: environment variables substituted and merge keys
-            // (<<: *common) resolved, so a service that inherits its image from
-            // a shared block reports that image rather than nothing.
-            //
-            // Resolved apart from mainDoc.data, which is what toYAML() rebuilds
-            // the file from: resolving a merge key there would write the shared
-            // block out again inline under every service that referenced it.
-            //
-            // With neither substitution nor merge keys to apply, the two stay
-            // the same object, as they always have: readers go through
-            // envsubstData while writers go through data, so a stack with no
-            // .env would otherwise stop showing edits made in the GUI.
-            const hasMergeKeys = containsMergeKey(mainDoc.data);
-            let envsubstData;
-
-            if (composeENV) {
-                envsubstData = this.parseYAML(envsubstYAML(composeYAML, dotenv.parse(composeENV)), hasMergeKeys).data;
-            } else if (hasMergeKeys) {
-                envsubstData = this.parseYAML(composeYAML, true).data;
-            } else {
-                envsubstData = mainDoc.data;
-            }
+            const envsubstData = composeENV ? this.parseYAML(envsubstYAML(composeYAML, dotenv.parse(composeENV))).data : mainDoc.data;
 
             this.doc = mainDoc.doc;
             this.composeData = {
@@ -110,15 +89,8 @@ export class ComposeDocument {
         }
     }
 
-    /**
-     * @param yaml The YAML to parse
-     * @param merge Resolve merge keys into the maps that reference them. Only
-     * for the read view: it flattens the file, which must not reach anything
-     * that writes it back out.
-     */
-    private parseYAML(yaml: string, merge = false) {
-        const doc = parseDocument(yaml, { ...YAML_OPTIONS,
-            merge });
+    private parseYAML(yaml: string) {
+        const doc = parseDocument(yaml, YAML_OPTIONS);
         if (doc.errors.length > 0) {
             throw doc.errors[0];
         }
@@ -174,29 +146,44 @@ export class ComposeDocument {
     }
 }
 
+/** The key compose files reuse a shared block under: `<<: *common` */
+const MERGE_KEY = "<<";
+
 /**
- * Whether a parsed compose file uses a merge key anywhere.
+ * Read a key off a map, falling back to the blocks it merges in.
  *
- * Resolving them needs a second parse, which costs the read view its identity
- * with the write view, so it is only done for the files that actually need it.
- * @param data A document parsed without merge resolution, where a merge key is
- * still present as a literal "<<" entry
- * @returns true when at least one merge key is there
+ * The document is deliberately parsed without resolving merge keys, so that
+ * writing it back out keeps saying `<<: *common` instead of copying the shared
+ * block under every service that referenced it. That leaves the inherited
+ * values to be found here, when they are read.
+ * @param data The map to read from
+ * @param key The key to look for
+ * @returns The value, the inherited one, or undefined
  */
-function containsMergeKey(data: any): boolean {
+function getWithInherited(data: any, key: string): any {
     if (!data || typeof data !== "object") {
-        return false;
+        return undefined;
     }
 
-    if (Array.isArray(data)) {
-        return data.some(containsMergeKey);
+    // What the map says itself wins, which is also where an edit is written
+    if (data[key] !== undefined) {
+        return data[key];
     }
 
-    if ("<<" in data) {
-        return true;
+    const merged = data[MERGE_KEY];
+
+    if (!merged) {
+        return undefined;
     }
 
-    return Object.values(data).some(containsMergeKey);
+    // "<<" takes either one block or a list of them, the earlier winning
+    for (const source of Array.isArray(merged) ? merged : [ merged ]) {
+        if (source && typeof source === "object" && source[key] !== undefined) {
+            return source[key];
+        }
+    }
+
+    return undefined;
 }
 
 export abstract class ComposeNode {
@@ -303,7 +290,7 @@ export class ComposeMap extends ComposeNode {
     }
 
     get(name: string, defaultVal: any = undefined, envsubst: boolean = false): any {
-        const val = envsubst ? this.composeData.envsubstData[name] : this.composeData.data[name];
+        const val = getWithInherited(envsubst ? this.composeData.envsubstData : this.composeData.data, name);
         return val !== undefined ? val : defaultVal;
     }
 
@@ -449,7 +436,7 @@ export class ComposeService extends ComposeMap {
     }
 
     get image(): string {
-        return this.composeData.envsubstData.image;
+        return getWithInherited(this.composeData.envsubstData, "image");
     }
 
     set image(image: string) {

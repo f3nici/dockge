@@ -43,7 +43,7 @@ export class Stack {
      * has one. Held apart from the compose file: Dockge writes it back verbatim
      * and never parses it for services, the way the main file is parsed.
      */
-    protected _composeOverrideFileName: string = DEFAULT_COMPOSE_OVERRIDE_FILE_NAME;
+    protected _composeOverrideFileName: string | undefined = undefined;
 
     protected _composeOverrideYAML: string | undefined = undefined;
     protected _composeDocument: ComposeDocument | undefined = undefined;
@@ -122,8 +122,11 @@ export class Stack {
         this._composeDocument = undefined;
 
         // Left stale, a cached Stack would report no override for a stack that
-        // has one, and the next save would send "" back and delete the file
+        // has one, and the next save would send "" back and delete the file. The
+        // name goes too: an override added on disk since may use another of the
+        // names docker accepts.
         this._composeOverrideYAML = undefined;
+        this._composeOverrideFileName = undefined;
     }
 
     static notificationManager: NotificationManager = new NotificationManager();
@@ -133,15 +136,6 @@ export class Stack {
         this.server = server;
         this._composeYAML = composeYAML;
         this._composeENV = composeENV;
-
-        // Whichever override file the stack already has, so it is written back
-        // under the name it came in with rather than a second one appearing
-        for (const filename of acceptedComposeOverrideFileNames) {
-            if (fs.existsSync(path.join(this.path, filename))) {
-                this._composeOverrideFileName = filename;
-                break;
-            }
-        }
 
         // Check if compose file name is different from compose.yaml
         for (const filename of acceptedComposeFileNames) {
@@ -346,7 +340,7 @@ export class Stack {
             throw new ValidationError("Stack is not managed by Dockge");
         }
 
-        const filePath = path.join(this.path, this._composeOverrideFileName);
+        const filePath = path.join(this.path, this.composeOverrideFileName);
         const trimmed = content.trim();
 
         if (!trimmed) {
@@ -482,7 +476,7 @@ export class Stack {
     get composeOverrideYAML() : string {
         if (this._composeOverrideYAML === undefined) {
             try {
-                this._composeOverrideYAML = fs.readFileSync(path.join(this.path, this._composeOverrideFileName), "utf-8");
+                this._composeOverrideYAML = fs.readFileSync(path.join(this.path, this.composeOverrideFileName), "utf-8");
             } catch (e) {
                 // No override file, which is the normal case
                 this._composeOverrideYAML = "";
@@ -491,7 +485,19 @@ export class Stack {
         return this._composeOverrideYAML;
     }
 
+    /**
+     * Whichever override file this stack already has, so it is written back
+     * under the name it came in with rather than a second one appearing
+     * alongside it. Resolved on demand rather than in the constructor: a cached
+     * Stack outlives the directory it describes.
+     */
     get composeOverrideFileName() : string {
+        if (this._composeOverrideFileName === undefined) {
+            this._composeOverrideFileName = acceptedComposeOverrideFileNames.find(
+                (filename) => fs.existsSync(path.join(this.path, filename))
+            ) ?? DEFAULT_COMPOSE_OVERRIDE_FILE_NAME;
+        }
+
         return this._composeOverrideFileName;
     }
 

@@ -408,24 +408,26 @@ export default defineComponent({
          * The image to show for this service.
          *
          * Normally the one the compose file asks for. A service pulled in with
-         * `include:` is not in this file at all, so the image docker is
-         * actually running it from is shown instead of nothing.
+         * `include:` is not in this file at all, so the image docker is actually
+         * running it from is shown instead of nothing. A service built from a
+         * Dockerfile has no image to name either way.
          */
         displayImage(): string {
-            if (this.composeService.exists) {
-                return this.composeService.image;
+            const image = this.composeService.exists ? this.composeService.image : this.service?.image;
+            return image ?? "";
+        },
+
+        /** The repository half of {@link displayImage}, blank when there is none */
+        displayImageName(): string {
+            return this.displayImage ? this.displayImage.split(":")[0] : "";
+        },
+
+        /** The tag half of {@link displayImage}, blank when there is none */
+        displayImageTag(): string {
+            if (!this.displayImage) {
+                return "";
             }
 
-            return this.service?.image ?? "";
-        },
-
-        /** The repository half of {@link displayImage} */
-        displayImageName(): string {
-            return this.displayImage.split(":")[0];
-        },
-
-        /** The tag half of {@link displayImage}, defaulting to latest */
-        displayImageTag(): string {
             return this.displayImage.split(":")[1] || "latest";
         },
 

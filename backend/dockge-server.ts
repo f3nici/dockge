@@ -212,9 +212,19 @@ export class DockgeServer {
             this.app.use(this.config.basePath || "/", router.create(this.app, this));
         }
 
+        // index.html is only ever served from memory, with the base path written
+        // into it. The copy on disk still says <base href="/">, so serving that
+        // one would send the browser looking for the assets at the root.
+        this.app.get(`${this.config.basePath}/index.html`, (_request, response) => {
+            response.send(this.indexHTML);
+        });
+
         // Static files
         this.app.use(this.config.basePath || "/", expressStaticGzip("frontend-dist", {
             enableBrotli: true,
+            // Same reason: a request for the directory must fall through to the
+            // handlers above rather than be answered with the file on disk
+            index: false,
         }));
 
         // Someone who typed the bare domain has no way of knowing about the

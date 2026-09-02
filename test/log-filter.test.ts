@@ -108,6 +108,25 @@ describe("LogFilter", () => {
         expect(filter.setFilter("")).toBe("two\r\nthree\r\nfour\r\n");
     });
 
+    it("keeps the match count to the lines it is still showing", () => {
+        const filter = new LogFilter(3);
+        filter.setFilter("hit");
+        filter.write("hit one\nhit two\nhit three\nhit four\n");
+
+        // The oldest line has aged out of the buffer, so it is no longer counted
+        expect(filter.matchingLineCount).toBe(3);
+        expect(filter.matchingLineCount).toBe(filter.redraw().trimEnd().split("\r\n").length);
+    });
+
+    it("does not count lines that aged out while unmatched", () => {
+        const filter = new LogFilter(3);
+        filter.setFilter("hit");
+        filter.write("hit one\nmiss\nmiss\nmiss\n");
+
+        expect(filter.matchingLineCount).toBe(0);
+        expect(filter.redraw()).toBe("");
+    });
+
     it("forgets everything on clear", () => {
         const filter = new LogFilter();
         filter.write("alpha\n");
