@@ -20,6 +20,8 @@ import {
     intHash,
     isRecord,
     parseDockerPort,
+    normalizeStackName,
+    STACK_NAME_PATTERN,
 } from "../common/util-common";
 
 describe("intHash", () => {
@@ -141,6 +143,24 @@ describe("terminal name helpers", () => {
     });
 });
 
+describe("normalizeStackName", () => {
+    it("lowercases the name", () => {
+        expect(normalizeStackName("Abc")).toBe("abc");
+    });
+
+    it("drops characters outside [a-z0-9_-] and leading - or _", () => {
+        expect(normalizeStackName("My App.v2")).toBe("myappv2");
+        expect(normalizeStackName("_-Web_Server-1")).toBe("web_server-1");
+    });
+
+    it("always gives a valid name, or nothing", () => {
+        for (const name of [ "Abc", "a b c", "ÄBC", "--x", "Foo.Bar" ]) {
+            expect(normalizeStackName(name)).toMatch(STACK_NAME_PATTERN);
+        }
+        expect(normalizeStackName("日本")).toBe("");
+    });
+});
+
 describe("parseDockerPort", () => {
     it("parses a single port", () => {
         const result = parseDockerPort("3000", "localhost");
@@ -173,6 +193,18 @@ describe("parseDockerPort", () => {
     it("respects an explicit udp protocol", () => {
         const result = parseDockerPort("6060:6060/udp", "localhost");
         expect(result.url).toBe("udp://localhost:6060");
+    });
+
+    it("shows the full address, scheme included", () => {
+        expect(parseDockerPort("8000:80", "example.com").fullDisplay).toBe("http://example.com:8000");
+        expect(parseDockerPort("443:443", "example.com").fullDisplay).toBe("https://example.com:443");
+        expect(parseDockerPort("127.0.0.1:8001:8001", "example.com").fullDisplay).toBe("http://127.0.0.1:8001");
+    });
+
+    it("keeps the whole port range in the full address", () => {
+        expect(parseDockerPort("3000-3005", "localhost").fullDisplay).toBe("http://localhost:3000-3005");
+        expect(parseDockerPort("9090-9091:8080-8081", "localhost").fullDisplay).toBe("http://localhost:9090-9091");
+        expect(parseDockerPort("127.0.0.1:5000-5010:5000-5010", "localhost").fullDisplay).toBe("http://127.0.0.1:5000-5010");
     });
 });
 

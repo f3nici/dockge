@@ -21,6 +21,31 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { TERMINAL_COLS, TERMINAL_ROWS } from "../../../common/util-common";
 import { LogFilter } from "../../../common/log-filter";
+import { CommandHistory } from "../../../common/command-history";
+
+/**
+ * Console command history, by endpoint and terminal name. Kept outside the
+ * component so it is still there after navigating away and back, the same as
+ * the console session itself is.
+ * @type {Map<string, CommandHistory>}
+ */
+const commandHistories = new Map();
+
+/**
+ * The command history of one console
+ * @param {string} endpoint The agent the console runs on
+ * @param {string} name The terminal name
+ * @returns {CommandHistory} Its history, created on first use
+ */
+function getCommandHistory(endpoint, name) {
+    const key = endpoint + "\u0000" + name;
+    let history = commandHistories.get(key);
+    if (!history) {
+        history = new CommandHistory();
+        commandHistories.set(key, history);
+    }
+    return history;
+}
 
 export default {
     /**
@@ -281,6 +306,20 @@ export default {
             this.terminalInputBuffer = "";
         },
 
+        /**
+         * Swap what is on the input line for other text, leaving the cursor at
+         * the end of it.
+         * @param {string} text The new input
+         */
+        replaceInput(text) {
+            const leftover = Math.max(this.terminalInputBuffer.length - text.length, 0);
+            this.terminal.write(
+                "\b".repeat(this.cursorPosition) + text + " ".repeat(leftover) + "\b".repeat(leftover)
+            );
+            this.terminalInputBuffer = text;
+            this.cursorPosition = text.length;
+        },
+
         clearCurrentLine() {
             // Move cursor to the beginning of the input and clear it
             const backspaces = "\b".repeat(this.cursorPosition);
@@ -305,6 +344,8 @@ export default {
                     }
 
                     const buffer = this.terminalInputBuffer;
+
+                    getCommandHistory(this.endpoint, this.name).add(buffer);
 
                     // Remove the input from the terminal
                     this.removeInput();
@@ -334,15 +375,24 @@ export default {
                         // Redraw the line from cursor position
                         this.terminal.write(afterCursor + " \b".repeat(afterCursor.length + 1));
                     }
-                } else if (data === "\u001B\u005B\u0041" || data === "\u001B\u005B\u0042") {      // UP OR DOWN
-                    // Do nothing
-
-                } else if (data === "\u001B\u005B\u0043") {      // RIGHT
+                } else if (data === "\u001B\u005B\u0041" || data === "\u001BOA") {      // UP
+                    // Both forms: the second is what xterm sends once the
+                    // shell switches it to application cursor keys
+                    const entry = getCommandHistory(this.endpoint, this.name).previous(this.terminalInputBuffer);
+                    if (entry !== undefined) {
+                        this.replaceInput(entry);
+                    }
+                } else if (data === "\u001B\u005B\u0042" || data === "\u001BOB") {      // DOWN
+                    const entry = getCommandHistory(this.endpoint, this.name).next();
+                    if (entry !== undefined) {
+                        this.replaceInput(entry);
+                    }
+                } else if (data === "\u001B\u005B\u0043" || data === "\u001BOC") {      // RIGHT
                     if (this.cursorPosition < this.terminalInputBuffer.length) {
                         this.terminal.write(this.terminalInputBuffer[this.cursorPosition]);
                         this.cursorPosition++;
                     }
-                } else if (data === "\u001B\u005B\u0044") {      // LEFT
+                } else if (data === "\u001B\u005B\u0044" || data === "\u001BOD") {      // LEFT
                     if (this.cursorPosition > 0) {
                         this.terminal.write("\b");
                         this.cursorPosition--;
@@ -351,6 +401,7 @@ export default {
                     console.debug("Ctrl + C");
                     this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data);
                     this.removeInput();
+                    getCommandHistory(this.endpoint, this.name).reset();
                 } else {
                     // data may be more than one character (e.g. a mobile
                     // IME/autocomplete committing a whole word at once)

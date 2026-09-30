@@ -148,6 +148,7 @@
     "Select a network...": "Select a network...",
     "NoNetworksAvailable": "No networks available. You need to add internal networks or enable external networks in the right side first.",
     "Console is not enabled": "Console is not enabled",
+    "consoleContainerHint": "This console runs inside the Dockge container, starting in the stacks directory. Only folders mounted into the container are visible here, not the rest of the host's filesystem.",
     "ConsoleNotEnabledMSG1": "Console is a powerful tool that allows you to execute any commands such as <code>docker</code>, <code>rm</code> within the Dockge's container in this Web UI.",
     "ConsoleNotEnabledMSG2": "It might be dangerous since this Dockge container is connecting to the host's Docker daemon. Also Dockge could be possibly taken down by commands like <code>rm -rf</code>",
     "ConsoleNotEnabledMSG3": "If you understand the risk, you can enable it by setting <code>DOCKGE_ENABLE_CONSOLE=true</code> in the environment variables.",

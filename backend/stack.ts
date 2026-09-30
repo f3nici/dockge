@@ -18,7 +18,9 @@ import {
     getContainerLogName,
     RUNNING, RUNNING_AND_EXITED, UNHEALTHY,
     TERMINAL_ROWS, UNKNOWN,
-    sleep
+    sleep,
+    normalizeStackName,
+    STACK_NAME_PATTERN
 } from "../common/util-common";
 import { InteractiveTerminal, Terminal } from "./terminal";
 import childProcessAsync from "promisify-child-process";
@@ -361,7 +363,7 @@ export class Stack {
 
     async validate() {
         // Check name, allows [a-z][0-9] _ - only
-        if (!this.name.match(/^[a-z0-9_-]+$/)) {
+        if (!STACK_NAME_PATTERN.test(this.name)) {
             throw new ValidationError("Stack name can only contain [a-z][0-9] _ - only");
         }
 
@@ -1110,6 +1112,7 @@ export class Stack {
                     if (!await Stack.composeFileExists(stacksDir, filename)) {
                         continue;
                     }
+                    filename = await Stack.normalizeStackDir(stacksDir, filename);
                     let stack = await this.getStack(server, filename, false);
                     stack._status = CREATED_FILE;
                     stackList.set(filename, stack);
@@ -1167,6 +1170,74 @@ export class Stack {
         }
 
         return stackList;
+    }
+
+    /**
+     * Rename a stack directory whose name is not a valid stack name, e.g. one
+     * created by hand as "Abc", to the name docker compose already knows it by.
+     *
+     * Left as it is, such a stack shows up but cannot be saved, since saving
+     * checks the name, and the name cannot be changed from Dockge either.
+     *
+     * Nothing is renamed when no valid name is left, or when a different
+     * directory already has it: that is for the user to sort out, and the
+     * stack stays listed under its current name meanwhile.
+     * @param stacksDir The stacks directory
+     * @param dirName The name of a directory inside it
+     * @returns The name the directory has now
+     */
+    static async normalizeStackDir(stacksDir : string, dirName : string) : Promise<string> {
+        if (STACK_NAME_PATTERN.test(dirName)) {
+            return dirName;
+        }
+
+        const newName = normalizeStackName(dirName);
+        if (!newName) {
+            log.warn("getStackList", `Stack directory "${dirName}" has no usable stack name, please rename it`);
+            return dirName;
+        }
+
+        const oldPath = path.join(stacksDir, dirName);
+        const newPath = path.join(stacksDir, newName);
+
+        try {
+            let target : fs.Stats | undefined;
+            try {
+                target = await fsAsync.lstat(newPath);
+            } catch (e) {
+                // Nothing there, which is what is wanted
+            }
+
+            if (target) {
+                const source = await fsAsync.lstat(oldPath);
+
+                // On a case-insensitive filesystem "abc" is "Abc" itself. Going
+                // through a temporary name is what makes the new case stick.
+                if (source.ino === target.ino && source.dev === target.dev) {
+                    const tempPath = path.join(stacksDir, `.${newName}.${randomUUID().substring(0, 8)}.rename`);
+                    await fsAsync.rename(oldPath, tempPath);
+                    try {
+                        await fsAsync.rename(tempPath, newPath);
+                    } catch (e) {
+                        // Put it back rather than leave it under a hidden name
+                        await fsAsync.rename(tempPath, oldPath);
+                        throw e;
+                    }
+                } else {
+                    log.warn("getStackList", `Cannot rename stack directory "${dirName}" to "${newName}", which already exists`);
+                    return dirName;
+                }
+            } else {
+                await fsAsync.rename(oldPath, newPath);
+            }
+        } catch (e) {
+            log.warn("getStackList", `Failed to rename stack directory "${dirName}" to "${newName}": ${e}`);
+            return dirName;
+        }
+
+        log.info("getStackList", `Renamed stack directory "${dirName}" to "${newName}"`);
+        Stack.invalidateCache(dirName);
+        return newName;
     }
 
     /**

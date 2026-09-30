@@ -8,6 +8,8 @@
                 </button>
             </div>
 
+            <p v-if="enableConsole" class="console-hint">{{ $t("consoleContainerHint") }}</p>
+
             <Terminal v-if="enableConsole" ref="terminal" class="terminal" :rows="20" mode="mainTerminal" name="console" :endpoint="endpoint"></Terminal>
 
             <div v-else class="alert alert-warning shadow-box" role="alert">
@@ -58,6 +60,11 @@ export default {
 </script>
 
 <style scoped lang="scss">
+.console-hint {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
 .terminal {
     height: 410px;
 }
