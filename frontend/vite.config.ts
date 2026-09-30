@@ -8,7 +8,11 @@ import "vue";
 const viteCompressionFilter = /\.(js|mjs|json|css|html|svg)$/i;
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+    // Built relative so one build can be served under any base path: the server
+    // writes a <base> tag into index.html saying which one. The dev server is
+    // always at the root, where relative URLs would break on a nested route.
+    base: command === "build" ? "./" : "/",
     server: {
         port: 5000,
     },
@@ -33,4 +37,4 @@ export default defineConfig({
             filter: viteCompressionFilter,
         }),
     ],
-});
+}));

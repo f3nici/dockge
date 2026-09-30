@@ -360,3 +360,271 @@ services:
         expect(out).toContain("<<: *common");
     });
 });
+
+describe("integers written with a leading zero", () => {
+    // Docker compose reads these as octal, so rewriting 0755 as 755 changes the
+    // value. Dockge writes compose files the user maintains by hand, so whatever
+    // they typed has to come back out unchanged.
+    const octalYAML = `services:
+  web:
+    image: nginx
+    configs:
+      - source: site
+        mode: 0755
+    environment:
+      UMASK: 0022
+      PUID: 1000
+`;
+
+    it("keeps them intact when writing x-dockge.auto-update", () => {
+        const out = setAutoUpdateInYAML(octalYAML, true);
+
+        expect(out).toContain("mode: 0755");
+        expect(out).toContain("UMASK: 0022");
+        expect(out).toContain("auto-update: true");
+    });
+
+    it("restores the file exactly when switching back to inherit", () => {
+        const enabled = setAutoUpdateInYAML(octalYAML, true);
+        expect(setAutoUpdateInYAML(enabled, undefined)).toBe(octalYAML);
+    });
+
+    it("leaves ordinary integers alone", () => {
+        const out = setAutoUpdateInYAML(octalYAML, false);
+
+        expect(out).toContain("PUID: 1000");
+        expect(out).not.toContain("PUID: 01000");
+    });
+
+    it("does not change the value seen by the rest of Dockge", () => {
+        const doc = new ComposeDocument(octalYAML);
+        const env = doc.services.getService("web").composeData.data.environment;
+
+        // Parsed as decimal, exactly as the built-in tag did before
+        expect(env.UMASK).toBe(22);
+        expect(env.PUID).toBe(1000);
+    });
+
+    it("keeps them intact when an unrelated field is edited in the GUI", () => {
+        const doc = new ComposeDocument(octalYAML);
+        doc.services.getService("web").image = "nginx:1.27";
+        const out = doc.toYAML();
+
+        expect(out).toContain("nginx:1.27");
+        expect(out).toContain("mode: 0755");
+        expect(out).toContain("UMASK: 0022");
+    });
+
+    it("writes the new value normally when the field itself is edited", () => {
+        const doc = new ComposeDocument(octalYAML);
+        doc.services.getService("web").composeData.data.environment.UMASK = 27;
+
+        expect(doc.toYAML()).toContain("UMASK: 27");
+    });
+
+    it("leaves quoted and explicitly octal values as they were", () => {
+        const yaml = `services:
+  web:
+    image: nginx
+    environment:
+      QUOTED: "0755"
+      EXPLICIT: 0o755
+`;
+        const out = setAutoUpdateInYAML(yaml, true);
+
+        expect(out).toContain("QUOTED: \"0755\"");
+        expect(out).toContain("EXPLICIT: 0o755");
+    });
+});
+
+describe("editing through the GUI", () => {
+    it("reads back an image that was just set, with no .env", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.services.getService("web").image = "nginx:1.27";
+
+        // The getter goes through the read view and the setter through the write
+        // view, so a stack with no .env depends on those being the same object
+        expect(doc.services.getService("web").image).toBe("nginx:1.27");
+    });
+
+    it("reads back an image on a stack that uses merge keys", () => {
+        const yaml = `x-common: &common
+  restart: unless-stopped
+services:
+  web:
+    <<: *common
+    image: nginx:1.25
+`;
+        const doc = new ComposeDocument(yaml);
+        doc.services.getService("web").image = "nginx:1.27";
+
+        expect(doc.toYAML()).toContain("nginx:1.27");
+    });
+
+    it("shows a container added in the GUI", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        const added = doc.services.getService("cache");
+        added.image = "redis:7";
+
+        expect(doc.services.getService("cache").image).toBe("redis:7");
+        expect(doc.toYAML()).toContain("redis:7");
+    });
+});
+
+describe("shared configuration via merge keys", () => {
+    // A common block reused with "<<: *common" is how compose files avoid
+    // repeating themselves; the image has to be read through it
+    const mergeYAML = `x-common: &common
+  image: nginx:1.25
+  restart: unless-stopped
+services:
+  first:
+    <<: *common
+    container_name: a
+  second:
+    <<: *common
+    container_name: b
+  third:
+    image: redis:7
+`;
+
+    it("reads an image inherited from a shared block", () => {
+        const doc = new ComposeDocument(mergeYAML);
+
+        expect(doc.services.getService("first").image).toBe("nginx:1.25");
+        expect(doc.services.getService("second").image).toBe("nginx:1.25");
+    });
+
+    it("splits an inherited image into name and tag", () => {
+        const service = new ComposeDocument(mergeYAML).services.getService("first");
+
+        expect(service.imageName).toBe("nginx");
+        expect(service.imageTag).toBe("1.25");
+    });
+
+    it("still reads a service that sets its own image", () => {
+        expect(new ComposeDocument(mergeYAML).services.getService("third").image).toBe("redis:7");
+    });
+
+    it("does not write the shared block out under every service", () => {
+        const out = new ComposeDocument(mergeYAML).toYAML();
+
+        // The file has to keep saying "<<: *common" rather than being flattened
+        expect(out).toContain("<<: *common");
+        expect(out.match(/restart: unless-stopped/g)?.length).toBe(1);
+    });
+
+    it("resolves merge keys alongside environment variables", () => {
+        const yaml = `x-common: &common
+  image: nginx:\${NGINX_TAG}
+services:
+  web:
+    <<: *common
+`;
+        const doc = new ComposeDocument(yaml, "NGINX_TAG=1.27");
+
+        expect(doc.services.getService("web").image).toBe("nginx:1.27");
+    });
+});
+
+describe("services the compose file does not declare", () => {
+    // What "include:" produces: the services live in another file, so this one
+    // declares none of them itself
+    const includeYAML = `include:
+  - path: ./db.yaml
+`;
+
+    it("reports no declared services", () => {
+        expect(new ComposeDocument(includeYAML).services.names).toEqual([]);
+    });
+
+    it("says a service it does not declare does not exist", () => {
+        const doc = new ComposeDocument(includeYAML);
+
+        expect(doc.services.getService("db").exists).toBe(false);
+    });
+
+    it("says a declared service does exist", () => {
+        const doc = new ComposeDocument(sampleYAML);
+
+        expect(doc.services.getService("web").exists).toBe(true);
+    });
+
+    it("keeps the include block when writing the file back", () => {
+        expect(new ComposeDocument(includeYAML).toYAML()).toContain("./db.yaml");
+    });
+});
+
+describe("stack notes", () => {
+    it("is empty when the stack has none", () => {
+        expect(new ComposeDocument(sampleYAML).xDockge.notes).toBe("");
+    });
+
+    it("reads notes written in the compose file", () => {
+        const yaml = `x-dockge:
+  notes: Remember to rotate the API key every 90 days
+services:
+  web:
+    image: nginx
+`;
+        expect(new ComposeDocument(yaml).xDockge.notes).toBe("Remember to rotate the API key every 90 days");
+    });
+
+    it("writes notes into the file, creating the x-dockge block", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "Behind the office reverse proxy";
+
+        const out = doc.toYAML();
+        expect(out).toContain("x-dockge:");
+        expect(out).toContain("Behind the office reverse proxy");
+        expect(new ComposeDocument(out).xDockge.notes).toBe("Behind the office reverse proxy");
+    });
+
+    it("keeps multi-line notes intact", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "first line\nsecond line";
+
+        expect(new ComposeDocument(doc.toYAML()).xDockge.notes).toBe("first line\nsecond line");
+    });
+
+    it("removes the x-dockge block again when the notes are cleared", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "temporary";
+        doc.xDockge.notes = "";
+
+        expect(doc.toYAML()).not.toContain("x-dockge");
+    });
+
+    it("leaves the rest of x-dockge alone when the notes are cleared", () => {
+        const yaml = `x-dockge:
+  notes: gone soon
+  auto-update: true
+services:
+  web:
+    image: nginx
+`;
+        const doc = new ComposeDocument(yaml);
+        doc.xDockge.notes = "";
+
+        const out = doc.toYAML();
+        expect(out).toContain("auto-update: true");
+        expect(out).not.toContain("gone soon");
+    });
+
+    it("stores the notes exactly as typed", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        // The setter runs on every keystroke behind a v-model, so trimming here
+        // would take away the space the user just pressed
+        doc.xDockge.notes = "a word ";
+
+        expect(doc.xDockge.notes).toBe("a word ");
+    });
+
+    it("treats whitespace-only notes as none at all", () => {
+        const doc = new ComposeDocument(sampleYAML);
+        doc.xDockge.notes = "   ";
+
+        expect(doc.xDockge.notes).toBe("");
+        expect(doc.toYAML()).not.toContain("x-dockge");
+    });
+});

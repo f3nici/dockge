@@ -3,7 +3,7 @@
         <div>
             <h1 class="mb-3">{{ $t("log") }} - {{ serviceName }} ({{ stackName }})</h1>
 
-            <Terminal class="terminal" :rows="20" mode="displayOnly" :name="terminalName" :stack-name="stackName" :service-name="serviceName" :endpoint="endpoint"></Terminal>
+            <Terminal class="terminal" :rows="20" mode="displayOnly" filterable :name="terminalName" :stack-name="stackName" :service-name="serviceName" :endpoint="endpoint"></Terminal>
         </div>
     </transition>
 </template>

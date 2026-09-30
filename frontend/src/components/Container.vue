@@ -29,7 +29,7 @@
                 <BModal :id="updateModalId" :ref="updateModalId" :title="$tc('imageUpdate', 1)">
                     <div>
                         <h5>{{ $t("image") }}</h5>
-                        <span>{{ composeService.image }}</span>
+                        <span>{{ displayImage }}</span>
                     </div>
                     <div v-if="changelogLink" class="mt-3">
                         <h5>{{ $t("changelog") }}</h5>
@@ -46,7 +46,7 @@
                     </BForm>
 
                     <template #footer>
-                        <button class="btn btn-normal" data-toggle="tooltip" :title="$t('tooltipServiceUpdateIgnore')" @click="skipCurrentUpdate">
+                        <button v-if="composeService.exists" class="btn btn-normal" data-toggle="tooltip" :title="$t('tooltipServiceUpdateIgnore')" @click="skipCurrentUpdate">
                             <font-awesome-icon icon="ban" class="me-1" />{{ $t("ignoreUpdate") }}
                         </button>
                         <button class="btn btn-primary" data-toggle="tooltip" :title="$t('tooltipDoServiceUpdate')" @click="updateService">
@@ -75,7 +75,7 @@
             <div v-else-if="service.recreateNecessary" class="notification mb-2">{{ $t("recreateNecessary") }}</div>
             <div class="d-flex flex-wrap justify-content-between gap-3 mb-2">
                 <div class="image">
-                    <span class="me-1">{{ composeService.imageName }}:</span><span class="tag">{{ composeService.imageTag }}</span>
+                    <span class="me-1">{{ displayImageName }}:</span><span class="tag">{{ displayImageTag }}</span>
                 </div>
                 <div v-if="started" class="status">
                     {{ service.status }}
@@ -404,6 +404,33 @@ export default defineComponent({
             return this.composeDocument.services.getService(this.name);
         },
 
+        /**
+         * The image to show for this service.
+         *
+         * Normally the one the compose file asks for. A service pulled in with
+         * `include:` is not in this file at all, so the image docker is actually
+         * running it from is shown instead of nothing. A service built from a
+         * Dockerfile has no image to name either way.
+         */
+        displayImage(): string {
+            const image = this.composeService.exists ? this.composeService.image : this.service?.image;
+            return image ?? "";
+        },
+
+        /** The repository half of {@link displayImage}, blank when there is none */
+        displayImageName(): string {
+            return this.displayImage ? this.displayImage.split(":")[0] : "";
+        },
+
+        /** The tag half of {@link displayImage}, blank when there is none */
+        displayImageTag(): string {
+            if (!this.displayImage) {
+                return "";
+            }
+
+            return this.displayImage.split(":")[1] || "latest";
+        },
+
         updateModalId(): string {
             return "image-update-modal-" + this.name;
         },
@@ -520,6 +547,15 @@ export default defineComponent({
         },
         skipCurrentUpdate() {
             this.$refs[this.updateModalId].hide();
+
+            // Skipping is recorded as a label on the service, so there has to be
+            // one in this compose file to put it on. A service that came from an
+            // `include:` is only shown here, not owned here: writing the label
+            // would add a stub service to the file that docker compose would
+            // then reject for having no image.
+            if (!this.composeService.exists) {
+                return;
+            }
 
             this.composeService.labels.set(LABEL_IMAGEUPDATES_IGNORE, this.service.remoteImageDigest);
 

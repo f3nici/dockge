@@ -30,12 +30,16 @@ export interface Arguments {
     dataDir? : string;
     stacksDir? : string;
     enableConsole? : boolean;
+    basePath? : string;
 }
 
 // Some config values are required
 export interface Config extends Arguments {
     dataDir : string;
     stacksDir : string;
+
+    /** Empty when Dockge is served from the root of its domain */
+    basePath : string;
 }
 
 export function checkLogin(socket : DockgeSocket) {

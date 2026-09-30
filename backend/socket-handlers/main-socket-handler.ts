@@ -43,6 +43,7 @@ const GENERAL_SETTING_KEYS = new Set([
     "autoUpdateCron",
     "autoUpdatePrune",
     "autoUpdateDefault",
+    "defaultComposeTemplate",
 ]);
 
 export class MainSocketHandler extends SocketHandler {

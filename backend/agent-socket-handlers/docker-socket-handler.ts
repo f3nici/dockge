@@ -46,6 +46,34 @@ export class DockerSocketHandler extends AgentSocketHandler {
             }
         });
 
+        // Kept apart from saveStack rather than added to its arguments: the
+        // callback there is positional, so a new parameter would break every
+        // agent that has not been upgraded yet
+        agentSocket.on("saveStackOverride", async (name : unknown, composeOverrideYAML : unknown, callback) => {
+            try {
+                checkLogin(socket);
+
+                if (typeof(name) !== "string") {
+                    throw new ValidationError("Name must be a string");
+                }
+
+                if (typeof(composeOverrideYAML) !== "string") {
+                    throw new ValidationError("Compose override must be a string");
+                }
+
+                const stack = await Stack.getStack(server, name);
+                await stack.saveComposeOverride(composeOverrideYAML);
+
+                callbackResult({
+                    ok: true,
+                    msg: "Saved",
+                    msgi18n: true,
+                }, callback);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
         agentSocket.on("deleteStack", async (name : unknown, callback) => {
             try {
                 checkLogin(socket);

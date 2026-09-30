@@ -144,6 +144,22 @@
                 </div>
             </div>
 
+            <!-- Default compose file for new stacks -->
+            <div class="mb-4">
+                <label class="form-label" for="defaultComposeTemplate">
+                    {{ $t("defaultComposeTemplate") }}
+                </label>
+                <textarea
+                    id="defaultComposeTemplate"
+                    v-model="settings.defaultComposeTemplate"
+                    class="form-control code-textarea"
+                    rows="8"
+                    spellcheck="false"
+                    :placeholder="$t('defaultComposeTemplatePlaceholder')"
+                ></textarea>
+                <div class="form-text">{{ $t("defaultComposeTemplateHint") }}</div>
+            </div>
+
             <!-- Save Button -->
             <div>
                 <button class="btn btn-primary" type="submit">
@@ -261,3 +277,14 @@ export default {
 };
 </script>
 
+<style scoped lang="scss">
+.code-textarea {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.85rem;
+    // A compose file is read line by line, so let long lines run off the side
+    // rather than wrapping into something that no longer looks like YAML
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+}
+</style>

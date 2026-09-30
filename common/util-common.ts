@@ -154,6 +154,20 @@ export const acceptedComposeFileNames = [
     "compose.yml",
 ];
 
+/**
+ * The override files docker compose merges over the main compose file on its
+ * own, in the order it looks for them.
+ */
+export const acceptedComposeOverrideFileNames = [
+    "compose.override.yaml",
+    "compose.override.yml",
+    "docker-compose.override.yaml",
+    "docker-compose.override.yml",
+];
+
+/** The one written when a stack has no override file yet */
+export const DEFAULT_COMPOSE_OVERRIDE_FILE_NAME = "compose.override.yaml";
+
 // Weekly, every Sunday at 04:00.
 export const AUTO_UPDATE_DEFAULT_CRON = "0 4 * * 0";
 
