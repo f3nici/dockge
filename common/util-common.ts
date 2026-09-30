@@ -314,6 +314,25 @@ export function getAgentMaintenanceTerminalName(endpoint : string) {
 }
 
 /**
+ * What a stack name may be made of. Also what docker compose accepts as a
+ * project name, which it takes from the stack's directory name.
+ */
+export const STACK_NAME_PATTERN = /^[a-z0-9_-]+$/;
+
+/**
+ * Turn a directory name into a valid stack name, the same way docker compose
+ * turns it into a project name: lowercased, anything outside [a-z0-9_-]
+ * dropped, and any leading "-" or "_" trimmed. Keeping to compose's rules means
+ * a stack that is already running keeps the same project, and so the same
+ * containers, under its new name.
+ * @param name A directory name
+ * @returns The stack name, which is empty when nothing valid is left
+ */
+export function normalizeStackName(name : string) : string {
+    return name.toLowerCase().replace(/[^a-z0-9_-]/g, "").replace(/^[-_]+/, "");
+}
+
+/**
  * Possible Inputs:
  * ports:
  *   - "3000"
@@ -387,8 +406,16 @@ export function parseDockerPort(input : string, hostname : string) {
         protocol = "http";
     }
 
+    const url = protocol + "://" + hostname + ":" + portInt;
+
+    // The whole host port range, when there is one: the url above can only
+    // point at the first port of it
+    const portDisplay = display.substring(display.lastIndexOf(":") + 1);
+
     return {
-        url: protocol + "://" + hostname + ":" + portInt,
+        url,
         display: display,
+        // The full address, scheme included, for showing next to the service
+        fullDisplay: portDisplay.includes("-") ? protocol + "://" + hostname + ":" + portDisplay : url,
     };
 }

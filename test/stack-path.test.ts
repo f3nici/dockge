@@ -163,3 +163,69 @@ describe("Stack.path", () => {
         expect(stack.path.startsWith(fs.realpathSync(stacksDir) + path.sep)).toBe(true);
     });
 });
+
+describe("Stack.normalizeStackDir", () => {
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), "dockge-stack-rename-"));
+        stacksDir = path.join(root, "stacks");
+        fs.mkdirSync(stacksDir);
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, {
+            recursive: true,
+            force: true,
+        });
+    });
+
+    /**
+     * Make a stack directory with a compose file in it
+     * @param name The directory name
+     */
+    function makeStack(name : string) {
+        fs.mkdirSync(path.join(stacksDir, name));
+        fs.writeFileSync(path.join(stacksDir, name, "compose.yaml"), "services: {}\n");
+    }
+
+    it("leaves a valid name alone", async () => {
+        makeStack("my-stack");
+
+        expect(await Stack.normalizeStackDir(stacksDir, "my-stack")).toBe("my-stack");
+        expect(fs.readdirSync(stacksDir)).toEqual([ "my-stack" ]);
+    });
+
+    it("renames a directory to the name docker compose gives it", async () => {
+        makeStack("Abc");
+
+        expect(await Stack.normalizeStackDir(stacksDir, "Abc")).toBe("abc");
+        expect(fs.readdirSync(stacksDir)).toEqual([ "abc" ]);
+        expect(fs.existsSync(path.join(stacksDir, "abc", "compose.yaml"))).toBe(true);
+    });
+
+    it("drops characters a stack name cannot have", async () => {
+        makeStack("My App.v2");
+
+        expect(await Stack.normalizeStackDir(stacksDir, "My App.v2")).toBe("myappv2");
+        expect(fs.readdirSync(stacksDir)).toEqual([ "myappv2" ]);
+    });
+
+    it("does not overwrite a different directory that already has the name", async () => {
+        makeStack("Abc");
+        makeStack("abc");
+
+        // Only meaningful where the two are really different directories
+        if (fs.statSync(path.join(stacksDir, "Abc")).ino === fs.statSync(path.join(stacksDir, "abc")).ino) {
+            return;
+        }
+
+        expect(await Stack.normalizeStackDir(stacksDir, "Abc")).toBe("Abc");
+        expect(fs.readdirSync(stacksDir).sort()).toEqual([ "Abc", "abc" ]);
+    });
+
+    it("leaves a name with nothing valid in it alone", async () => {
+        makeStack("日本");
+
+        expect(await Stack.normalizeStackDir(stacksDir, "日本")).toBe("日本");
+        expect(fs.readdirSync(stacksDir)).toEqual([ "日本" ]);
+    });
+});

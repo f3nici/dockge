@@ -88,7 +88,7 @@
                 <span class="badge me-1" :class="bgStyle">{{ status }}</span>
 
                 <a v-for="port in composeService.get('ports', [], true)" :key="port" :href="parsePort(port).url" target="_blank">
-                    <span v-if="started" class="badge me-1 bg-secondary">{{ parsePort(port).display }}</span>
+                    <span v-if="started" class="badge me-1 port-badge">{{ parsePort(port).fullDisplay }}</span>
                 </a>
             </div>
         </div>
@@ -612,6 +612,12 @@ export default defineComponent({
     .status {
         font-size: 0.8rem;
         color: #6c757d;
+    }
+
+    // bg-secondary puts white text on a light grey, which is hard to read
+    .port-badge {
+        background-color: $secondary;
+        color: #212529;
     }
 
     .notification {
