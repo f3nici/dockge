@@ -56,6 +56,10 @@ jobs:
       # are all in the node-gyp chain that @louislam/sqlite3 pulls in to build
       # its native module, whose only offered fix is a downgrade of sqlite3
       # itself; they are not in the request path.
+      #
+      # extra/audit-ci.mjs fails on high and critical advisories like
+      # `npm audit --audit-level=high`, but can allow a specific advisory that
+      # has no fix and is not reachable; each one is listed there with why.
       - name: Audit runtime dependencies
         run: npm run audit-ci
 
