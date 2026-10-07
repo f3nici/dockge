@@ -12,7 +12,7 @@
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
-        "audit-ci": "npm audit --omit=dev --audit-level=high",
+        "audit-ci": "node extra/audit-ci.mjs",
         "start": "tsx ./backend/index.ts",
         "dev": "concurrently -k -r \"wait-on tcp:5000 && npm run dev:backend \" \"npm run dev:frontend\"",
         "dev:backend": "cross-env NODE_ENV=development tsx watch --inspect ./backend/index.ts",
