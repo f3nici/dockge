@@ -15,8 +15,11 @@
                 <router-link to="/" class="d-flex align-items-center text-dark text-decoration-none">
                     <img src="/icon.svg" class="me-2" width="40" height="40" />
                     <!--object class="bi me-2" width="40" height="40" data="/icon.svg" /-->
-                    <span class="d-none d-md-inline fs-4 title">Dockge <span class="edition-tag">(f3nici-edition)</span></span>
                 </router-link>
+                <span class="d-none d-md-inline fs-4 title">
+                    <router-link to="/" class="text-dark text-decoration-none">Dockge</router-link>
+                    <a href="https://github.com/f3nici/dockge" target="_blank" rel="noopener" class="edition-tag text-dark text-decoration-none">(f3nici-edition)</a>
+                </span>
 
                 <a
                     v-if="hasNewVersion"
@@ -236,6 +239,11 @@ main {
         font-size: 0.6em;
         font-weight: normal;
         opacity: 0.7;
+
+        &:hover {
+            opacity: 1;
+            text-decoration: underline !important;
+        }
     }
 }
 
