@@ -77,6 +77,7 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **Shared Compose Blocks** - Services that take their configuration from a shared block with `<<: *common` now report the image they inherit instead of none.
 - **Included Services** - A stack whose compose file pulls its services in with `include:` shows the containers Docker is running for it, instead of appearing empty.
 - **Compose File Fidelity** - Values written with a leading zero, such as `mode: 0755`, keep that form when Dockge writes a compose file back. Docker Compose reads them as octal, so rewriting them as `755` changed what they meant.
+- **A Proper Console** - The console hands every key straight to bash, so it behaves like an ordinary terminal: Tab completion, Ctrl+R, bash's own history on Up and Down, and full-screen programs. `nano` is installed for editing files, `clear` works, and the prompt and `ls`/`grep` output are in colour. Copy and paste work as before, on desktop and mobile.
 
 ## 📖 Usage
 

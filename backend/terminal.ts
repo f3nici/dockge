@@ -30,6 +30,12 @@ export class Terminal {
     protected _rows : number = TERMINAL_ROWS;
     protected _cols : number = TERMINAL_COLS;
 
+    /**
+     * The TERM the process is started with. Left unset, node-pty uses the
+     * terminal's name, which is not a terminal type anything recognises.
+     */
+    protected termType? : string;
+
     public enableKeepAlive : boolean = false;
     protected keepAliveInterval? : NodeJS.Timeout;
     protected kickDisconnectedClientsInterval? : NodeJS.Timeout;
@@ -118,7 +124,7 @@ export class Terminal {
             this.writeToClients(this.file + " " + (Array.isArray(this.args) ? this.args.join(" ") : this.args) + "\n\r");
 
             this._ptyProcess = pty.spawn(this.file, this.args, {
-                name: this.name,
+                name: this.termType ?? this.name,
                 cwd: this.cwd,
                 cols: this.cols,
                 rows: this.rows,
@@ -353,7 +359,7 @@ export class InteractiveTerminal extends Terminal {
 }
 
 /**
- * User interactive terminal that use bash or powershell with limited commands such as docker, ls, cd, dir
+ * The console: an interactive bash or powershell, wherever Dockge itself runs
  */
 export class MainTerminal extends InteractiveTerminal {
     constructor(server : DockgeServer, name : string) {
@@ -374,6 +380,11 @@ export class MainTerminal extends InteractiveTerminal {
             shell = "bash";
         }
         super(server, name, shell, [], server.stacksDir);
+
+        // The browser end is xterm.js. Under the default, TERM=console,
+        // anything that draws on the screen, such as nano or clear, refused to
+        // start with "Error opening terminal: console."
+        this.termType = "xterm-256color";
     }
 
     public write(input : string) {

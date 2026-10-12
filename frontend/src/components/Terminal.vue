@@ -21,31 +21,6 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { TERMINAL_COLS, TERMINAL_ROWS } from "../../../common/util-common";
 import { LogFilter } from "../../../common/log-filter";
-import { CommandHistory } from "../../../common/command-history";
-
-/**
- * Console command history, by endpoint and terminal name. Kept outside the
- * component so it is still there after navigating away and back, the same as
- * the console session itself is.
- * @type {Map<string, CommandHistory>}
- */
-const commandHistories = new Map();
-
-/**
- * The command history of one console
- * @param {string} endpoint The agent the console runs on
- * @param {string} name The terminal name
- * @returns {CommandHistory} Its history, created on first use
- */
-function getCommandHistory(endpoint, name) {
-    const key = endpoint + "\u0000" + name;
-    let history = commandHistories.get(key);
-    if (!history) {
-        history = new CommandHistory();
-        commandHistories.set(key, history);
-    }
-    return history;
-}
 
 export default {
     /**
@@ -96,8 +71,8 @@ export default {
 
         // Mode
         // displayOnly: Only display terminal output
-        // mainTerminal: Allow input limited commands and output
-        // interactive: Free input and output
+        // mainTerminal: The console, free input and output
+        // interactive: A shell in a container, free input and output
         mode: {
             type: String,
             default: "displayOnly",
@@ -114,8 +89,6 @@ export default {
     data() {
         return {
             first: true,
-            terminalInputBuffer: "",
-            cursorPosition: 0,
             // Width the terminal was last fitted to, so the container being
             // resized can be told from it merely being re-measured
             lastFitWidth: 0,
@@ -156,7 +129,7 @@ export default {
         }
 
         // Not in data(): it holds the whole log and has no business being
-        // reactive, the same way pasteTarget below is kept off it
+        // reactive
         this.logFilter = new LogFilter();
 
         this.terminal = new Terminal({
@@ -167,9 +140,7 @@ export default {
             rows: this.rows,
         });
 
-        if (this.mode === "mainTerminal") {
-            this.mainTerminalConfig();
-        } else if (this.mode === "interactive") {
+        if (this.mode === "mainTerminal" || this.mode === "interactive") {
             this.interactiveTerminalConfig();
         }
 
@@ -188,16 +159,6 @@ export default {
 
         // Add right-click context menu handler for paste
         this.$refs.terminal.addEventListener("contextmenu", this.handleContextMenu);
-
-        // Handle the browser's own paste. Registered on the container during
-        // the capture phase so it runs before xterm's handler, which is bound
-        // to the helper textarea the event actually targets.
-        //
-        // Kept on a plain property rather than in data(): it is a DOM node with
-        // no business being reactive, and $refs is already cleared by the time
-        // unmounted() needs it back.
-        this.pasteTarget = this.$refs.terminal;
-        this.pasteTarget.addEventListener("paste", this.handleNativePaste, true);
 
         // Add selection handler for copy to clipboard
         this.terminal.onSelectionChange(() => {
@@ -220,8 +181,15 @@ export default {
             this.$root.emitAgent(this.endpoint, "mainTerminal", this.name, (res) => {
                 if (!res.ok) {
                     this.$root.toastRes(res);
+                    return;
                 }
-            });  // <- ADD THIS LINE
+
+                // The shell starts out 50 rows tall, and the fit below only
+                // sizes this end. Anything that draws on the whole screen,
+                // such as nano, would run off the bottom until the window
+                // happened to be resized.
+                this.onResizeEvent();
+            });
         } else if (this.mode === "interactive") {
             console.debug("Create Interactive terminal:", this.name);
             this.$root.emitAgent(this.endpoint, "interactiveTerminal", this.stackName, this.serviceName, this.shell, (res) => {
@@ -239,7 +207,6 @@ export default {
 
         window.removeEventListener("resize", this.onResizeEvent); // Remove the resize event listener from the window object.
         this.terminalResizeObserver?.disconnect();
-        this.pasteTarget?.removeEventListener("paste", this.handleNativePaste, true);
         this.$root.unbindTerminal(this.endpoint, this.name);
         this.terminal.dispose();
     },
@@ -262,8 +229,6 @@ export default {
 
         clearTerminal() {
             this.terminal.clear();
-            this.terminalInputBuffer = "";
-            this.cursorPosition = 0;
             this.logFilter.clear();
             this.matchingLineCount = 0;
         },
@@ -296,122 +261,6 @@ export default {
 
             this.terminal.write(this.logFilter.write(data));
             this.matchingLineCount = this.logFilter.matchingLineCount;
-        },
-
-        removeInput() {
-            const backspaceCount = this.terminalInputBuffer.length;
-            const backspaces = "\b \b".repeat(backspaceCount);
-            this.cursorPosition = 0;
-            this.terminal.write(backspaces);
-            this.terminalInputBuffer = "";
-        },
-
-        /**
-         * Swap what is on the input line for other text, leaving the cursor at
-         * the end of it.
-         * @param {string} text The new input
-         */
-        replaceInput(text) {
-            const leftover = Math.max(this.terminalInputBuffer.length - text.length, 0);
-            this.terminal.write(
-                "\b".repeat(this.cursorPosition) + text + " ".repeat(leftover) + "\b".repeat(leftover)
-            );
-            this.terminalInputBuffer = text;
-            this.cursorPosition = text.length;
-        },
-
-        clearCurrentLine() {
-            // Move cursor to the beginning of the input and clear it
-            const backspaces = "\b".repeat(this.cursorPosition);
-            const spaces = " ".repeat(this.terminalInputBuffer.length);
-            const moreBackspaces = "\b".repeat(this.terminalInputBuffer.length);
-            this.terminal.write(backspaces + spaces + moreBackspaces);
-        },
-
-        mainTerminalConfig() {
-            // Use onData (not onKey): onKey only fires for events that
-            // originate from a real keydown, so input coming from mobile
-            // virtual keyboards/IME composition (which xterm.js delivers
-            // straight to onData) would otherwise be silently dropped.
-            this.terminal.onData(data => {
-                const code = data.charCodeAt(0);
-                console.debug("Encode: " + JSON.stringify(data));
-
-                if (data === "\r") {
-                    // Return if no input
-                    if (this.terminalInputBuffer.length === 0) {
-                        return;
-                    }
-
-                    const buffer = this.terminalInputBuffer;
-
-                    getCommandHistory(this.endpoint, this.name).add(buffer);
-
-                    // Remove the input from the terminal
-                    this.removeInput();
-
-                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, buffer + data, (err) => {
-                        this.$root.toastError(err.msg);
-                    });
-
-                } else if (code === 127) { // Backspace
-                    if (this.cursorPosition > 0) {
-                        // Remove character to the left of cursor
-                        const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition - 1);
-                        const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-                        this.terminalInputBuffer = beforeCursor + afterCursor;
-                        this.cursorPosition--;
-
-                        // Redraw the line
-                        this.terminal.write("\b" + afterCursor + " \b".repeat(afterCursor.length + 1));
-                    }
-                } else if (data === "\u001B\u005B\u0033\u007E") { // Delete key
-                    if (this.cursorPosition < this.terminalInputBuffer.length) {
-                        // Remove character to the right of cursor
-                        const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
-                        const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition + 1);
-                        this.terminalInputBuffer = beforeCursor + afterCursor;
-
-                        // Redraw the line from cursor position
-                        this.terminal.write(afterCursor + " \b".repeat(afterCursor.length + 1));
-                    }
-                } else if (data === "\u001B\u005B\u0041" || data === "\u001BOA") {      // UP
-                    // Both forms: the second is what xterm sends once the
-                    // shell switches it to application cursor keys
-                    const entry = getCommandHistory(this.endpoint, this.name).previous(this.terminalInputBuffer);
-                    if (entry !== undefined) {
-                        this.replaceInput(entry);
-                    }
-                } else if (data === "\u001B\u005B\u0042" || data === "\u001BOB") {      // DOWN
-                    const entry = getCommandHistory(this.endpoint, this.name).next();
-                    if (entry !== undefined) {
-                        this.replaceInput(entry);
-                    }
-                } else if (data === "\u001B\u005B\u0043" || data === "\u001BOC") {      // RIGHT
-                    if (this.cursorPosition < this.terminalInputBuffer.length) {
-                        this.terminal.write(this.terminalInputBuffer[this.cursorPosition]);
-                        this.cursorPosition++;
-                    }
-                } else if (data === "\u001B\u005B\u0044" || data === "\u001BOD") {      // LEFT
-                    if (this.cursorPosition > 0) {
-                        this.terminal.write("\b");
-                        this.cursorPosition--;
-                    }
-                } else if (data === "\u0003") {      // Ctrl + C
-                    console.debug("Ctrl + C");
-                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data);
-                    this.removeInput();
-                    getCommandHistory(this.endpoint, this.name).reset();
-                } else {
-                    // data may be more than one character (e.g. a mobile
-                    // IME/autocomplete committing a whole word at once)
-                    const textBeforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
-                    const textAfterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-                    this.terminalInputBuffer = textBeforeCursor + data + textAfterCursor;
-                    this.terminal.write(data + textAfterCursor + "\b".repeat(textAfterCursor.length));
-                    this.cursorPosition += data.length;
-                }
-            });
         },
 
         interactiveTerminalConfig() {
@@ -532,72 +381,16 @@ export default {
         },
 
         /**
-         * Handle a paste performed by the browser itself, from Ctrl+V, Cmd+V or
-         * the native context menu.
-         *
-         * This is the only paste path that works over plain HTTP, which is how
-         * Dockge is usually reached. navigator.clipboard.readText() is gated on
-         * a secure context, but the clipboardData carried by a paste event is
-         * not: the read was performed by the browser in response to a real user
-         * gesture, so there is nothing for it to withhold.
-         *
-         * Only mainTerminal is handled here. Everywhere else xterm's own paste
-         * handler is left to do the job, because it reads the same clipboardData
-         * and then normalises newlines and applies bracketed paste before
-         * handing the text to onData - all of which the interactive terminal
-         * wants and mainTerminal, with its hand-rolled line buffer, cannot use.
-         *
-         * @param {ClipboardEvent} event
-         */
-        handleNativePaste(event) {
-            if (this.mode !== "mainTerminal") {
-                return;
-            }
-
-            // Claim the paste before xterm's own handler sees it, so the text is
-            // not delivered twice and mainTerminal keeps ownership of its input
-            // buffer. Also stops the text landing in the helper textarea, which
-            // preventDefault alone would allow.
-            event.preventDefault();
-            event.stopPropagation();
-
-            const text = event.clipboardData?.getData("text/plain");
-
-            if (text) {
-                this.pasteText(text);
-            }
-        },
-
-        /**
-         * Paste text into the terminal based on current mode
+         * Paste text into the terminal
          */
         pasteText(text) {
-            if (this.mode === "mainTerminal") {
-                // For main terminal, insert text at current cursor position
-                const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
-                const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-
-                // Update the buffer with inserted text
-                this.terminalInputBuffer = beforeCursor + text + afterCursor;
-
-                // Clear the current line and rewrite it
-                this.clearCurrentLine();
-                this.terminal.write(this.terminalInputBuffer);
-
-                // Move cursor to the correct position (after the pasted text)
-                this.cursorPosition += text.length;
-                const backspaces = "\b".repeat(afterCursor.length);
-                this.terminal.write(backspaces);
-
-            } else if (this.mode === "interactive") {
-                // Hand it to xterm rather than emitting it raw, so it gets the
-                // same newline normalisation and bracketed-paste framing as a
-                // paste the browser performed itself. Without the framing a
-                // multi-line paste is run line by line as it arrives instead of
-                // being held for the user to confirm. xterm passes the result
-                // to onData, which is what sends it to the server.
-                this.terminal.paste(text);
-            }
+            // Hand it to xterm rather than emitting it raw, so it gets the same
+            // newline normalisation and bracketed-paste framing as a paste the
+            // browser performed itself. Without the framing a multi-line paste
+            // is run line by line as it arrives instead of being held for the
+            // user to confirm. xterm passes the result to onData, which is what
+            // sends it to the server.
+            this.terminal.paste(text);
         },
 
         /**
@@ -612,7 +405,7 @@ export default {
             // Without navigator.clipboard there is nothing to replace the menu
             // with, so suppressing it would only take away the one working way
             // to paste by mouse. Leave it to the browser, whose own Paste item
-            // reaches handleNativePaste.
+            // reaches xterm's paste handler.
             if (!navigator.clipboard?.readText) {
                 return;
             }
@@ -632,9 +425,11 @@ export default {
          * that verdict before it calls preventDefault(), so the browser still
          * performs the key's own default action - which is what makes the
          * paste case work: the browser pastes into xterm's focused helper
-         * textarea and handleNativePaste picks the text up from the resulting
-         * event. Left to xterm, Ctrl+V would instead be encoded as ^V and the
-         * default suppressed, so no paste would ever happen.
+         * textarea and xterm's own paste handler picks the text up from the
+         * resulting event. That event carries the clipboard even over plain
+         * HTTP, where navigator.clipboard does not exist. Left to xterm, Ctrl+V
+         * would instead be encoded as ^V and the default suppressed, so no
+         * paste would ever happen.
          *
          * Cmd+C is deliberately not handled here, so on macOS it stays the
          * browser's own copy, which clearing the selection would break.

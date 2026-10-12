@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { Terminal } from "../backend/terminal";
+import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
+import { MainTerminal, Terminal } from "../backend/terminal";
 import { DockgeSocket } from "../backend/util-server";
+
+vi.mock("@homebridge/node-pty-prebuilt-multiarch", () => ({
+    spawn: vi.fn(() => ({
+        onData: vi.fn(),
+        onExit: vi.fn(),
+        resize: vi.fn(),
+        kill: vi.fn(),
+    })),
+}));
 
 function mockSocket(id = "socket-1") {
     return {
@@ -69,5 +79,32 @@ describe("Terminal.leaveAll", () => {
         const socket = mockSocket("never-joined");
 
         expect(() => Terminal.leaveAll(socket)).not.toThrow();
+    });
+});
+
+describe("MainTerminal", () => {
+    afterEach(() => {
+        Terminal["terminalMap"].clear();
+        vi.useRealTimers();
+    });
+
+    // node-pty sets TERM from the name it is given, which used to be the
+    // terminal's own, "console". No terminfo answers to that, so nano and
+    // clear refused to start in the console.
+    it("tells the shell it is talking to an xterm", () => {
+        // start() sets up the sweep for disconnected clients
+        vi.useFakeTimers();
+
+        const server = {
+            config: { enableConsole: true },
+            stacksDir: "/opt/stacks",
+        } as never;
+        new MainTerminal(server, "console").start();
+
+        expect(pty.spawn).toHaveBeenCalledWith(
+            expect.any(String),
+            [],
+            expect.objectContaining({ name: "xterm-256color" })
+        );
     });
 });
