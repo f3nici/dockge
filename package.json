@@ -34,6 +34,8 @@
         "@homebridge/node-pty-prebuilt-multiarch": "0.11.14",
         "@inventage/envsubst": "^0.16.0",
         "@louislam/sqlite3": "~15.1.6",
+        "@xterm/addon-serialize": "0.14.0",
+        "@xterm/headless": "6.0.0",
         "bcryptjs": "~2.4.3",
         "check-password-strength": "~2.0.10",
         "command-exists": "~1.2.9",

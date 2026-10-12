@@ -19,33 +19,16 @@
 <script>
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { TERMINAL_COLS, TERMINAL_ROWS } from "../../../common/util-common";
+import { getConsoleTerminalName, TERMINAL_COLS, TERMINAL_ROWS } from "../../../common/util-common";
 import { LogFilter } from "../../../common/log-filter";
-import { CommandHistory } from "../../../common/command-history";
+import { getConsoleTabID } from "../util-frontend";
 
 /**
- * Console command history, by endpoint and terminal name. Kept outside the
- * component so it is still there after navigating away and back, the same as
- * the console session itself is.
- * @type {Map<string, CommandHistory>}
+ * Written when the shell exits: puts back what a program that did not get to
+ * clean up may have left switched on, such as nano's alternate screen or mouse
+ * reporting, which would otherwise turn mouse moves into keys
  */
-const commandHistories = new Map();
-
-/**
- * The command history of one console
- * @param {string} endpoint The agent the console runs on
- * @param {string} name The terminal name
- * @returns {CommandHistory} Its history, created on first use
- */
-function getCommandHistory(endpoint, name) {
-    const key = endpoint + "\u0000" + name;
-    let history = commandHistories.get(key);
-    if (!history) {
-        history = new CommandHistory();
-        commandHistories.set(key, history);
-    }
-    return history;
-}
+const RESET_AFTER_EXIT = "\x1b[?1049l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l";
 
 export default {
     /**
@@ -56,6 +39,8 @@ export default {
 
     },
     props: {
+        // In mainTerminal mode, the console this tab gets is named for the tab
+        // instead. This is the name used with an agent that predates that.
         name: {
             type: String,
             required: true,
@@ -96,8 +81,8 @@ export default {
 
         // Mode
         // displayOnly: Only display terminal output
-        // mainTerminal: Allow input limited commands and output
-        // interactive: Free input and output
+        // mainTerminal: The console, free input and output
+        // interactive: A shell in a container, free input and output
         mode: {
             type: String,
             default: "displayOnly",
@@ -114,16 +99,44 @@ export default {
     data() {
         return {
             first: true,
-            terminalInputBuffer: "",
-            cursorPosition: 0,
             // Width the terminal was last fitted to, so the container being
             // resized can be told from it merely being re-measured
             lastFitWidth: 0,
             filter: "",
             matchingLineCount: 0,
+            // The console of this tab, in mainTerminal mode
+            consoleName: this.mode === "mainTerminal" ? getConsoleTerminalName(this.endpoint, getConsoleTabID()) : "",
+            // The shell has exited, and the next key starts a new one
+            exited: false,
         };
     },
     computed: {
+        /**
+         * @returns {string} What the server knows this terminal as
+         */
+        terminalName() {
+            return this.mode === "mainTerminal" ? this.consoleName : this.name;
+        },
+
+        /**
+         * @returns {boolean} Whether this is a shell, which is typed into
+         */
+        acceptsInput() {
+            return this.mode === "mainTerminal" || this.mode === "interactive";
+        },
+
+        /**
+         * Goes up each time the connection to the endpoint is made again. The
+         * server only knows the clients of a shell by the connection they had,
+         * so after a new one this terminal has to attach again: until then
+         * keys reached the shell, but nothing it wrote came back.
+         *
+         * @returns {number} The generation
+         */
+        connectionGeneration() {
+            return this.$root.connectionGenerations[this.endpoint] ?? 0;
+        },
+
         /**
          * Whether the browser is running on macOS, which pastes with Cmd rather
          * than Ctrl. userAgentData is the non-deprecated source but is still
@@ -137,6 +150,12 @@ export default {
         },
     },
     watch: {
+        connectionGeneration() {
+            if (this.acceptsInput) {
+                this.reattach();
+            }
+        },
+
         filter(value) {
             this.terminal.reset();
             this.terminal.write(this.logFilter.setFilter(value));
@@ -156,7 +175,7 @@ export default {
         }
 
         // Not in data(): it holds the whole log and has no business being
-        // reactive, the same way pasteTarget below is kept off it
+        // reactive
         this.logFilter = new LogFilter();
 
         this.terminal = new Terminal({
@@ -167,9 +186,7 @@ export default {
             rows: this.rows,
         });
 
-        if (this.mode === "mainTerminal") {
-            this.mainTerminalConfig();
-        } else if (this.mode === "interactive") {
+        if (this.acceptsInput) {
             this.interactiveTerminalConfig();
         }
 
@@ -189,16 +206,6 @@ export default {
         // Add right-click context menu handler for paste
         this.$refs.terminal.addEventListener("contextmenu", this.handleContextMenu);
 
-        // Handle the browser's own paste. Registered on the container during
-        // the capture phase so it runs before xterm's handler, which is bound
-        // to the helper textarea the event actually targets.
-        //
-        // Kept on a plain property rather than in data(): it is a DOM node with
-        // no business being reactive, and $refs is already cleared by the time
-        // unmounted() needs it back.
-        this.pasteTarget = this.$refs.terminal;
-        this.pasteTarget.addEventListener("paste", this.handleNativePaste, true);
-
         // Add selection handler for copy to clipboard
         this.terminal.onSelectionChange(() => {
             this.handleSelection();
@@ -215,21 +222,10 @@ export default {
 
         this.bind();
 
-        // Create a new Terminal
-        if (this.mode === "mainTerminal") {
-            this.$root.emitAgent(this.endpoint, "mainTerminal", this.name, (res) => {
-                if (!res.ok) {
-                    this.$root.toastRes(res);
-                }
-            });  // <- ADD THIS LINE
-        } else if (this.mode === "interactive") {
-            console.debug("Create Interactive terminal:", this.name);
-            this.$root.emitAgent(this.endpoint, "interactiveTerminal", this.stackName, this.serviceName, this.shell, (res) => {
-                if (!res.ok) {
-                    this.$root.toastRes(res);
-                }
-            });
+        if (this.acceptsInput) {
+            this.attach();
         }
+
         // Fit the terminal width to the div container size after terminal is created.
         this.updateTerminalSize();
     },
@@ -239,8 +235,7 @@ export default {
 
         window.removeEventListener("resize", this.onResizeEvent); // Remove the resize event listener from the window object.
         this.terminalResizeObserver?.disconnect();
-        this.pasteTarget?.removeEventListener("paste", this.handleNativePaste, true);
-        this.$root.unbindTerminal(this.endpoint, this.name);
+        this.$root.unbindTerminal(this.endpoint, this.terminalName);
         this.terminal.dispose();
     },
 
@@ -251,21 +246,86 @@ export default {
                 //this.$root.unbindTerminal(endpoint, name);
                 this.$root.bindTerminal(endpoint, name, this.sink());
                 console.debug("Terminal bound via parameter: " + name);
-            } else if (this.name) {
-                //this.$root.unbindTerminal(this.endpoint, this.name);
-                this.$root.bindTerminal(this.endpoint, this.name, this.sink());
-                console.debug("Terminal bound: " + this.name);
+            } else if (this.terminalName) {
+                //this.$root.unbindTerminal(this.endpoint, this.terminalName);
+                this.$root.bindTerminal(this.endpoint, this.terminalName, this.sink());
+                console.debug("Terminal bound: " + this.terminalName);
             } else {
                 console.debug("Terminal name not set");
             }
         },
 
+        /**
+         * Start the shell, or attach to it if it is already running, and tell
+         * it the size it is shown at
+         */
+        attach() {
+            const attached = (res) => {
+                if (!res.ok) {
+                    this.$root.toastRes(res);
+                    return;
+                }
+
+                // An agent from before per-tab consoles runs its one shared
+                // console whatever it is asked for, and says nothing about it
+                if (this.mode === "mainTerminal" && res.terminalName === undefined && this.terminalName !== this.name) {
+                    this.$root.unbindTerminal(this.endpoint, this.terminalName);
+                    this.consoleName = this.name;
+                    this.bind();
+                }
+
+                // The shell starts out at whatever size the server picked, and
+                // fitting only sizes this end. Anything that draws on the whole
+                // screen, such as nano, ran off the bottom until the window
+                // happened to be resized.
+                this.syncSize();
+            };
+
+            if (this.mode === "mainTerminal") {
+                this.$root.emitAgent(this.endpoint, "mainTerminal", this.terminalName, attached);
+            } else {
+                this.$root.emitAgent(this.endpoint, "joinContainerTerminal", this.stackName, this.serviceName, this.shell, attached);
+            }
+        },
+
+        /**
+         * Start over on a new connection: the screen as the server has it,
+         * then attach again
+         */
+        reattach() {
+            this.exited = false;
+            this.terminal.reset();
+            this.bind();
+            this.attach();
+        },
+
+        /**
+         * The shell has exited, by Ctrl+D or exit, or was found gone
+         * @param {number} exitCode Its exit code
+         */
+        onExit(exitCode) {
+            if (!this.acceptsInput || this.exited) {
+                return;
+            }
+
+            console.debug(`Shell ${this.terminalName} exited with code ${exitCode}`);
+            this.exited = true;
+            this.terminal.write(RESET_AFTER_EXIT + "\r\n" + this.$t("terminalExitedPressAnyKey") + "\r\n");
+        },
+
         clearTerminal() {
             this.terminal.clear();
-            this.terminalInputBuffer = "";
-            this.cursorPosition = 0;
             this.logFilter.clear();
             this.matchingLineCount = 0;
+        },
+
+        /**
+         * Clear the screen, and the copy the server keeps for whoever joins
+         * next
+         */
+        clearScreenAndBuffer() {
+            this.$root.emitAgent(this.endpoint, "clearTerminal", this.terminalName, () => {});
+            this.clearTerminal();
         },
 
         /**
@@ -274,10 +334,13 @@ export default {
          * Bound instead of the xterm instance so a filter can see the lines it
          * is not currently showing.
          *
-         * @returns {{write: (function(string): void)}} The sink to bind
+         * @returns {{write: (function(string): void), exit: (function(number): void)}} The sink to bind
          */
         sink() {
-            return { write: (data) => this.write(data) };
+            return {
+                write: (data) => this.write(data),
+                exit: (exitCode) => this.onExit(exitCode),
+            };
         },
 
         /**
@@ -298,132 +361,24 @@ export default {
             this.matchingLineCount = this.logFilter.matchingLineCount;
         },
 
-        removeInput() {
-            const backspaceCount = this.terminalInputBuffer.length;
-            const backspaces = "\b \b".repeat(backspaceCount);
-            this.cursorPosition = 0;
-            this.terminal.write(backspaces);
-            this.terminalInputBuffer = "";
-        },
-
-        /**
-         * Swap what is on the input line for other text, leaving the cursor at
-         * the end of it.
-         * @param {string} text The new input
-         */
-        replaceInput(text) {
-            const leftover = Math.max(this.terminalInputBuffer.length - text.length, 0);
-            this.terminal.write(
-                "\b".repeat(this.cursorPosition) + text + " ".repeat(leftover) + "\b".repeat(leftover)
-            );
-            this.terminalInputBuffer = text;
-            this.cursorPosition = text.length;
-        },
-
-        clearCurrentLine() {
-            // Move cursor to the beginning of the input and clear it
-            const backspaces = "\b".repeat(this.cursorPosition);
-            const spaces = " ".repeat(this.terminalInputBuffer.length);
-            const moreBackspaces = "\b".repeat(this.terminalInputBuffer.length);
-            this.terminal.write(backspaces + spaces + moreBackspaces);
-        },
-
-        mainTerminalConfig() {
-            // Use onData (not onKey): onKey only fires for events that
-            // originate from a real keydown, so input coming from mobile
-            // virtual keyboards/IME composition (which xterm.js delivers
-            // straight to onData) would otherwise be silently dropped.
-            this.terminal.onData(data => {
-                const code = data.charCodeAt(0);
-                console.debug("Encode: " + JSON.stringify(data));
-
-                if (data === "\r") {
-                    // Return if no input
-                    if (this.terminalInputBuffer.length === 0) {
-                        return;
-                    }
-
-                    const buffer = this.terminalInputBuffer;
-
-                    getCommandHistory(this.endpoint, this.name).add(buffer);
-
-                    // Remove the input from the terminal
-                    this.removeInput();
-
-                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, buffer + data, (err) => {
-                        this.$root.toastError(err.msg);
-                    });
-
-                } else if (code === 127) { // Backspace
-                    if (this.cursorPosition > 0) {
-                        // Remove character to the left of cursor
-                        const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition - 1);
-                        const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-                        this.terminalInputBuffer = beforeCursor + afterCursor;
-                        this.cursorPosition--;
-
-                        // Redraw the line
-                        this.terminal.write("\b" + afterCursor + " \b".repeat(afterCursor.length + 1));
-                    }
-                } else if (data === "\u001B\u005B\u0033\u007E") { // Delete key
-                    if (this.cursorPosition < this.terminalInputBuffer.length) {
-                        // Remove character to the right of cursor
-                        const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
-                        const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition + 1);
-                        this.terminalInputBuffer = beforeCursor + afterCursor;
-
-                        // Redraw the line from cursor position
-                        this.terminal.write(afterCursor + " \b".repeat(afterCursor.length + 1));
-                    }
-                } else if (data === "\u001B\u005B\u0041" || data === "\u001BOA") {      // UP
-                    // Both forms: the second is what xterm sends once the
-                    // shell switches it to application cursor keys
-                    const entry = getCommandHistory(this.endpoint, this.name).previous(this.terminalInputBuffer);
-                    if (entry !== undefined) {
-                        this.replaceInput(entry);
-                    }
-                } else if (data === "\u001B\u005B\u0042" || data === "\u001BOB") {      // DOWN
-                    const entry = getCommandHistory(this.endpoint, this.name).next();
-                    if (entry !== undefined) {
-                        this.replaceInput(entry);
-                    }
-                } else if (data === "\u001B\u005B\u0043" || data === "\u001BOC") {      // RIGHT
-                    if (this.cursorPosition < this.terminalInputBuffer.length) {
-                        this.terminal.write(this.terminalInputBuffer[this.cursorPosition]);
-                        this.cursorPosition++;
-                    }
-                } else if (data === "\u001B\u005B\u0044" || data === "\u001BOD") {      // LEFT
-                    if (this.cursorPosition > 0) {
-                        this.terminal.write("\b");
-                        this.cursorPosition--;
-                    }
-                } else if (data === "\u0003") {      // Ctrl + C
-                    console.debug("Ctrl + C");
-                    this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data);
-                    this.removeInput();
-                    getCommandHistory(this.endpoint, this.name).reset();
-                } else {
-                    // data may be more than one character (e.g. a mobile
-                    // IME/autocomplete committing a whole word at once)
-                    const textBeforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
-                    const textAfterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-                    this.terminalInputBuffer = textBeforeCursor + data + textAfterCursor;
-                    this.terminal.write(data + textAfterCursor + "\b".repeat(textAfterCursor.length));
-                    this.cursorPosition += data.length;
-                }
-            });
-        },
-
         interactiveTerminalConfig() {
             // Use onData (not onKey): mobile virtual keyboards/IME
             // composition deliver typed text via onData without ever
             // firing a keydown, so onKey alone misses that input.
             this.terminal.onData(data => {
-                this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data, (res) => {
-                    if (!res.ok) {
-                        this.$root.toastRes(res);
-                    }
-                });
+                if (this.exited) {
+                    // Any key starts a new shell, and is not typed into it
+                    this.exited = false;
+                    this.terminal.write("\r\n");
+                    this.attach();
+                    return;
+                }
+
+                // No answer is asked for. The server only sends one when
+                // something is wrong, so every key left behind a callback that
+                // was never called. A shell that has gone is reported with
+                // terminalExit instead.
+                this.$root.emitAgent(this.endpoint, "terminalInput", this.terminalName, data);
             });
         },
 
@@ -512,9 +467,23 @@ export default {
                 return;
             }
 
-            let rows = this.terminal.rows;
-            let cols = this.terminal.cols;
-            this.$root.emitAgent(this.endpoint, "terminalResize", this.name, rows, cols);
+            this.sendSize();
+        },
+
+        /**
+         * Fit the terminal if it can be measured, and tell the server its size
+         * either way
+         */
+        syncSize() {
+            this.fitTerminal();
+            this.sendSize();
+        },
+
+        /**
+         * Tell the server the size the terminal is shown at
+         */
+        sendSize() {
+            this.$root.emitAgent(this.endpoint, "terminalResize", this.terminalName, this.terminal.rows, this.terminal.cols);
         },
 
         /**
@@ -532,72 +501,16 @@ export default {
         },
 
         /**
-         * Handle a paste performed by the browser itself, from Ctrl+V, Cmd+V or
-         * the native context menu.
-         *
-         * This is the only paste path that works over plain HTTP, which is how
-         * Dockge is usually reached. navigator.clipboard.readText() is gated on
-         * a secure context, but the clipboardData carried by a paste event is
-         * not: the read was performed by the browser in response to a real user
-         * gesture, so there is nothing for it to withhold.
-         *
-         * Only mainTerminal is handled here. Everywhere else xterm's own paste
-         * handler is left to do the job, because it reads the same clipboardData
-         * and then normalises newlines and applies bracketed paste before
-         * handing the text to onData - all of which the interactive terminal
-         * wants and mainTerminal, with its hand-rolled line buffer, cannot use.
-         *
-         * @param {ClipboardEvent} event
-         */
-        handleNativePaste(event) {
-            if (this.mode !== "mainTerminal") {
-                return;
-            }
-
-            // Claim the paste before xterm's own handler sees it, so the text is
-            // not delivered twice and mainTerminal keeps ownership of its input
-            // buffer. Also stops the text landing in the helper textarea, which
-            // preventDefault alone would allow.
-            event.preventDefault();
-            event.stopPropagation();
-
-            const text = event.clipboardData?.getData("text/plain");
-
-            if (text) {
-                this.pasteText(text);
-            }
-        },
-
-        /**
-         * Paste text into the terminal based on current mode
+         * Paste text into the terminal
          */
         pasteText(text) {
-            if (this.mode === "mainTerminal") {
-                // For main terminal, insert text at current cursor position
-                const beforeCursor = this.terminalInputBuffer.slice(0, this.cursorPosition);
-                const afterCursor = this.terminalInputBuffer.slice(this.cursorPosition);
-
-                // Update the buffer with inserted text
-                this.terminalInputBuffer = beforeCursor + text + afterCursor;
-
-                // Clear the current line and rewrite it
-                this.clearCurrentLine();
-                this.terminal.write(this.terminalInputBuffer);
-
-                // Move cursor to the correct position (after the pasted text)
-                this.cursorPosition += text.length;
-                const backspaces = "\b".repeat(afterCursor.length);
-                this.terminal.write(backspaces);
-
-            } else if (this.mode === "interactive") {
-                // Hand it to xterm rather than emitting it raw, so it gets the
-                // same newline normalisation and bracketed-paste framing as a
-                // paste the browser performed itself. Without the framing a
-                // multi-line paste is run line by line as it arrives instead of
-                // being held for the user to confirm. xterm passes the result
-                // to onData, which is what sends it to the server.
-                this.terminal.paste(text);
-            }
+            // Hand it to xterm rather than emitting it raw, so it gets the same
+            // newline normalisation and bracketed-paste framing as a paste the
+            // browser performed itself. Without the framing a multi-line paste
+            // is run line by line as it arrives instead of being held for the
+            // user to confirm. xterm passes the result to onData, which is what
+            // sends it to the server.
+            this.terminal.paste(text);
         },
 
         /**
@@ -605,14 +518,14 @@ export default {
          */
         handleContextMenu(event) {
             // Only handle paste for modes that support input
-            if (this.mode !== "mainTerminal" && this.mode !== "interactive") {
+            if (!this.acceptsInput) {
                 return;
             }
 
             // Without navigator.clipboard there is nothing to replace the menu
             // with, so suppressing it would only take away the one working way
             // to paste by mouse. Leave it to the browser, whose own Paste item
-            // reaches handleNativePaste.
+            // reaches xterm's paste handler.
             if (!navigator.clipboard?.readText) {
                 return;
             }
@@ -632,9 +545,11 @@ export default {
          * that verdict before it calls preventDefault(), so the browser still
          * performs the key's own default action - which is what makes the
          * paste case work: the browser pastes into xterm's focused helper
-         * textarea and handleNativePaste picks the text up from the resulting
-         * event. Left to xterm, Ctrl+V would instead be encoded as ^V and the
-         * default suppressed, so no paste would ever happen.
+         * textarea and xterm's own paste handler picks the text up from the
+         * resulting event. That event carries the clipboard even over plain
+         * HTTP, where navigator.clipboard does not exist. Left to xterm, Ctrl+V
+         * would instead be encoded as ^V and the default suppressed, so no
+         * paste would ever happen.
          *
          * Cmd+C is deliberately not handled here, so on macOS it stays the
          * browser's own copy, which clearing the selection would break.
@@ -654,10 +569,17 @@ export default {
             // The cost is that Ctrl+V can no longer send a literal ^V for
             // readline's quoted-insert, but it never could: it was already
             // bound to paste.
+            //
+            // Full-screen programs, which draw on the alternate screen, are
+            // the exception: Ctrl+V means something to them (next page, in
+            // nano), so there it is sent to the program and Ctrl+Shift+V
+            // pastes, as in most terminal emulators. Cmd+V is never sent to a
+            // program, so on macOS it always pastes.
             const isPasteShortcut = event.type === "keydown" &&
                 !event.altKey &&
                 (this.isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
-                event.key.toLowerCase() === "v";
+                event.key.toLowerCase() === "v" &&
+                (this.isMac || event.shiftKey || this.terminal.buffer.active.type !== "alternate");
 
             if (isPasteShortcut) {
                 return false;

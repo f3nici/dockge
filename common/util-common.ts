@@ -309,6 +309,27 @@ export function getContainerLogName(endpoint : string, stackName : string, conta
     return "container-log-" + endpoint + "-" + stackName + "-" + container + "-" + index;
 }
 
+/**
+ * The console of one browser tab. Each tab has its own, so two tabs do not
+ * type into, or resize, the same shell.
+ * @param endpoint The agent the console runs on
+ * @param tabID An id the tab picked for itself
+ * @returns {string} The terminal name
+ */
+export function getConsoleTerminalName(endpoint : string, tabID : string) {
+    return "console-" + endpoint + "-" + tabID;
+}
+
+/**
+ * Whether a client may name a console this. Anything getConsoleTerminalName()
+ * can produce, and nothing that could pass for another kind of terminal.
+ * @param name The name the client asked for
+ * @returns {boolean} Whether it is a console name
+ */
+export function isConsoleTerminalName(name : unknown) : name is string {
+    return typeof name === "string" && /^console-[\w.:[\]-]{1,300}$/.test(name);
+}
+
 export function getAgentMaintenanceTerminalName(endpoint : string) {
     return "agent-maintenance-" + endpoint;
 }

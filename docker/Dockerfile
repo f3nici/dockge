@@ -11,6 +11,7 @@ RUN apt update && apt install --yes --no-install-recommends \
     unzip \
     dumb-init \
     skopeo \
+    nano \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && chmod a+r /etc/apt/keyrings/docker.gpg \
@@ -92,6 +93,11 @@ COPY --chown=node:node ./backend ./backend
 COPY --chown=node:node ./common ./common
 COPY --chown=node:node ./package.json ./
 RUN mkdir ./data
+
+# Colour for the console. Debian's /etc/bash.bashrc only reads what it is
+# pointed at, so point it at ours.
+COPY ./extra/console.bashrc /etc/dockge.bashrc
+RUN echo '[ -r /etc/dockge.bashrc ] && . /etc/dockge.bashrc' >> /etc/bash.bashrc
 
 
 # It is just for safe, as by default, it is disabled in the latest Node.js now.

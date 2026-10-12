@@ -51,9 +51,6 @@ export default {
             return this.shellRouteLink("zsh");
         },
     },
-    mounted() {
-        this.$root.emitAgent(this.endpoint, "joinContainerTerminal", this.stackName, this.serviceName, this.shell, (res) => {});
-    },
     methods: {
         shellRouteLink(shell) {
             let endpoint = this.$route.params.endpoint;

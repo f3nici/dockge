@@ -1,6 +1,10 @@
 import { DockgeServer } from "./dockge-server";
 import * as os from "node:os";
 import * as pty from "@homebridge/node-pty-prebuilt-multiarch";
+// Both are CommonJS bundles whose exports Node cannot see from an ES module,
+// so a named import fails at startup. Only the default import works.
+import xtermHeadless from "@xterm/headless";
+import xtermSerialize from "@xterm/addon-serialize";
 import { LimitQueue } from "./utils/limit-queue";
 import { DockgeSocket } from "./util-server";
 import {
@@ -10,6 +14,9 @@ import {
 } from "../common/util-common";
 import { sync as commandExistsSync } from "command-exists";
 import { log } from "./log";
+
+const { Terminal: HeadlessTerminal } = xtermHeadless;
+const { SerializeAddon } = xtermSerialize;
 
 /**
  * Terminal for running commands, no user interaction
@@ -30,8 +37,25 @@ export class Terminal {
     protected _rows : number = TERMINAL_ROWS;
     protected _cols : number = TERMINAL_COLS;
 
+    /**
+     * The TERM the process is started with. Whatever runs here is shown by
+     * xterm.js. Left to node-pty, it was the terminal's own name, such as
+     * "console", which no terminfo answers to: nano and clear refused to start
+     * under it.
+     */
+    protected termType = "xterm-256color";
+
     public enableKeepAlive : boolean = false;
     protected keepAliveInterval? : NodeJS.Timeout;
+
+    /**
+     * How long a keep-alive terminal is left running with nobody watching it,
+     * in milliseconds. Checked once a minute.
+     */
+    protected idleTimeout = 0;
+
+    /** When the last client left, while there is none */
+    protected idleSince? : number;
     protected kickDisconnectedClientsInterval? : NodeJS.Timeout;
 
     protected socketList : Record<string, DockgeSocket> = {};
@@ -53,13 +77,7 @@ export class Terminal {
 
     set rows(rows : number) {
         this._rows = rows;
-        try {
-            this.ptyProcess?.resize(this.cols, this.rows);
-        } catch (e) {
-            if (e instanceof Error) {
-                log.debug("Terminal", "Failed to resize terminal: " + e.message);
-            }
-        }
+        this.resize();
     }
 
     get cols() {
@@ -69,6 +87,13 @@ export class Terminal {
     set cols(cols : number) {
         this._cols = cols;
         log.debug("Terminal", `Terminal cols: ${this._cols}`); // Added to check if cols is being set when changing terminal size.
+        this.resize();
+    }
+
+    /**
+     * Apply rows and cols to the running process
+     */
+    protected resize() {
         try {
             this.ptyProcess?.resize(this.cols, this.rows);
         } catch (e) {
@@ -98,15 +123,21 @@ export class Terminal {
         if (this.enableKeepAlive) {
             log.debug("Terminal", "Keep alive enabled for terminal " + this.name);
 
-            // Close if there is no clients
+            // Close once nobody has been watching for idleTimeout
             this.keepAliveInterval = setInterval(() => {
-                const numClients = Object.keys(this.socketList).length;
+                const numClients = this.clientCount;
 
-                if (numClients === 0) {
+                if (numClients > 0) {
+                    this.idleSince = undefined;
+                    log.debug("Terminal", "Terminal " + this.name + " has " + numClients + " client(s)");
+                    return;
+                }
+
+                this.idleSince ??= Date.now();
+
+                if (Date.now() - this.idleSince >= this.idleTimeout) {
                     log.debug("Terminal", "Terminal " + this.name + " has no client, closing...");
                     this.close();
-                } else {
-                    log.debug("Terminal", "Terminal " + this.name + " has " + numClients + " client(s)");
                 }
             }, 60 * 1000);
         } else {
@@ -118,7 +149,7 @@ export class Terminal {
             this.writeToClients(this.file + " " + (Array.isArray(this.args) ? this.args.join(" ") : this.args) + "\n\r");
 
             this._ptyProcess = pty.spawn(this.file, this.args, {
-                name: this.name,
+                name: this.termType,
                 cwd: this.cwd,
                 cols: this.cols,
                 rows: this.rows,
@@ -166,12 +197,20 @@ export class Terminal {
      * @param data
      */
     protected writeToClients(data : string) {
-        this.buffer.pushItem(data);
+        this.record(data);
 
         for (const socketID in this.socketList) {
             const socket = this.socketList[socketID];
             socket.emitAgent("terminalWrite", this.name, data);
         }
+    }
+
+    /**
+     * Keep output for a client that joins later
+     * @param data
+     */
+    protected record(data : string) {
+        this.buffer.pushItem(data);
     }
 
     /**
@@ -235,12 +274,22 @@ export class Terminal {
         log.debug("Terminal", "Terminal " + this.name + " socket " + socket.id + " joining");
 
         this.socketList[socket.id] = socket;
+        this.idleSince = undefined;
     }
 
     public leave(socket : DockgeSocket) {
         log.debug("Terminal", "Terminal " + this.name + " socket " + socket.id + " leaving");
 
         delete this.socketList[socket.id];
+    }
+
+    /**
+     * Clients still connected. One whose connection dropped stays listed until
+     * the next sweep, up to a minute later, and must not count as somebody
+     * watching: logging out after a reconnect left the shell running for it.
+     */
+    public get clientCount() {
+        return Object.values(this.socketList).filter(socket => socket.connected).length;
     }
 
     /**
@@ -251,12 +300,21 @@ export class Terminal {
      * the terminals it had joined. They went on writing container and stack
      * output to a connection that is no longer authorised, and the sweep that
      * removes stale clients only looks at disconnected ones, which this is not.
+     *
+     * A shell this leaves with nobody watching is closed outright rather than
+     * left to its idle timeout. It is that user's session, and the next person
+     * to log in on the same tab would otherwise be handed it, scrollback and
+     * all.
      * @param socket The socket to remove from every terminal
      */
     public static leaveAll(socket : DockgeSocket) {
-        for (const terminal of Terminal.terminalMap.values()) {
+        for (const terminal of [ ...Terminal.terminalMap.values() ]) {
             if (socket.id in terminal.socketList) {
                 terminal.leave(socket);
+
+                if (terminal instanceof InteractiveTerminal && terminal.clientCount === 0) {
+                    terminal.close();
+                }
             }
         }
     }
@@ -338,12 +396,73 @@ export class Terminal {
 }
 
 /**
- * Interactive terminal
- * Mainly used for container exec
+ * Interactive terminal: a shell, in a container or the console
  */
 export class InteractiveTerminal extends Terminal {
+    /**
+     * A copy of the screen, kept by a terminal emulator of its own, which is
+     * what a client joining later is sent.
+     *
+     * Replaying the raw output, as the other terminals do, does not work for a
+     * shell. Its output is mostly the echo of single keystrokes, so a hundred
+     * chunks held little more than the last hundred keys pressed. A full-screen
+     * program such as nano draws once and then only sends what changes, so a
+     * replay that no longer reached back to its start came out in fragments,
+     * on the wrong screen. And replayed output can ask the terminal questions,
+     * which a client answers into the shell as stray input. The screen as it
+     * stands has none of those problems: it includes the alternate screen nano
+     * draws on and the modes it set, and asks nothing.
+     */
+    protected screen : InstanceType<typeof HeadlessTerminal>;
+    protected serializer = new SerializeAddon();
+
+    /**
+     * Output written to the screen that it has not taken in yet. Writes are
+     * parsed asynchronously, so without this a client joining in between would
+     * miss them: they went out before it joined, and are not on the screen yet.
+     */
+    protected pendingOutput : string[] = [];
+
+    constructor(server : DockgeServer, name : string, file : string, args : string | string[], cwd : string) {
+        super(server, name, file, args, cwd);
+
+        this.screen = new HeadlessTerminal({
+            cols: this.cols,
+            rows: this.rows,
+            scrollback: 1000,
+            allowProposedApi: true,
+        });
+        // The addon is typed against @xterm/xterm. The headless Terminal has
+        // everything of it the addon uses.
+        this.screen.loadAddon(this.serializer as never);
+
+        // Long enough to look something up on another page and come back to
+        // the shell, and whatever is running in it, as it was left
+        this.idleTimeout = 10 * 60 * 1000;
+    }
+
     public write(input : string) {
         this.ptyProcess?.write(input);
+    }
+
+    protected record(data : string) {
+        this.pendingOutput.push(data);
+        this.screen.write(data, () => {
+            this.pendingOutput.shift();
+        });
+    }
+
+    getBuffer() : string {
+        return this.serializer.serialize() + this.pendingOutput.join("");
+    }
+
+    clearBuffer() {
+        this.screen.clear();
+    }
+
+    protected resize() {
+        super.resize();
+        this.screen.resize(this.cols, this.rows);
     }
 
     resetCWD() {
@@ -353,7 +472,7 @@ export class InteractiveTerminal extends Terminal {
 }
 
 /**
- * User interactive terminal that use bash or powershell with limited commands such as docker, ls, cd, dir
+ * The console: an interactive bash or powershell, wherever Dockge itself runs
  */
 export class MainTerminal extends InteractiveTerminal {
     constructor(server : DockgeServer, name : string) {
@@ -374,9 +493,5 @@ export class MainTerminal extends InteractiveTerminal {
             shell = "bash";
         }
         super(server, name, shell, [], server.stacksDir);
-    }
-
-    public write(input : string) {
-        super.write(input);
     }
 }

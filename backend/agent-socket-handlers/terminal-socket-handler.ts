@@ -4,6 +4,7 @@ import { log } from "../log";
 import { InteractiveTerminal, MainTerminal, Terminal } from "../terminal";
 import { AgentSocketHandler } from "../agent-socket-handler";
 import { AgentSocket } from "../../common/agent-socket";
+import { isConsoleTerminalName } from "../../common/util-common";
 
 export class TerminalSocketHandler extends AgentSocketHandler {
     create(socket : DockgeSocket, server : DockgeServer, agentSocket : AgentSocket) {
@@ -24,11 +25,23 @@ export class TerminalSocketHandler extends AgentSocketHandler {
                 if (terminal instanceof InteractiveTerminal) {
                     //log.debug("terminalInput", "Terminal found, writing to terminal.");
                     terminal.write(cmd);
+                } else if (!terminal) {
+                    // The shell has gone, most likely exited while this client
+                    // was not attached to hear about it. Keys are sent without
+                    // waiting for an answer, so say so rather than swallow
+                    // them: the client offers to start a new one.
+                    socket.emitAgent("terminalExit", terminalName, -1);
                 } else {
                     throw new Error("Terminal not found or it is not a Interactive Terminal.");
                 }
             } catch (e) {
-                callbackError(e, callback);
+                // Clients no longer ask for an answer to every key pressed,
+                // since nothing comes back when it worked
+                if (typeof(callback) === "function") {
+                    callbackError(e, callback);
+                } else {
+                    log.debug("terminalInput", e instanceof Error ? e.message : String(e));
+                }
             }
         });
 
@@ -42,8 +55,14 @@ export class TerminalSocketHandler extends AgentSocketHandler {
                     throw new ValidationError("Console is not enabled.");
                 }
 
-                // TODO: Reset the name here, force one main terminal for now
-                terminalName = "console";
+                // Each browser tab asks for a console of its own. Shared, two
+                // tabs typing at once had their keys interleaved into one
+                // command line, and each resized the screen under the other.
+                // A client from before that gets the one shared console it
+                // always had.
+                if (!isConsoleTerminalName(terminalName)) {
+                    terminalName = "console";
+                }
 
                 if (typeof(terminalName) !== "string") {
                     throw new ValidationError("Terminal name must be a string.");
@@ -72,6 +91,7 @@ export class TerminalSocketHandler extends AgentSocketHandler {
 
                 callbackResult({
                     ok: true,
+                    terminalName,
                 }, callback);
             } catch (e) {
                 callbackError(e, callback);
@@ -125,7 +145,16 @@ export class TerminalSocketHandler extends AgentSocketHandler {
                     throw new ValidationError("Terminal name must be a string.");
                 }
 
-                let buffer : string = Terminal.getTerminal(terminalName)?.getBuffer() ?? "";
+                const terminal = Terminal.getTerminal(terminalName);
+
+                // A shell's screen is sent as it stands, and from this point
+                // on, so the client is attached in the same step. Joined
+                // later, output in between would be on neither.
+                if (terminal instanceof InteractiveTerminal) {
+                    terminal.join(socket);
+                }
+
+                let buffer : string = terminal?.getBuffer() ?? "";
 
                 if (!buffer) {
                     log.debug("console", "No buffer found.");
@@ -174,11 +203,11 @@ export class TerminalSocketHandler extends AgentSocketHandler {
                     throw new Error("Terminal name must be a string.");
                 }
 
-                if (typeof rows !== "number") {
-                    throw new Error("Command must be a number.");
+                if (!Number.isInteger(rows) || (rows as number) < 1 || (rows as number) > 1000) {
+                    throw new Error("Rows must be a whole number from 1 to 1000.");
                 }
-                if (typeof cols !== "number") {
-                    throw new Error("Command must be a number.");
+                if (!Number.isInteger(cols) || (cols as number) < 1 || (cols as number) > 1000) {
+                    throw new Error("Cols must be a whole number from 1 to 1000.");
                 }
 
                 let terminal = Terminal.getTerminal(terminalName);
@@ -186,8 +215,8 @@ export class TerminalSocketHandler extends AgentSocketHandler {
                 // log.info("terminal", terminal);
                 if (terminal instanceof Terminal) {
                     //log.debug("terminalInput", "Terminal found, writing to terminal.");
-                    terminal.rows = rows;
-                    terminal.cols = cols;
+                    terminal.rows = rows as number;
+                    terminal.cols = cols as number;
                 } else {
                     throw new Error(`${terminalName} Terminal not found.`);
                 }
