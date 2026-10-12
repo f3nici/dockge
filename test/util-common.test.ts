@@ -22,6 +22,8 @@ import {
     parseDockerPort,
     normalizeStackName,
     STACK_NAME_PATTERN,
+    getConsoleTerminalName,
+    isConsoleTerminalName,
 } from "../common/util-common";
 
 describe("intHash", () => {
@@ -267,5 +269,23 @@ describe("StackFilter", () => {
         filter.status.toggleSelected("active");
         filter.clear();
         expect(filter.isFilterSelected()).toBe(false);
+    });
+});
+
+describe("console terminal names", () => {
+    it("accepts what a tab names its console, on this server or an agent", () => {
+        expect(isConsoleTerminalName(getConsoleTerminalName("", "0123456789abcdef01234567"))).toBe(true);
+        expect(isConsoleTerminalName(getConsoleTerminalName("192.168.1.5:5001", "0123456789abcdef01234567"))).toBe(true);
+        expect(isConsoleTerminalName(getConsoleTerminalName("[::1]:5001", "ab"))).toBe(true);
+    });
+
+    // Anything else gets the shared console, as clients from before always did
+    it("refuses names of other terminals and anything that is not a name", () => {
+        expect(isConsoleTerminalName("console")).toBe(false);
+        expect(isConsoleTerminalName("container-terminal--stack-app-bash-0")).toBe(false);
+        expect(isConsoleTerminalName("console-a b")).toBe(false);
+        expect(isConsoleTerminalName("console-" + "a".repeat(301))).toBe(false);
+        expect(isConsoleTerminalName(undefined)).toBe(false);
+        expect(isConsoleTerminalName(42)).toBe(false);
     });
 });

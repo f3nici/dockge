@@ -19,8 +19,16 @@
 <script>
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { TERMINAL_COLS, TERMINAL_ROWS } from "../../../common/util-common";
+import { getConsoleTerminalName, TERMINAL_COLS, TERMINAL_ROWS } from "../../../common/util-common";
 import { LogFilter } from "../../../common/log-filter";
+import { getConsoleTabID } from "../util-frontend";
+
+/**
+ * Written when the shell exits: puts back what a program that did not get to
+ * clean up may have left switched on, such as nano's alternate screen or mouse
+ * reporting, which would otherwise turn mouse moves into keys
+ */
+const RESET_AFTER_EXIT = "\x1b[?1049l\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1004l";
 
 export default {
     /**
@@ -31,6 +39,8 @@ export default {
 
     },
     props: {
+        // In mainTerminal mode, the console this tab gets is named for the tab
+        // instead. This is the name used with an agent that predates that.
         name: {
             type: String,
             required: true,
@@ -94,9 +104,39 @@ export default {
             lastFitWidth: 0,
             filter: "",
             matchingLineCount: 0,
+            // The console of this tab, in mainTerminal mode
+            consoleName: this.mode === "mainTerminal" ? getConsoleTerminalName(this.endpoint, getConsoleTabID()) : "",
+            // The shell has exited, and the next key starts a new one
+            exited: false,
         };
     },
     computed: {
+        /**
+         * @returns {string} What the server knows this terminal as
+         */
+        terminalName() {
+            return this.mode === "mainTerminal" ? this.consoleName : this.name;
+        },
+
+        /**
+         * @returns {boolean} Whether this is a shell, which is typed into
+         */
+        acceptsInput() {
+            return this.mode === "mainTerminal" || this.mode === "interactive";
+        },
+
+        /**
+         * Goes up each time the connection to the endpoint is made again. The
+         * server only knows the clients of a shell by the connection they had,
+         * so after a new one this terminal has to attach again: until then
+         * keys reached the shell, but nothing it wrote came back.
+         *
+         * @returns {number} The generation
+         */
+        connectionGeneration() {
+            return this.$root.connectionGenerations[this.endpoint] ?? 0;
+        },
+
         /**
          * Whether the browser is running on macOS, which pastes with Cmd rather
          * than Ctrl. userAgentData is the non-deprecated source but is still
@@ -110,6 +150,12 @@ export default {
         },
     },
     watch: {
+        connectionGeneration() {
+            if (this.acceptsInput) {
+                this.reattach();
+            }
+        },
+
         filter(value) {
             this.terminal.reset();
             this.terminal.write(this.logFilter.setFilter(value));
@@ -140,7 +186,7 @@ export default {
             rows: this.rows,
         });
 
-        if (this.mode === "mainTerminal" || this.mode === "interactive") {
+        if (this.acceptsInput) {
             this.interactiveTerminalConfig();
         }
 
@@ -176,28 +222,10 @@ export default {
 
         this.bind();
 
-        // Create a new Terminal
-        if (this.mode === "mainTerminal") {
-            this.$root.emitAgent(this.endpoint, "mainTerminal", this.name, (res) => {
-                if (!res.ok) {
-                    this.$root.toastRes(res);
-                    return;
-                }
-
-                // The shell starts out 50 rows tall, and the fit below only
-                // sizes this end. Anything that draws on the whole screen,
-                // such as nano, would run off the bottom until the window
-                // happened to be resized.
-                this.onResizeEvent();
-            });
-        } else if (this.mode === "interactive") {
-            console.debug("Create Interactive terminal:", this.name);
-            this.$root.emitAgent(this.endpoint, "interactiveTerminal", this.stackName, this.serviceName, this.shell, (res) => {
-                if (!res.ok) {
-                    this.$root.toastRes(res);
-                }
-            });
+        if (this.acceptsInput) {
+            this.attach();
         }
+
         // Fit the terminal width to the div container size after terminal is created.
         this.updateTerminalSize();
     },
@@ -207,7 +235,7 @@ export default {
 
         window.removeEventListener("resize", this.onResizeEvent); // Remove the resize event listener from the window object.
         this.terminalResizeObserver?.disconnect();
-        this.$root.unbindTerminal(this.endpoint, this.name);
+        this.$root.unbindTerminal(this.endpoint, this.terminalName);
         this.terminal.dispose();
     },
 
@@ -218,13 +246,71 @@ export default {
                 //this.$root.unbindTerminal(endpoint, name);
                 this.$root.bindTerminal(endpoint, name, this.sink());
                 console.debug("Terminal bound via parameter: " + name);
-            } else if (this.name) {
-                //this.$root.unbindTerminal(this.endpoint, this.name);
-                this.$root.bindTerminal(this.endpoint, this.name, this.sink());
-                console.debug("Terminal bound: " + this.name);
+            } else if (this.terminalName) {
+                //this.$root.unbindTerminal(this.endpoint, this.terminalName);
+                this.$root.bindTerminal(this.endpoint, this.terminalName, this.sink());
+                console.debug("Terminal bound: " + this.terminalName);
             } else {
                 console.debug("Terminal name not set");
             }
+        },
+
+        /**
+         * Start the shell, or attach to it if it is already running, and tell
+         * it the size it is shown at
+         */
+        attach() {
+            const attached = (res) => {
+                if (!res.ok) {
+                    this.$root.toastRes(res);
+                    return;
+                }
+
+                // An agent from before per-tab consoles runs its one shared
+                // console whatever it is asked for, and says nothing about it
+                if (this.mode === "mainTerminal" && res.terminalName === undefined && this.terminalName !== this.name) {
+                    this.$root.unbindTerminal(this.endpoint, this.terminalName);
+                    this.consoleName = this.name;
+                    this.bind();
+                }
+
+                // The shell starts out at whatever size the server picked, and
+                // fitting only sizes this end. Anything that draws on the whole
+                // screen, such as nano, ran off the bottom until the window
+                // happened to be resized.
+                this.syncSize();
+            };
+
+            if (this.mode === "mainTerminal") {
+                this.$root.emitAgent(this.endpoint, "mainTerminal", this.terminalName, attached);
+            } else {
+                this.$root.emitAgent(this.endpoint, "joinContainerTerminal", this.stackName, this.serviceName, this.shell, attached);
+            }
+        },
+
+        /**
+         * Start over on a new connection: the screen as the server has it,
+         * then attach again
+         */
+        reattach() {
+            this.exited = false;
+            this.terminal.reset();
+            this.bind();
+            this.attach();
+        },
+
+        /**
+         * The shell has exited, by Ctrl+D or exit, or was found gone
+         * @param {number} exitCode Its exit code
+         */
+        onExit(exitCode) {
+            if (!this.acceptsInput || this.exited) {
+                return;
+            }
+
+            console.debug(`Shell ${this.terminalName} exited with code ${exitCode}`);
+            this.exited = true;
+            this.terminal.write(RESET_AFTER_EXIT + "\r\n" + this.$t("terminalExitedPressAnyKey") + "\r\n");
         },
 
         clearTerminal() {
@@ -234,15 +320,27 @@ export default {
         },
 
         /**
+         * Clear the screen, and the copy the server keeps for whoever joins
+         * next
+         */
+        clearScreenAndBuffer() {
+            this.$root.emitAgent(this.endpoint, "clearTerminal", this.terminalName, () => {});
+            this.clearTerminal();
+        },
+
+        /**
          * What the socket mixin writes incoming output to.
          *
          * Bound instead of the xterm instance so a filter can see the lines it
          * is not currently showing.
          *
-         * @returns {{write: (function(string): void)}} The sink to bind
+         * @returns {{write: (function(string): void), exit: (function(number): void)}} The sink to bind
          */
         sink() {
-            return { write: (data) => this.write(data) };
+            return {
+                write: (data) => this.write(data),
+                exit: (exitCode) => this.onExit(exitCode),
+            };
         },
 
         /**
@@ -268,11 +366,19 @@ export default {
             // composition deliver typed text via onData without ever
             // firing a keydown, so onKey alone misses that input.
             this.terminal.onData(data => {
-                this.$root.emitAgent(this.endpoint, "terminalInput", this.name, data, (res) => {
-                    if (!res.ok) {
-                        this.$root.toastRes(res);
-                    }
-                });
+                if (this.exited) {
+                    // Any key starts a new shell, and is not typed into it
+                    this.exited = false;
+                    this.terminal.write("\r\n");
+                    this.attach();
+                    return;
+                }
+
+                // No answer is asked for. The server only sends one when
+                // something is wrong, so every key left behind a callback that
+                // was never called. A shell that has gone is reported with
+                // terminalExit instead.
+                this.$root.emitAgent(this.endpoint, "terminalInput", this.terminalName, data);
             });
         },
 
@@ -361,9 +467,23 @@ export default {
                 return;
             }
 
-            let rows = this.terminal.rows;
-            let cols = this.terminal.cols;
-            this.$root.emitAgent(this.endpoint, "terminalResize", this.name, rows, cols);
+            this.sendSize();
+        },
+
+        /**
+         * Fit the terminal if it can be measured, and tell the server its size
+         * either way
+         */
+        syncSize() {
+            this.fitTerminal();
+            this.sendSize();
+        },
+
+        /**
+         * Tell the server the size the terminal is shown at
+         */
+        sendSize() {
+            this.$root.emitAgent(this.endpoint, "terminalResize", this.terminalName, this.terminal.rows, this.terminal.cols);
         },
 
         /**
@@ -398,7 +518,7 @@ export default {
          */
         handleContextMenu(event) {
             // Only handle paste for modes that support input
-            if (this.mode !== "mainTerminal" && this.mode !== "interactive") {
+            if (!this.acceptsInput) {
                 return;
             }
 
@@ -449,10 +569,17 @@ export default {
             // The cost is that Ctrl+V can no longer send a literal ^V for
             // readline's quoted-insert, but it never could: it was already
             // bound to paste.
+            //
+            // Full-screen programs, which draw on the alternate screen, are
+            // the exception: Ctrl+V means something to them (next page, in
+            // nano), so there it is sent to the program and Ctrl+Shift+V
+            // pastes, as in most terminal emulators. Cmd+V is never sent to a
+            // program, so on macOS it always pastes.
             const isPasteShortcut = event.type === "keydown" &&
                 !event.altKey &&
                 (this.isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
-                event.key.toLowerCase() === "v";
+                event.key.toLowerCase() === "v" &&
+                (this.isMac || event.shiftKey || this.terminal.buffer.active.type !== "alternate");
 
             if (isPasteShortcut) {
                 return false;

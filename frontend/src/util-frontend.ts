@@ -186,3 +186,60 @@ export function getToastErrorTimeout() {
     return errorTimeout;
 }
 
+const CONSOLE_TAB_ID_KEY = "consoleTabID";
+
+/**
+ * Read a stored item and remove it, or undefined where sessionStorage is not
+ * available, such as with site data blocked
+ * @param {string} key The item
+ * @returns {string | undefined} Its value
+ */
+function takeSessionItem(key : string) : string | undefined {
+    try {
+        const value = sessionStorage.getItem(key);
+        sessionStorage.removeItem(key);
+        return value ?? undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * The id this tab's console is named after, so every tab has a shell of its
+ * own. Read as the page loads, rather than on first use, for the reason below.
+ */
+let consoleTabID = takeSessionItem(CONSOLE_TAB_ID_KEY);
+
+// Kept in sessionStorage so a reload finds the same shell again. It was taken
+// out as the page loaded and is only put back as it goes away, because
+// duplicating a tab copies its sessionStorage: left there, the copy would
+// attach to the same shell, which is what per-tab consoles are there to stop.
+window.addEventListener("pagehide", () => {
+    try {
+        if (consoleTabID) {
+            sessionStorage.setItem(CONSOLE_TAB_ID_KEY, consoleTabID);
+        }
+    } catch {
+        // Nowhere to keep it, so a reload starts a new shell
+    }
+});
+
+/**
+ * @returns {string} The id this tab's console is named after
+ */
+export function getConsoleTabID() : string {
+    if (!consoleTabID) {
+        // Not crypto.randomUUID(), which plain HTTP does not have
+        const bytes = crypto.getRandomValues(new Uint8Array(12));
+        consoleTabID = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    }
+    return consoleTabID;
+}
+
+/**
+ * Start a new console from here on. On logout, so whoever logs in next on
+ * this tab is not handed the previous user's shell.
+ */
+export function forgetConsoleTabID() {
+    consoleTabID = undefined;
+}

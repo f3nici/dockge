@@ -6,6 +6,7 @@ import { AgentSocket } from "../../../common/agent-socket";
 import { AgentData, SimpleStackData } from "../../../common/types";
 import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 import { basePathFromURL, socketIOPath } from "../../../common/base-path";
+import { forgetConsoleTabID } from "../util-frontend";
 
 let socket : Socket;
 
@@ -16,6 +17,9 @@ let socket : Socket;
  */
 export interface TerminalSink {
     write(data : string) : void;
+
+    /** The process behind the terminal has exited */
+    exit?(exitCode : number) : void;
 }
 
 let terminalMap : Map<string, TerminalSink> = new Map();
@@ -53,6 +57,12 @@ export default defineComponent({
             agentStatusList: {
 
             },
+
+            // By endpoint, goes up each time its connection is made again and
+            // ready for use: logged in, for this server, and back online, for
+            // an agent. Terminals attached to a shell watch it to attach again,
+            // since the server only knows them by the connection they had.
+            connectionGenerations: {} as Record<string, number>,
 
             // Agent List
             agentList: {
@@ -314,6 +324,7 @@ export default defineComponent({
             // (unbindTerminal) instead.
             agentSocket.on("terminalExit", (terminalName, exitCode) => {
                 console.debug(`Terminal ${terminalName} exited with code ${exitCode}`);
+                terminalMap.get(terminalName)?.exit?.(exitCode);
             });
 
             agentSocket.on("stackList", (res) => {
@@ -344,6 +355,10 @@ export default defineComponent({
 
             socket.on("agentStatus", (res) => {
                 this.agentStatusList[res.endpoint] = res.status;
+
+                if (res.status === "online") {
+                    this.connectionGenerations[res.endpoint] = (this.connectionGenerations[res.endpoint] ?? 0) + 1;
+                }
 
                 if (res.msg) {
                     this.toastError(res.msg);
@@ -443,6 +458,7 @@ export default defineComponent({
          */
         logout() {
             socket.emit("logout", () => { });
+            forgetConsoleTabID();
             this.storage().removeItem("token");
             this.socketIO.token = null;
             this.loggedIn = false;
@@ -458,7 +474,7 @@ export default defineComponent({
         },
 
         afterLogin() {
-
+            this.connectionGenerations[""] = (this.connectionGenerations[""] ?? 0) + 1;
         },
 
         bindTerminal(endpoint : string, terminalName : string, terminal : TerminalSink) {

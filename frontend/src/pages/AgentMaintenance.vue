@@ -168,11 +168,9 @@ export default defineComponent({
         }
 
         function clearConsole() {
-            // Clear the server-side buffer, then the local terminal display
-            root.emitAgent(endpoint.value, "clearTerminal", "console", () => {});
-            if (consoleTerminal.value) {
-                consoleTerminal.value.clearTerminal();
-            }
+            // The server-side buffer and the local display. The terminal
+            // knows the name of this tab's console.
+            consoleTerminal.value?.clearScreenAndBuffer();
         }
 
         onMounted(() => {

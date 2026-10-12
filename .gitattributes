@@ -1,0 +1,3 @@
+# Copied into the Docker image and read by bash, which stops at the first
+# carriage return a Windows checkout would otherwise add
+extra/console.bashrc text eol=lf
