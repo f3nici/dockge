@@ -332,7 +332,9 @@
                     </div>
 
                     <!-- ENV editor, read-only outside edit mode so the values can
-                         be checked without having to start editing the stack -->
+                         be checked without having to start editing the stack.
+                         The editor still handles Tab when readonly, indenting the
+                         text and keeping the focus, so it lets go of Tab there -->
                     <div v-if="isEditMode || hasComposeENV">
                         <div class="d-flex align-items-center mb-3">
                             <h4 class="mb-0">.env</h4>
@@ -348,6 +350,7 @@
                                 class="env-editor"
                                 :highlight="highlighterENV"
                                 line-numbers :readonly="!isEditMode"
+                                :ignore-tab-key="!isEditMode"
                                 @focus="editorFocus = true"
                                 @blur="editorFocus = false"
                             ></prism-editor>

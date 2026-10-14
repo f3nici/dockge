@@ -353,16 +353,6 @@ optgroup {
         color: $info !important;
     }
 
-    // $secondary is a light grey, so like the other coloured buttons here it
-    // takes dark text: white on it was hard to read
-    .btn-secondary {
-        color: $dark-font-color2;
-
-        &:hover, &:active, &:focus, &.active {
-            color: $dark-font-color2;
-        }
-    }
-
     .btn-normal {
         $bg-color: $dark-header-bg;
 
