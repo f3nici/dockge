@@ -117,30 +117,13 @@
                 </div>
             </div>
 
-            <!-- Auto Update (per-stack, stored in the compose file as x-dockge.auto-update) -->
-            <div v-if="!isAdd && !isEditMode && stack.isManagedByDockge" class="mb-3">
-                <label class="form-label mb-1" style="font-size: 12px; font-weight: 500; color: #888;" for="stackAutoUpdate">
-                    <font-awesome-icon icon="cloud-arrow-down" class="me-1" />{{ $t("autoUpdateStack") }}
+            <!-- Notes, near the top: someone took the trouble to write them, so
+                 they are likely worth reading before anything else -->
+            <div v-if="!isEditMode && notes" class="mb-3">
+                <label class="form-label mb-1" style="font-size: 12px; font-weight: 500; color: #888;">
+                    <font-awesome-icon icon="note-sticky" class="me-1" />{{ $t("notes") }}
                 </label>
-                <select
-                    id="stackAutoUpdate"
-                    v-model="autoUpdatePolicy"
-                    class="form-select form-select-sm"
-                    style="max-width: 320px;"
-                    :disabled="processing"
-                >
-                    <option :value="null">{{ $t("autoUpdateInherit") }}</option>
-                    <option :value="true">{{ $t("autoUpdateAlways") }}</option>
-                    <option :value="false">{{ $t("autoUpdateNever") }}</option>
-                </select>
-                <div class="form-text" style="font-size: 12px;">
-                    <template v-if="autoUpdateStatus && autoUpdatePolicy === null">
-                        {{ $t("autoUpdateInheritHint", { behaviour: inheritedAutoUpdateLabel }) }}
-                    </template>
-                    <template v-if="autoUpdateStatus && !autoUpdateStatus.enabled">
-                        {{ $t("autoUpdateDisabledHint") }}
-                    </template>
-                </div>
+                <div class="shadow-box stack-notes">{{ notes }}</div>
             </div>
 
             <!-- URLs -->
@@ -247,14 +230,6 @@
                         </div>
                     </div>
 
-                    <!-- Notes, shown once the stack has some -->
-                    <div v-if="!isEditMode && notes">
-                        <h4 class="mb-3">{{ $t("notes") }}</h4>
-                        <div class="shadow-box big-padding mb-3">
-                            <div class="stack-notes">{{ notes }}</div>
-                        </div>
-                    </div>
-
                     <!-- Combined Terminal Output (inline, next to the editor) -->
                     <div v-if="!fullWidthLog" v-show="!isEditMode">
                         <h4 class="mb-3">{{ $t("log") }}</h4>
@@ -271,6 +246,34 @@
                     </div>
                 </div>
                 <div class="col-xl-6">
+                    <!-- Auto Update (per-stack, stored in the compose file as
+                         x-dockge.auto-update). Configuration like the files
+                         below it, so it is kept with them. Not while editing:
+                         saving it rewrites the compose file under the editor -->
+                    <div v-if="!isAdd && !isEditMode">
+                        <h4 class="mb-3">{{ $t("autoUpdateStack") }}</h4>
+                        <div class="shadow-box big-padding mb-3">
+                            <select
+                                v-model="autoUpdatePolicy"
+                                class="form-select"
+                                :aria-label="$t('autoUpdateStack')"
+                                :disabled="processing"
+                            >
+                                <option :value="null">{{ $t("autoUpdateInherit") }}</option>
+                                <option :value="true">{{ $t("autoUpdateAlways") }}</option>
+                                <option :value="false">{{ $t("autoUpdateNever") }}</option>
+                            </select>
+                            <!-- One element per hint: Vue drops the whitespace
+                                 between sibling templates, running them together -->
+                            <div v-if="autoUpdateStatus && autoUpdatePolicy === null" class="form-text">
+                                {{ $t("autoUpdateInheritHint", { behaviour: inheritedAutoUpdateLabel }) }}
+                            </div>
+                            <div v-if="autoUpdateStatus && !autoUpdateStatus.enabled" class="form-text">
+                                {{ $t("autoUpdateDisabledHint") }}
+                            </div>
+                        </div>
+                    </div>
+
                     <h4 class="mb-3">{{ stack.composeFileName }}</h4>
 
                     <!-- YAML editor -->
@@ -328,11 +331,14 @@
                         <div class="form-text">{{ $t("composeOverrideHint") }}</div>
                     </div>
 
-                    <!-- ENV editor -->
-                    <div v-if="isEditMode">
+                    <!-- ENV editor, read-only outside edit mode so the values can
+                         be checked without having to start editing the stack.
+                         The editor still handles Tab when readonly, indenting the
+                         text and keeping the focus, so it lets go of Tab there -->
+                    <div v-if="isEditMode || hasComposeENV">
                         <div class="d-flex align-items-center mb-3">
                             <h4 class="mb-0">.env</h4>
-                            <button class="btn btn-outline-secondary btn-sm ms-2" :title="$t('generatePassword')" @click="showPasswordDialog = true">
+                            <button v-if="isEditMode" class="btn btn-outline-secondary btn-sm ms-2" :title="$t('generatePassword')" @click="showPasswordDialog = true">
                                 <font-awesome-icon icon="key" class="me-1" />
                                 {{ $t("generatePassword") }}
                             </button>
@@ -344,6 +350,7 @@
                                 class="env-editor"
                                 :highlight="highlighterENV"
                                 line-numbers :readonly="!isEditMode"
+                                :ignore-tab-key="!isEditMode"
                                 @focus="editorFocus = true"
                                 @blur="editorFocus = false"
                             ></prism-editor>
@@ -627,6 +634,15 @@ export default defineComponent({
          */
         supportsComposeOverride() {
             return !this.isAdd && typeof this.stack.composeOverrideFileName === "string";
+        },
+
+        /**
+         * Whether the stack has a .env worth showing outside edit mode. A blank
+         * one is the same as none: the backend does not even pass it to docker.
+         * @returns {boolean} true when the .env has anything in it
+         */
+        hasComposeENV(): boolean {
+            return (this.stack.composeENV ?? "").trim() !== "";
         },
 
         displayedServices() {
@@ -1508,6 +1524,7 @@ export default defineComponent({
 }
 
 .stack-notes {
+    padding: 12px 16px;
     // Notes are typed as plain text, so the line breaks the user put in are the
     // only structure they have
     white-space: pre-wrap;

@@ -32,6 +32,12 @@ textarea.form-control {
     color: white;
 }
 
+// Bootstrap's .bg-secondary sets no text colour, so a badge kept its white
+// text on what is a light grey here (stack URLs, container and agent status)
+.bg-secondary {
+    color: $dark-font-color2;
+}
+
 .text-maintenance {
     color: $maintenance !important;
 }
@@ -345,10 +351,6 @@ optgroup {
 
     .text-info {
         color: $info !important;
-    }
-
-    .btn-secondary {
-        color: white;
     }
 
     .btn-normal {
