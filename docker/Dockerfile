@@ -12,6 +12,9 @@ RUN apt update && apt install --yes --no-install-recommends \
     dumb-init \
     skopeo \
     nano \
+    git \
+    openssh-client \
+    less \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && chmod a+r /etc/apt/keyrings/docker.gpg \
@@ -98,6 +101,13 @@ RUN mkdir ./data
 # pointed at, so point it at ours.
 COPY ./extra/console.bashrc /etc/dockge.bashrc
 RUN echo '[ -r /etc/dockge.bashrc ] && . /etc/dockge.bashrc' >> /etc/bash.bashrc
+
+# The stacks folder is mounted from the host and owned by a host user, not by
+# root, so git refuses to work in it ("dubious ownership"). Trusting it here
+# costs nothing: anyone who can write to that folder can already get root
+# through a compose file Dockge deploys. Set in the image because /etc is not
+# a volume, and an exception added from the console is gone after an update.
+RUN git config --system --add safe.directory '*'
 
 
 # It is just for safe, as by default, it is disabled in the latest Node.js now.
