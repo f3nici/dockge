@@ -249,7 +249,10 @@ main {
         text-decoration: none;
     }
 
+    // Vue drops the whitespace between the two links, as it has a line break
+    // in it, so the gap the space used to leave is made with a margin
     .edition-tag {
+        margin-left: 0.4em;
         font-size: 0.6em;
         font-weight: normal;
         opacity: 0.7;
