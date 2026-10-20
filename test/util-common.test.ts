@@ -24,6 +24,8 @@ import {
     STACK_NAME_PATTERN,
     getConsoleTerminalName,
     isConsoleTerminalName,
+    formatBytes,
+    formatPercent,
 } from "../common/util-common";
 
 describe("intHash", () => {
@@ -287,5 +289,31 @@ describe("console terminal names", () => {
         expect(isConsoleTerminalName("console-" + "a".repeat(301))).toBe(false);
         expect(isConsoleTerminalName(undefined)).toBe(false);
         expect(isConsoleTerminalName(42)).toBe(false);
+    });
+});
+
+describe("formatBytes", () => {
+    // The same as `docker stats` shows for a container, so the two read alike
+    it("uses binary units to four significant digits", () => {
+        expect(formatBytes(0)).toBe("0B");
+        expect(formatBytes(1023)).toBe("1023B");
+        expect(formatBytes(1024)).toBe("1KiB");
+        expect(formatBytes(100 * 1024 * 1024)).toBe("100MiB");
+        expect(formatBytes(2087354941)).toBe("1.944GiB");
+        expect(formatBytes(16 * 1024 ** 3)).toBe("16GiB");
+        expect(formatBytes(3.5 * 1024 ** 4)).toBe("3.5TiB");
+    });
+
+    it("stays in the largest unit rather than running out of them", () => {
+        expect(formatBytes(2048 * 1024 ** 5)).toBe("2048PiB");
+    });
+});
+
+describe("formatPercent", () => {
+    it("shows two decimal places", () => {
+        expect(formatPercent(0.5)).toBe("0.50%");
+        expect(formatPercent(42)).toBe("42.00%");
+        expect(formatPercent(100)).toBe("100.00%");
+        expect(formatPercent(33.3333)).toBe("33.33%");
     });
 });

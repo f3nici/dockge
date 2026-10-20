@@ -6,6 +6,26 @@ export type StatsData = {
     blockIO: string
 }
 
+/**
+ * Resource usage of the machine an endpoint runs on, as shown next to it on the
+ * dashboard. Sizes are in bytes.
+ */
+export type HostStatsData = {
+    /**
+     * How busy the CPU was over the last few seconds, averaged over all cores,
+     * from 0 to 100. Null until the first measurement has been taken, or where
+     * the platform does not report CPU times.
+     */
+    cpuPerc: number | null,
+    cpuCount: number,
+    memUsed: number,
+    memTotal: number,
+    /** The filesystem holding the stacks directory, null where it could not be read */
+    diskUsed: number | null,
+    diskTotal: number | null,
+    diskPath: string,
+}
+
 export type ServiceData = {
     name: string,
     containerName: string,

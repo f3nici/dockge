@@ -1,4 +1,4 @@
-stackStatusList<template>
+<template>
     <transition ref="tableContainer" name="slide-fade" appear>
         <div v-if="$route.name === 'DashboardHome'">
             <h1 class="mb-3">
@@ -64,6 +64,9 @@ stackStatusList<template>
                                         </template>
                                     </template>
                                 </template>
+
+                                <!-- Host Resource Usage -->
+                                <HostStats v-if="agentStatusList[endpoint] === 'online' && hostStatsList[endpoint]" class="ms-auto align-self-center" :stats="hostStatsList[endpoint]" />
                             </div>
 
                             <!-- Edit Dialog -->
@@ -123,7 +126,7 @@ stackStatusList<template>
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import { AgentData, SimpleStackData } from "../../../common/types";
+import { AgentData, HostStatsData, SimpleStackData } from "../../../common/types";
 import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 
 export default defineComponent({
@@ -159,6 +162,9 @@ export default defineComponent({
         },
         agentStatusList(): Record<string, string> {
             return this.$root.agentStatusList;
+        },
+        hostStatsList(): Record<string, HostStatsData> {
+            return this.$root.hostStatsList;
         },
         stackList(): Record<string, SimpleStackData> {
             return this.$root.completeStackList;

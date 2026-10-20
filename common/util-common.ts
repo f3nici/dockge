@@ -440,3 +440,32 @@ export function parseDockerPort(input : string, hostname : string) {
         fullDisplay: portDisplay.includes("-") ? protocol + "://" + hostname + ":" + portDisplay : url,
     };
 }
+
+const BYTE_UNITS = [ "B", "KiB", "MiB", "GiB", "TiB", "PiB" ];
+
+/**
+ * Format a size the way `docker stats` does, such as "1.944GiB", so the usage
+ * of a host reads the same as that of its containers.
+ * @param bytes The size in bytes
+ * @returns The size in binary units, to four significant digits
+ */
+export function formatBytes(bytes : number) : string {
+    let size = bytes;
+    let unit = 0;
+
+    while (size >= 1024 && unit < BYTE_UNITS.length - 1) {
+        size /= 1024;
+        unit++;
+    }
+
+    return Number(size.toPrecision(4)) + BYTE_UNITS[unit];
+}
+
+/**
+ * Format a percentage the way `docker stats` does, such as "0.50%".
+ * @param percent The percentage, where 100 is the whole
+ * @returns The percentage to two decimal places
+ */
+export function formatPercent(percent : number) : string {
+    return percent.toFixed(2) + "%";
+}
