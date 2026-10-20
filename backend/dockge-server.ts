@@ -40,6 +40,7 @@ import { ManageAgentSocketHandler } from "./socket-handlers/manage-agent-socket-
 import { AgentMaintenanceSocketHandler } from "./agent-socket-handlers/agent-maintenance-socket-handler";
 import { AutoUpdateManager } from "./auto-update";
 import { RegistryCredentialManager } from "./registry-credentials";
+import { HostStatsMonitor } from "./host-stats";
 
 export class DockgeServer {
     app : Express;
@@ -88,6 +89,11 @@ export class DockgeServer {
      * Schedules and runs automatic stack updates
      */
     autoUpdateManager : AutoUpdateManager = new AutoUpdateManager(this);
+
+    /**
+     * Resource usage of the machine this instance runs on
+     */
+    hostStatsMonitor : HostStatsMonitor;
 
     /**
      *
@@ -170,6 +176,7 @@ export class DockgeServer {
         this.config.enableConsole = args.enableConsole || process.env.DOCKGE_ENABLE_CONSOLE === "true" || false;
         this.config.basePath = normalizeBasePath(args.basePath || process.env.DOCKGE_BASE_PATH);
         this.stacksDir = this.config.stacksDir;
+        this.hostStatsMonitor = new HostStatsMonitor(this.stackDirFullPath);
 
         if (this.config.basePath) {
             log.info("server", `Base path: ${this.config.basePath}`);
@@ -402,6 +409,9 @@ export class DockgeServer {
             log.error("server", e);
         }
 
+        // So the dashboard has figures straight away, not up to 5 seconds later
+        this.sendHostStats(socket).catch((e) => log.error("server", e));
+
         socket.instanceManager.sendAgentList();
 
         // Also connect to other dockge instances
@@ -475,6 +485,15 @@ export class DockgeServer {
             }, () => {
                 //log.debug("server", "Cron job running");
                 this.sendStackList(true);
+            });
+
+            // Every 5 seconds, which is also the stretch of time each CPU
+            // figure covers
+            Cron("*/5 * * * * *", {
+                protect: true,
+            }, async () => {
+                this.hostStatsMonitor.sampleCpu();
+                await this.sendHostStats();
             });
 
             // When a new Dockge version is detected, push info to all connected clients
@@ -781,6 +800,34 @@ export class DockgeServer {
                 dockgeSocket.emitAgent("stackList", {
                     ok: true,
                     stackList: Object.fromEntries(map),
+                });
+            }
+        }
+    }
+
+    /**
+     * Send the resource usage of this machine to every logged in socket, or
+     * only the one given.
+     *
+     * A socket logged in from another Dockge passes it on to the browser it
+     * connected for, which is how the dashboard gets it for each agent. An
+     * agent older than 2.2.0 sends nothing, and so shows nothing.
+     * @param socket The socket to send it to, if only one
+     */
+    async sendHostStats(socket? : DockgeSocket) {
+        const socketList = socket ? [ socket ] : this.io.sockets.sockets.values();
+
+        let hostStats;
+
+        for (const rawSocket of socketList) {
+            const dockgeSocket = rawSocket as DockgeSocket;
+
+            if (dockgeSocket.userID) {
+                hostStats ??= await this.hostStatsMonitor.getData();
+
+                dockgeSocket.emitAgent("hostStats", {
+                    ok: true,
+                    hostStats,
                 });
             }
         }

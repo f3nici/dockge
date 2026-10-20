@@ -3,7 +3,7 @@ import { Socket } from "socket.io-client";
 import { defineComponent } from "vue";
 import jwtDecode from "jwt-decode";
 import { AgentSocket } from "../../../common/agent-socket";
-import { AgentData, SimpleStackData } from "../../../common/types";
+import { AgentData, HostStatsData, SimpleStackData } from "../../../common/types";
 import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 import { basePathFromURL, socketIOPath } from "../../../common/base-path";
 import { forgetConsoleTabID } from "../util-frontend";
@@ -57,6 +57,9 @@ export default defineComponent({
             agentStatusList: {
 
             },
+
+            // Resource usage of the machine each endpoint runs on, by endpoint
+            hostStatsList: {} as Record<string, HostStatsData>,
 
             // By endpoint, goes up each time its connection is made again and
             // ready for use: logged in, for this server, and back online, for
@@ -339,6 +342,14 @@ export default defineComponent({
                         }
                         this.allAgentStackList[res.endpoint].stackList = res.stackList;
                     }
+                }
+            });
+
+            // Pushed every few seconds by each endpoint, except agents older
+            // than 2.2.0, which have none to send
+            agentSocket.on("hostStats", (res) => {
+                if (res.ok) {
+                    this.hostStatsList[res.endpoint ?? ""] = res.hostStats;
                 }
             });
 
