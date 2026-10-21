@@ -70,7 +70,7 @@
                             </div>
 
                             <!-- Scheduled work -->
-                            <div v-if="agentStatusList[endpoint] === 'online' && scheduleStatusList[endpoint]" class="d-flex flex-wrap column-gap-3 mt-2 schedule">
+                            <div v-if="agentStatusList[endpoint] === 'online' && scheduleStatusList[endpoint]" class="d-flex flex-wrap justify-content-end column-gap-3 mt-2 schedule">
                                 <div :title="$t('nextImageCheckTooltip')">
                                     {{ $t("nextImageCheck") }}: {{ formatScheduleTime(scheduleStatusList[endpoint].nextImageCheck) }}
                                 </div>
