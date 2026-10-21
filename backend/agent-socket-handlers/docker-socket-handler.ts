@@ -106,7 +106,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
 
         // getStackList - the stack list as an answer rather than a push, with
         // each stack's services. For the REST API of another Dockge, which has
-        // no browser to push it to. New in 2.3.0.
+        // no browser to push it to. New in 2.2.0.
         agentSocket.on("getStackList", async (callback) => {
             try {
                 checkLogin(socket);

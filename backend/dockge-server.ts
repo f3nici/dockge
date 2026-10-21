@@ -928,7 +928,7 @@ export class DockgeServer {
     /**
      * Send when this instance next does its scheduled work to every logged in
      * socket, or only the one given. Relayed to the dashboard like the host
-     * stats; an agent older than 2.3.0 sends none.
+     * stats; an agent older than 2.2.0 sends none.
      * @param socket The socket to send it to, if only one
      */
     sendScheduleStatus(socket? : DockgeSocket) {

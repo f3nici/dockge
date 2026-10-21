@@ -60,7 +60,7 @@ export type AutoUpdateRunOptions = {
     pruneAfterUpdate: boolean,
 
     /**
-     * What started the run, for the update history. Agents older than 2.3.0
+     * What started the run, for the update history. Agents older than 2.2.0
      * ignore it.
      */
     trigger?: UpdateTrigger,
@@ -68,7 +68,7 @@ export type AutoUpdateRunOptions = {
     /**
      * Update every running stack that is behind, whether it takes part in auto
      * update or not: "Update all" rather than an auto update run. Agents older
-     * than 2.3.0 ignore it, which is why they are not asked.
+     * than 2.2.0 ignore it, which is why they are not asked.
      */
     all?: boolean,
 }
@@ -132,7 +132,7 @@ export type UpdateHistoryPage = {
 
 /**
  * When an instance next does its scheduled work, as ISO timestamps. Pushed to
- * the dashboard by each instance; agents older than 2.3.0 send none.
+ * the dashboard by each instance; agents older than 2.2.0 send none.
  */
 export type ScheduleStatusData = {
     nextImageCheck: string | null,

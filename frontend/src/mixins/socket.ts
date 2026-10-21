@@ -358,7 +358,7 @@ export default defineComponent({
             });
 
             // Pushed by each endpoint at login and whenever the times move,
-            // except agents older than 2.3.0
+            // except agents older than 2.2.0
             agentSocket.on("scheduleStatus", (res) => {
                 if (res.ok) {
                     this.scheduleStatusList[res.endpoint ?? ""] = res.scheduleStatus;

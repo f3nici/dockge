@@ -26,7 +26,7 @@ export const MAX_HISTORY_OUTPUT = 64 * 1024;
 export const MAX_HISTORY_PAGE = 100;
 
 /** The first Dockge version that keeps an update history */
-export const MIN_AGENT_VERSION_HISTORY = "2.3.0";
+export const MIN_AGENT_VERSION_HISTORY = "2.2.0";
 
 /** How long an agent gets to send its history */
 const AGENT_HISTORY_TIMEOUT = 10 * 1000;

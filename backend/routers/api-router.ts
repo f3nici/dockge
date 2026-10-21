@@ -22,7 +22,7 @@ import { AutoUpdateDefault, AutoUpdateRunOptions, ServiceData, SimpleStackData, 
  * the one that answers getStackList, and that keeps an API connection out of
  * the stack logs it would otherwise stream to it for good.
  */
-const MIN_AGENT_VERSION_API = "2.3.0";
+const MIN_AGENT_VERSION_API = "2.2.0";
 
 /** How long the API waits for an agent to come online */
 const AGENT_READY_TIMEOUT = 10 * 1000;

@@ -46,7 +46,7 @@ const MIN_AGENT_VERSION = "1.8.1";
  * take it for an auto update run and only update the stacks taking part in
  * auto update, so it is not asked at all.
  */
-const MIN_AGENT_VERSION_UPDATE_ALL = "2.3.0";
+const MIN_AGENT_VERSION_UPDATE_ALL = "2.2.0";
 
 /**
  * Schedules and runs automatic stack updates.

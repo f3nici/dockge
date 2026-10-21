@@ -340,7 +340,7 @@
     "updateHistoryAnyResult": "Any result",
     "updateSucceeded": "Succeeded",
     "updateFailed": "Failed",
-    "updateHistoryUnreachable": "Could not read the history of {0}: offline, or older than Dockge 2.3.0.",
+    "updateHistoryUnreachable": "Could not read the history of {0}: offline, or older than Dockge 2.2.0.",
     "updateHistoryEmpty": "No updates yet. Updates are listed here from now on, whether run by hand, by auto update or through the API.",
     "updateHistoryStarted": "Started",
     "updateHistoryDuration": "Duration",
