@@ -21,14 +21,22 @@ import { basePathFromURL, socketIOPath } from "../common/base-path";
 export class AgentManager {
 
     protected socket? : DockgeSocket;
+
+    /**
+     * Sent to the agents as the `dockge-origin` header. "api" tells an agent
+     * that this connection belongs to the REST API, so that what it does is
+     * written down as such, and it is not sent output nobody will read.
+     */
+    protected origin? : "api";
     protected agentSocketList : Record<string, SocketClient> = {};
     protected agentLoggedInList : Record<string, boolean> = {};
     protected agentVersionList : Record<string, string> = {};
     protected agentDisconnectCountList : Record<string, number> = {};
     protected _firstConnectTime : Dayjs = dayjs();
 
-    constructor(socket?: DockgeSocket) {
+    constructor(socket?: DockgeSocket, origin? : "api") {
         this.socket = socket;
+        this.origin = origin;
     }
 
     get firstConnectTime() : Dayjs {
@@ -184,6 +192,7 @@ export class AgentManager {
             path: socketIOPath(basePathFromURL(url)),
             extraHeaders: {
                 endpoint,
+                ...(this.origin ? { "dockge-origin": this.origin } : {}),
             }
         });
 
@@ -377,6 +386,66 @@ export class AgentManager {
         client.emit("agent", endpoint, eventName, ...args);
     }
 
+    /**
+     * Ask an agent something and wait for its answer.
+     *
+     * An agent too old to know the event never answers at all, and neither
+     * does one whose connection drops halfway, so the wait is bounded.
+     * @param endpoint The agent
+     * @param eventName The event
+     * @param timeoutMs How long to wait for the answer
+     * @param args The event's arguments, without the callback
+     * @returns The agent's answer
+     */
+    request(endpoint : string, eventName : string, timeoutMs : number, ...args : unknown[]) : Promise<LooseObject> {
+        return new Promise((resolve, reject) => {
+            const client = this.agentSocketList[endpoint];
+
+            // An acknowledgement does not survive a reconnect, so once the
+            // connection drops the answer can no longer come: say so then,
+            // rather than at the end of a wait that can run to an hour
+            const onDisconnect = () => {
+                settle();
+                reject(new AgentDisconnectedError(`Lost the connection to ${endpoint} while waiting for it to answer "${eventName}"; it may still be carrying it out`));
+            };
+
+            const timeout = setTimeout(() => {
+                settle();
+                reject(new AgentTimeoutError(`${endpoint} did not answer "${eventName}" within ${Math.round(timeoutMs / 1000)} seconds`));
+            }, timeoutMs);
+
+            let settled = false;
+            const settle = () => {
+                settled = true;
+                clearTimeout(timeout);
+                client?.off("disconnect", onDisconnect);
+            };
+
+            this.emitToEndpoint(endpoint, eventName, ...args, (res : LooseObject) => {
+                settle();
+                resolve(res ?? {});
+            }).then(() => {
+                // Only once it has been sent: emitToEndpoint() may first wait
+                // for a connection that is still coming up
+                if (!settled) {
+                    client?.on("disconnect", onDisconnect);
+                }
+            }).catch((e) => {
+                settle();
+                reject(e);
+            });
+        });
+    }
+
+    /**
+     * Whether an agent is connected and logged in right now.
+     * @param endpoint The agent
+     */
+    isReady(endpoint : string) : boolean {
+        const client = this.agentSocketList[endpoint];
+        return !!client && client.connected && !!this.agentLoggedInList[endpoint];
+    }
+
     emitToAllEndpoints(eventName: string, ...args : unknown[]) {
         log.debug("agent-manager", "Emitting event to all endpoints");
         for (let endpoint in this.agentSocketList) {
@@ -409,4 +478,16 @@ export class AgentManager {
             agentList: result,
         });
     }
+}
+
+/**
+ * An agent did not answer in time.
+ */
+export class AgentTimeoutError extends Error {
+}
+
+/**
+ * The connection to an agent dropped before it answered.
+ */
+export class AgentDisconnectedError extends Error {
 }

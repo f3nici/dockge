@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { MainRouter } from "./routers/main-router";
+import { ApiRouter } from "./routers/api-router";
 import { basePathHref, injectBaseHref, normalizeBasePath, socketIOPath } from "../common/base-path";
 import * as fs from "node:fs";
 import { PackageJson } from "type-fest";
@@ -22,7 +23,7 @@ import { R } from "redbean-node";
 import { genSecret, isDev, LooseObject } from "../common/util-common";
 import { generatePasswordHash } from "./password-hash";
 import { Bean } from "redbean-node/dist/bean";
-import { Arguments, Config, DockgeSocket } from "./util-server";
+import { Arguments, clientIPFrom, Config, DockgeSocket } from "./util-server";
 import { DockerSocketHandler } from "./agent-socket-handlers/docker-socket-handler";
 import expressStaticGzip from "express-static-gzip";
 import path from "path";
@@ -41,6 +42,12 @@ import { AgentMaintenanceSocketHandler } from "./agent-socket-handlers/agent-mai
 import { AutoUpdateManager } from "./auto-update";
 import { RegistryCredentialManager } from "./registry-credentials";
 import { HostStatsMonitor } from "./host-stats";
+import { UpdateHistorySocketHandler } from "./socket-handlers/update-history-socket-handler";
+import { ApiKeySocketHandler } from "./socket-handlers/api-key-socket-handler";
+import { UpdateHistoryAgentSocketHandler } from "./agent-socket-handlers/update-history-socket-handler";
+import { SelfStack } from "./self-stack";
+import { UpdateHistory } from "./update-history";
+import { ScheduleStatusData } from "../common/types";
 
 export class DockgeServer {
     app : Express;
@@ -54,6 +61,7 @@ export class DockgeServer {
      * List of express routers
      */
     routerList : Router[] = [
+        new ApiRouter(),
         new MainRouter(),
     ];
 
@@ -62,7 +70,9 @@ export class DockgeServer {
      */
     socketHandlerList : SocketHandler[] = [
         new MainSocketHandler(),
-        new ManageAgentSocketHandler()
+        new ManageAgentSocketHandler(),
+        new UpdateHistorySocketHandler(),
+        new ApiKeySocketHandler(),
     ];
 
     agentProxySocketHandler = new AgentProxySocketHandler();
@@ -73,7 +83,8 @@ export class DockgeServer {
     agentSocketHandlerList : AgentSocketHandler[] = [
         new DockerSocketHandler(),
         new TerminalSocketHandler(),
-        new AgentMaintenanceSocketHandler()
+        new AgentMaintenanceSocketHandler(),
+        new UpdateHistoryAgentSocketHandler(),
     ];
 
     /**
@@ -94,6 +105,18 @@ export class DockgeServer {
      * Resource usage of the machine this instance runs on
      */
     hostStatsMonitor : HostStatsMonitor;
+
+    /**
+     * When the image update check runs next, once it is scheduled
+     */
+    nextImageCheck : Date | null = null;
+
+    /**
+     * Connections to the agents for the REST API, which has no browser session
+     * to borrow them from. Opened the first time the API needs an agent, then
+     * kept open.
+     */
+    protected apiAgentManager? : Promise<AgentManager>;
 
     /**
      *
@@ -330,6 +353,10 @@ export class DockgeServer {
                 dockgeSocket.endpoint = "";
             }
 
+            if (socket.request.headers["dockge-origin"] === "api") {
+                dockgeSocket.origin = "api";
+            }
+
             if (dockgeSocket.endpoint) {
                 log.info("server", "Socket connected (agent), as endpoint " + dockgeSocket.endpoint);
             } else {
@@ -411,6 +438,7 @@ export class DockgeServer {
 
         // So the dashboard has figures straight away, not up to 5 seconds later
         this.sendHostStats(socket).catch((e) => log.error("server", e));
+        this.sendScheduleStatus(socket);
 
         socket.instanceManager.sendAgentList();
 
@@ -434,6 +462,13 @@ export class DockgeServer {
             }
             process.exit(1);
         }
+
+        // An update of Dockge's own stack was finished by a helper container
+        // while Dockge restarted: write down how that went. Not awaited: the
+        // helper can still be at work, and Dockge is not held up waiting for it.
+        SelfStack.finishPendingHandOff(this.config.dataDir, (id, success, output, completedAt) => {
+            return UpdateHistory.complete(id, success, output, completedAt);
+        }).catch((e) => log.error("self-stack", e));
 
         // Initialize notification manager
         log.info("server", "Initializing notification manager...");
@@ -496,6 +531,14 @@ export class DockgeServer {
                 await this.sendHostStats();
             });
 
+            // The times only move when a run starts or the settings change, both
+            // of which push them straight away; this catches anything else
+            Cron("0 * * * * *", {
+                protect: true,
+            }, () => {
+                this.sendScheduleStatus();
+            });
+
             // When a new Dockge version is detected, push info to all connected clients
             checkVersion.onUpdateFound = () => {
                 for (const rawSocket of this.io.sockets.sockets.values()) {
@@ -519,6 +562,7 @@ export class DockgeServer {
             );
 
             // Start first ImageUpdateCheck 1 min. after startup, and then every 3 hours
+            this.nextImageCheck = new Date(Date.now() + 60 * 1000);
             setTimeout(
                 () => {
                     this.updateAvailableStackImageUpdates(3 * 60 * 60 * 1000);
@@ -577,22 +621,7 @@ export class DockgeServer {
      * @returns IP of client
      */
     async getClientIP(socket : Socket) : Promise<string> {
-        let clientIP = socket.client.conn.remoteAddress;
-
-        if (clientIP === undefined) {
-            clientIP = "";
-        }
-
-        if (await Settings.get("trustProxy")) {
-            const forwardedFor = socket.client.conn.request.headers["x-forwarded-for"];
-
-            if (typeof forwardedFor === "string") {
-                return forwardedFor.split(",")[0].trim();
-            } else if (typeof socket.client.conn.request.headers["x-real-ip"] === "string") {
-                return socket.client.conn.request.headers["x-real-ip"];
-            }
-        }
-        return clientIP.replace(/^::ffff:/, "");
+        return clientIPFrom(socket.client.conn.remoteAddress, socket.client.conn.request.headers, !!await Settings.get("trustProxy"));
     }
 
     /**
@@ -733,6 +762,8 @@ export class DockgeServer {
         } catch (e) {
             log.error("checkImageUpdates", "Check for image updates failed, trying again next time: " + e);
         } finally {
+            this.nextImageCheck = new Date(Date.now() + updatePeriod);
+            this.sendScheduleStatus();
             setTimeout(
                 () => {
                     this.updateAvailableStackImageUpdates(updatePeriod);
@@ -783,7 +814,7 @@ export class DockgeServer {
             let dockgeSocket = socket as DockgeSocket;
 
             // Check if the room is a number (user id)
-            if (dockgeSocket.userID) {
+            if (this.wantsPushes(dockgeSocket)) {
 
                 // Get the list only if there is a logged in user
                 if (!stackList) {
@@ -822,12 +853,95 @@ export class DockgeServer {
         for (const rawSocket of socketList) {
             const dockgeSocket = rawSocket as DockgeSocket;
 
-            if (dockgeSocket.userID) {
+            if (this.wantsPushes(dockgeSocket)) {
                 hostStats ??= await this.hostStatsMonitor.getData();
 
                 dockgeSocket.emitAgent("hostStats", {
                     ok: true,
                     hostStats,
+                });
+            }
+        }
+    }
+
+    /**
+     * The REST API's connections to the agents, opened if they are not yet.
+     */
+    getApiAgentManager() : Promise<AgentManager> {
+        if (!this.apiAgentManager) {
+            const pending = (async () => {
+                const manager = new AgentManager(undefined, "api");
+                await manager.connectAll();
+                return manager;
+            })();
+            this.apiAgentManager = pending;
+
+            // Reading the agent list can fail, and a failure kept here would
+            // fail every later request that needs an agent as well
+            pending.catch(() => {
+                if (this.apiAgentManager === pending) {
+                    this.apiAgentManager = undefined;
+                }
+            });
+        }
+        return this.apiAgentManager;
+    }
+
+    /**
+     * Drop the REST API's connections to the agents, after an agent has been
+     * added or removed. They are opened again, to the agents there are now,
+     * the next time the API needs them.
+     */
+    resetApiAgentManager() {
+        const previous = this.apiAgentManager;
+        this.apiAgentManager = undefined;
+        previous?.then((manager) => manager.disconnectAll()).catch(() => {});
+    }
+
+    /**
+     * When this instance next checks for image updates and next runs auto
+     * update.
+     */
+    getScheduleStatus() : ScheduleStatusData {
+        const nextAutoUpdate = this.autoUpdateManager.nextRun();
+        return {
+            nextImageCheck: this.nextImageCheck?.toISOString() ?? null,
+            nextAutoUpdate: nextAutoUpdate?.toISOString() ?? null,
+        };
+    }
+
+    /**
+     * Whether a socket is sent what this instance pushes on its own: the stack
+     * list, host stats and schedule.
+     *
+     * Not the connection another Dockge's REST API keeps to this one. It only
+     * ever asks and waits for the answer, and it stays open for good, so on an
+     * agent nobody has open in a browser the pushes would otherwise keep
+     * reading the stack list and the host's usage, every few seconds, for
+     * nobody.
+     * @param socket The socket
+     */
+    protected wantsPushes(socket : DockgeSocket) : boolean {
+        return !!socket.userID && socket.origin !== "api";
+    }
+
+    /**
+     * Send when this instance next does its scheduled work to every logged in
+     * socket, or only the one given. Relayed to the dashboard like the host
+     * stats; an agent older than 2.3.0 sends none.
+     * @param socket The socket to send it to, if only one
+     */
+    sendScheduleStatus(socket? : DockgeSocket) {
+        const socketList = socket ? [ socket ] : this.io.sockets.sockets.values();
+        const scheduleStatus = this.getScheduleStatus();
+
+        for (const rawSocket of socketList) {
+            const dockgeSocket = rawSocket as DockgeSocket;
+
+            if (this.wantsPushes(dockgeSocket)) {
+                dockgeSocket.emitAgent("scheduleStatus", {
+                    ok: true,
+                    scheduleStatus,
                 });
             }
         }

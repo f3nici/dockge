@@ -58,6 +58,85 @@ export type AutoUpdateDefault = "none" | "update";
 export type AutoUpdateRunOptions = {
     defaultBehaviour: AutoUpdateDefault,
     pruneAfterUpdate: boolean,
+
+    /**
+     * What started the run, for the update history. Agents older than 2.3.0
+     * ignore it.
+     */
+    trigger?: UpdateTrigger,
+
+    /**
+     * Update every running stack that is behind, whether it takes part in auto
+     * update or not: "Update all" rather than an auto update run. Agents older
+     * than 2.3.0 ignore it, which is why they are not asked.
+     */
+    all?: boolean,
+}
+
+/**
+ * What started an update: someone pressing Update (or "Update now" in the auto
+ * update settings), the auto update schedule, or the REST API.
+ */
+export type UpdateTrigger = "manual" | "scheduled" | "api";
+
+export const UPDATE_TRIGGERS: UpdateTrigger[] = [ "manual", "scheduled", "api" ];
+
+/**
+ * An update a Dockge instance ran on one of its stacks. Field names follow the
+ * update history of the finder39/dockge REST API, so clients written for it
+ * read this one too.
+ */
+export type UpdateHistoryEntry = {
+    id: number,
+    stackName: string,
+
+    /** Set when only this service was updated, rather than the whole stack */
+    serviceName: string | null,
+
+    /** The instance the stack is on: "" for the one answering */
+    endpoint: string,
+
+    triggerType: UpdateTrigger | string,
+    success: boolean,
+
+    /** Only sent when a single entry is asked for */
+    output?: string | null,
+
+    errorMessage: string | null,
+    startedAt: string,
+    completedAt: string | null,
+    durationMs: number | null,
+}
+
+export type UpdateHistoryFilter = {
+    limit?: number,
+    offset?: number,
+
+    /** Exactly this stack */
+    stackName?: string,
+
+    /** Stacks whose name contains this */
+    search?: string,
+
+    triggerType?: UpdateTrigger,
+    success?: boolean,
+}
+
+export type UpdateHistoryPage = {
+    entries: UpdateHistoryEntry[],
+    total: number,
+
+    /** Endpoints that were asked and did not answer */
+    unreachable?: string[],
+}
+
+/**
+ * When an instance next does its scheduled work, as ISO timestamps. Pushed to
+ * the dashboard by each instance; agents older than 2.3.0 send none.
+ */
+export type ScheduleStatusData = {
+    nextImageCheck: string | null,
+    nextAutoUpdate: string | null,
 }
 
 export type SimpleStackData = {

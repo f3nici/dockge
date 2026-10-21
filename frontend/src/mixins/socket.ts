@@ -3,7 +3,7 @@ import { Socket } from "socket.io-client";
 import { defineComponent } from "vue";
 import jwtDecode from "jwt-decode";
 import { AgentSocket } from "../../../common/agent-socket";
-import { AgentData, HostStatsData, SimpleStackData } from "../../../common/types";
+import { AgentData, HostStatsData, ScheduleStatusData, SimpleStackData } from "../../../common/types";
 import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 import { basePathFromURL, socketIOPath } from "../../../common/base-path";
 import { forgetConsoleTabID } from "../util-frontend";
@@ -60,6 +60,10 @@ export default defineComponent({
 
             // Resource usage of the machine each endpoint runs on, by endpoint
             hostStatsList: {} as Record<string, HostStatsData>,
+
+            // When each endpoint next checks for image updates and runs auto
+            // update, by endpoint
+            scheduleStatusList: {} as Record<string, ScheduleStatusData>,
 
             // By endpoint, goes up each time its connection is made again and
             // ready for use: logged in, for this server, and back online, for
@@ -350,6 +354,14 @@ export default defineComponent({
             agentSocket.on("hostStats", (res) => {
                 if (res.ok) {
                     this.hostStatsList[res.endpoint ?? ""] = res.hostStats;
+                }
+            });
+
+            // Pushed by each endpoint at login and whenever the times move,
+            // except agents older than 2.3.0
+            agentSocket.on("scheduleStatus", (res) => {
+                if (res.ok) {
+                    this.scheduleStatusList[res.endpoint ?? ""] = res.scheduleStatus;
                 }
             });
 

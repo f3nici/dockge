@@ -24,6 +24,7 @@ export class ManageAgentSocketHandler extends SocketHandler {
 
                 // connect to the agent
                 manager.connect(data.url, data.username, data.password);
+                server.resetApiAgentManager();
 
                 // Refresh another sockets
                 // It is a bit difficult to control another browser sessions to connect/disconnect agents, so force them to refresh the page will be easier.
@@ -53,6 +54,7 @@ export class ManageAgentSocketHandler extends SocketHandler {
 
                 let manager = socket.instanceManager;
                 await manager.remove(url);
+                server.resetApiAgentManager();
 
                 server.disconnectAllSocketClients(undefined, socket.id);
                 manager.sendAgentList();

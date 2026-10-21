@@ -95,6 +95,12 @@
                             </li>
 
                             <li>
+                                <router-link to="/update-history" class="dropdown-item" :class="{ active: $route.path.includes('update-history') }">
+                                    <font-awesome-icon icon="clock-rotate-left" /> {{ $t("updateHistory") }}
+                                </router-link>
+                            </li>
+
+                            <li>
                                 <router-link to="/settings" class="dropdown-item" :class="{ active: $route.path.includes('settings') }">
                                     <font-awesome-icon icon="cog" /> {{ $t("Settings") }}
                                 </router-link>

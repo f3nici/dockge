@@ -1,10 +1,11 @@
 import { AgentSocketHandler } from "../agent-socket-handler";
 import { DockgeServer } from "../dockge-server";
-import { callbackError, callbackResult, checkLogin, DockgeSocket, ValidationError } from "../util-server";
+import { callbackError, callbackResult, checkLogin, DockgeSocket, socketTrigger, ValidationError } from "../util-server";
 import { Stack } from "../stack";
 import { AgentSocket } from "../../common/agent-socket";
 import { log } from "../log";
 import { AUTO_UPDATE_DEFAULT, LooseObject } from "../../common/util-common";
+import { UPDATE_TRIGGERS, UpdateTrigger } from "../../common/types";
 
 export class DockerSocketHandler extends AgentSocketHandler {
     create(socket : DockgeSocket, server : DockgeServer, agentSocket : AgentSocket) {
@@ -23,7 +24,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
                     msg: "Deployed",
                     msgi18n: true,
                 }, callback);
-                stack.joinCombinedTerminal(socket);
+                this.joinLogs(stack, socket);
             } catch (e) {
                 callbackError(e, callback);
             }
@@ -103,6 +104,33 @@ export class DockerSocketHandler extends AgentSocketHandler {
             }
         });
 
+        // getStackList - the stack list as an answer rather than a push, with
+        // each stack's services. For the REST API of another Dockge, which has
+        // no browser to push it to. New in 2.3.0.
+        agentSocket.on("getStackList", async (callback) => {
+            try {
+                checkLogin(socket);
+
+                const stackList = await Stack.getStackList(server, true);
+                const result : Record<string, LooseObject> = {};
+
+                for (const [ name, stack ] of stackList) {
+                    await stack.loadServicesIfMissing();
+                    result[name] = {
+                        ...stack.getSimpleData(socket.endpoint),
+                        services: Object.fromEntries(stack.services),
+                    };
+                }
+
+                callbackResult({
+                    ok: true,
+                    stackList: result,
+                }, callback);
+            } catch (e) {
+                callbackError(e, callback);
+            }
+        });
+
         agentSocket.on("getStack", async (stackName : unknown, callback) => {
             try {
                 checkLogin(socket);
@@ -114,7 +142,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 const stack = await Stack.getStack(server, stackName);
 
                 if (stack.isManagedByDockge) {
-                    stack.joinCombinedTerminal(socket);
+                    this.joinLogs(stack, socket);
                 }
 
                 callbackResult({
@@ -217,6 +245,8 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 const updated = await server.autoUpdateManager.runNow({
                     defaultBehaviour: data.defaultBehaviour === "update" ? "update" : AUTO_UPDATE_DEFAULT,
                     pruneAfterUpdate: !!data.pruneAfterUpdate,
+                    trigger: (UPDATE_TRIGGERS as unknown[]).includes(data.trigger) ? data.trigger as UpdateTrigger : "scheduled",
+                    all: data.all === true,
                 });
 
                 callbackResult({
@@ -246,7 +276,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 }, callback);
                 server.sendStackList(true);
 
-                stack.joinCombinedTerminal(socket);
+                this.joinLogs(stack, socket);
 
             } catch (e) {
                 callbackError(e, callback);
@@ -382,7 +412,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 }
 
                 const stack = await Stack.getStack(server, stackName);
-                await stack.update(socket, pruneAfterUpdate, pruneAllAfterUpdate);
+                await stack.update(socket, pruneAfterUpdate, pruneAllAfterUpdate, socketTrigger(socket));
                 callbackResult({
                     ok: true,
                     msg: "Updated",
@@ -542,7 +572,7 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 }
 
                 const stack = await Stack.getStack(server, stackName);
-                await stack.updateService(socket, serviceName, pruneAfterUpdate, pruneAllAfterUpdate);
+                await stack.updateService(socket, serviceName, pruneAfterUpdate, pruneAllAfterUpdate, socketTrigger(socket));
                 callbackResult({
                     ok: true,
                     msg: "Updated",
@@ -678,6 +708,20 @@ export class DockerSocketHandler extends AgentSocketHandler {
                 callbackError(e, callback);
             }
         });
+    }
+
+    /**
+     * Show a client the stack's logs, as the stack page does.
+     *
+     * Not for the REST API of another Dockge: it never reads them, and its
+     * connection stays open, so the log terminal would stream to it for good.
+     * @param stack The stack
+     * @param socket The client
+     */
+    protected joinLogs(stack : Stack, socket : DockgeSocket) {
+        if (socket.origin !== "api") {
+            stack.joinCombinedTerminal(socket);
+        }
     }
 
     async saveStack(server : DockgeServer, name : unknown, composeYAML : unknown, composeENV : unknown, isAdd : unknown) : Promise<Stack> {

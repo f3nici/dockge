@@ -69,6 +69,16 @@
                                 <HostStats v-if="agentStatusList[endpoint] === 'online' && hostStatsList[endpoint]" class="ms-auto align-self-center" :stats="hostStatsList[endpoint]" />
                             </div>
 
+                            <!-- Scheduled work -->
+                            <div v-if="agentStatusList[endpoint] === 'online' && scheduleStatusList[endpoint]" class="d-flex flex-wrap column-gap-3 mt-2 schedule">
+                                <div :title="$t('nextImageCheckTooltip')">
+                                    {{ $t("nextImageCheck") }}: {{ formatScheduleTime(scheduleStatusList[endpoint].nextImageCheck) }}
+                                </div>
+                                <div :title="endpoint === '' ? $t('nextAutoUpdateTooltip') : $t('nextAutoUpdateAgentTooltip')">
+                                    {{ $t("nextAutoUpdate") }}: {{ formatScheduleTime(getNextAutoUpdate(endpoint)) }}
+                                </div>
+                            </div>
+
                             <!-- Edit Dialog -->
                             <BModal v-model="showEditAgentNameDialog[agent.endpoint]" :title="!!endpoint ? endpoint : 'Master'" :no-close-on-backdrop="true" :close-on-esc="true" :okTitle="$t('Update Name')" okVariant="primary" @ok="updateAgentName(agent, editAgentNewName[agent.endpoint])">
                                 <input :id="'nameUpdate' + agent.endpoint" v-model="editAgentNewName[agent.endpoint]" type="text" class="form-control">
@@ -126,7 +136,8 @@
 
 <script lang="ts">
 import { defineComponent } from "vue";
-import { AgentData, HostStatsData, SimpleStackData } from "../../../common/types";
+import dayjs from "dayjs";
+import { AgentData, HostStatsData, ScheduleStatusData, SimpleStackData } from "../../../common/types";
 import { StackFilter, StackStatusInfo } from "../../../common/util-common";
 
 export default defineComponent({
@@ -165,6 +176,9 @@ export default defineComponent({
         },
         hostStatsList(): Record<string, HostStatsData> {
             return this.$root.hostStatsList;
+        },
+        scheduleStatusList(): Record<string, ScheduleStatusData> {
+            return this.$root.scheduleStatusList;
         },
         stackList(): Record<string, SimpleStackData> {
             return this.$root.completeStackList;
@@ -232,6 +246,37 @@ export default defineComponent({
 
         getAgentName(agent) {
             return this.$root.getAgentName(agent.endpoint);
+        },
+
+        /**
+         * When auto update next runs on an endpoint.
+         *
+         * An agent is also updated by every run of the master's schedule, so
+         * for an agent this is whichever of the two comes first.
+         * @param endpoint The endpoint
+         * @returns An ISO timestamp, or null when nothing is scheduled
+         */
+        getNextAutoUpdate(endpoint: string): string | null {
+            const own = this.scheduleStatusList[endpoint]?.nextAutoUpdate ?? null;
+
+            if (endpoint === "") {
+                return own;
+            }
+
+            const master = this.scheduleStatusList[""]?.nextAutoUpdate ?? null;
+
+            if (own && master) {
+                return own < master ? own : master;
+            }
+            return own ?? master;
+        },
+
+        /**
+         * @param time An ISO timestamp, or null
+         * @returns The time in the browser's timezone, or that nothing is scheduled
+         */
+        formatScheduleTime(time: string | null): string {
+            return time ? dayjs(time).format("YYYY-MM-DD HH:mm") : this.$t("notScheduled");
         },
 
         getAgentRouteLink(agent) {
@@ -409,6 +454,11 @@ export default defineComponent({
 }
 
 .url {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.schedule {
     font-size: 0.8rem;
     color: #6c757d;
 }

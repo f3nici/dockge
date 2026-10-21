@@ -333,6 +333,7 @@ export class MainSocketHandler extends SocketHandler {
 
                 // Reschedule (or cancel) the auto-update job to reflect the new settings
                 await server.autoUpdateManager.schedule();
+                server.sendScheduleStatus();
 
                 callback({
                     ok: true,
@@ -356,7 +357,7 @@ export class MainSocketHandler extends SocketHandler {
             try {
                 checkLogin(socket);
 
-                const updated = await server.autoUpdateManager.runNow();
+                const updated = await server.autoUpdateManager.runNow(undefined, { trigger: "manual" });
 
                 callback({
                     ok: true,

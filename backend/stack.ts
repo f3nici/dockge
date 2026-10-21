@@ -30,6 +30,9 @@ import { AutoUpdatePolicy, SimpleStackData, StackData, ServiceData, StatsData, N
 import { ComposeDocument, setAutoUpdateInYAML } from "../common/compose-document";
 import { LABEL_STATUS_IGNORE, LABEL_IMAGEUPDATES_CHECK, LABEL_IMAGEUPDATES_IGNORE } from "../common/compose-labels";
 import { NotificationManager } from "./notification-manager";
+import { SELF_HAND_OFF_NOTE, SelfStack, SelfStackError } from "./self-stack";
+import { UpdateHistory, UpdateRun } from "./update-history";
+import { UpdateTrigger } from "../common/types";
 
 export class Stack {
 
@@ -191,6 +194,31 @@ export class Stack {
             composeFileName: this._composeFileName,
             endpoint
         };
+    }
+
+    /**
+     * The stack's services as of the last refresh, by name.
+     */
+    get services() : Map<string, ServiceData> {
+        return this._services;
+    }
+
+    /**
+     * Read the services of a stack nothing has refreshed yet.
+     *
+     * A running stack's status comes from `docker compose ls`, which says
+     * nothing about its services, so they are only there once something has
+     * asked for them; just after startup, nothing has. Anything that has been
+     * refreshed is left as it is.
+     *
+     * Only for a stack in the stacks folder: one docker compose runs from
+     * elsewhere has no folder here to read it in, so the read would only fail,
+     * every time, since such a stack is made afresh for each stack list.
+     */
+    async loadServicesIfMissing() {
+        if (this._firstUpdate && this.isManagedByDockge) {
+            await this.updateData();
+        }
     }
 
     get isManagedByDockge() : boolean {
@@ -683,8 +711,12 @@ export class Stack {
         await fsAsync.writeFile(envPath, this.composeENV);
     }
 
-    async deploy(socket : DockgeSocket) : Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async deploy(socket : DockgeSocket | undefined) : Promise<number> {
+        if (await this.handOffIfSelf(socket, [ "compose", "up", "-d", "--remove-orphans" ])) {
+            return 0;
+        }
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to deploy, please check the terminal output for more information.");
@@ -693,8 +725,10 @@ export class Stack {
         return exitCode;
     }
 
-    async delete(socket: DockgeSocket) : Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async delete(socket: DockgeSocket | undefined) : Promise<number> {
+        await this.refuseIfSelf("delete", "down");
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "down", "--remove-orphans" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to delete, please check the terminal output for more information.");
@@ -1352,8 +1386,12 @@ export class Stack {
         return stack;
     }
 
-    async start(socket: DockgeSocket) {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async start(socket: DockgeSocket | undefined) {
+        if (await this.handOffIfSelf(socket, [ "compose", "up", "-d", "--remove-orphans" ])) {
+            return 0;
+        }
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to start, please check the terminal output for more information.");
@@ -1362,8 +1400,10 @@ export class Stack {
         return exitCode;
     }
 
-    async stop(socket: DockgeSocket) : Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async stop(socket: DockgeSocket | undefined) : Promise<number> {
+        await this.refuseIfSelf("stop", "stop");
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "stop" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to stop, please check the terminal output for more information.");
@@ -1371,8 +1411,12 @@ export class Stack {
         return exitCode;
     }
 
-    async restart(socket: DockgeSocket) : Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async restart(socket: DockgeSocket | undefined) : Promise<number> {
+        if (await this.handOffIfSelf(socket, [ "compose", "restart" ])) {
+            return 0;
+        }
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "restart" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to restart, please check the terminal output for more information.");
@@ -1381,8 +1425,10 @@ export class Stack {
         return exitCode;
     }
 
-    async stopService(socket: DockgeSocket, service: string): Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async stopService(socket: DockgeSocket | undefined, service: string): Promise<number> {
+        await this.refuseIfSelf("stop", "stop", service);
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "stop", service ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to stop service, please check the terminal output for more information.");
@@ -1390,8 +1436,8 @@ export class Stack {
         return exitCode;
     }
 
-    async startService(socket: DockgeSocket, service: string): Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async startService(socket: DockgeSocket | undefined, service: string): Promise<number> {
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "start", service ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to start service, please check the terminal output for more information.");
@@ -1403,8 +1449,12 @@ export class Stack {
         return exitCode;
     }
 
-    async restartService(socket: DockgeSocket, service: string): Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async restartService(socket: DockgeSocket | undefined, service: string): Promise<number> {
+        if (await this.handOffIfSelf(socket, [ "compose", "restart", service ], service)) {
+            return 0;
+        }
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "restart", service ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to restart service, please check the terminal output for more information.");
@@ -1413,8 +1463,12 @@ export class Stack {
         return exitCode;
     }
 
-    async recreateService(socket: DockgeSocket, service: string): Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async recreateService(socket: DockgeSocket | undefined, service: string): Promise<number> {
+        if (await this.handOffIfSelf(socket, [ "compose", "up", "-d", "--force-recreate", service ], service)) {
+            return 0;
+        }
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--force-recreate", service ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to recreate service, please check the terminal output for more information.");
@@ -1423,8 +1477,10 @@ export class Stack {
         return exitCode;
     }
 
-    async down(socket: DockgeSocket) : Promise<number> {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
+    async down(socket: DockgeSocket | undefined) : Promise<number> {
+        await this.refuseIfSelf("take down", "down");
+
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
         let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "down" ], this.path);
         if (exitCode !== 0) {
             throw new Error("Failed to down, please check the terminal output for more information.");
@@ -1432,93 +1488,237 @@ export class Stack {
         return exitCode;
     }
 
-    async update(socket: DockgeSocket | undefined, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
+    /**
+     * Pull the stack's images, and recreate it on them if it is running.
+     * @param socket Client that asked for it, if any
+     * @param pruneAfterUpdate Prune unused images afterwards
+     * @param pruneAllAfterUpdate Prune all unused images, not only dangling ones
+     * @param trigger What started it, for the update history
+     */
+    async update(socket: DockgeSocket | undefined, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean, trigger : UpdateTrigger = "manual") {
         // socket is optional so scheduled auto-updates can run without a client attached.
         // A missing socket means the local (master) endpoint, whose name is the empty string.
         const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
-        let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull" ], this.path);
-        if (exitCode !== 0) {
-            throw new Error("Failed to pull, please check the terminal output for more information.");
-        }
+        const run = new UpdateRun(this.name, null, trigger);
+        const status = (key : string, text : string) => {
+            Terminal.writeStatus(socket, terminalName, key, text);
+            run.recorder.note(text);
+        };
 
-        // If the stack is running, restart it
-        await this.updateData();
-        if (this.isStarted) {
-            Terminal.writeStatus(socket, terminalName, "statusStackRedeploying", "Images pulled, redeploying the stack...");
+        try {
+            let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull" ], this.path, run.recorder);
+            if (exitCode !== 0) {
+                throw new Error("Failed to pull, please check the terminal output for more information.");
+            }
+
+            // If the stack is running, restart it
+            await this.updateData();
+            if (this.isStarted) {
+                if (await SelfStack.isSelfStack(this.name)) {
+                    await this.handOffUpdate(socket, terminalName, run, [ "compose", "up", "-d", "--remove-orphans" ], pruneAfterUpdate, pruneAllAfterUpdate);
+                    return 0;
+                }
+
+                status("statusStackRedeploying", "Images pulled, redeploying the stack...");
+
+                await sleep(500); // sleep to wait for terminal output finished
+
+                exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans" ], this.path, run.recorder);
+                if (exitCode !== 0) {
+                    throw new Error("Failed to restart, please check the terminal output for more information.");
+                }
+            } else {
+                status("statusStackNotRunning", "Images pulled. The stack is not running, so nothing was redeployed.");
+            }
+
+            exitCode = await this.pruneAfterUpdate(socket, terminalName, run, pruneAfterUpdate, pruneAllAfterUpdate, exitCode);
+
+            // The stack now runs whatever the registry had, so clear the update
+            // indicator instead of leaving it up until the next scheduled check
+            status("statusCheckingImageUpdates", "Checking image update status...");
+            await this.refreshImageUpdateStatus();
+            status("statusUpdateFinished", "Update finished.");
+
+            await run.finish();
+            return exitCode;
+        } catch (e) {
+            await run.finish(e);
+            throw e;
+        }
+    }
+
+    /**
+     * Pull one service's image and recreate it on it.
+     * @param socket Client that asked for it, if any
+     * @param service The service
+     * @param pruneAfterUpdate Prune unused images afterwards
+     * @param pruneAllAfterUpdate Prune all unused images, not only dangling ones
+     * @param trigger What started it, for the update history
+     */
+    async updateService(socket: DockgeSocket | undefined, service: string, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean, trigger : UpdateTrigger = "manual") {
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
+        const run = new UpdateRun(this.name, service, trigger);
+        const status = (key : string, text : string) => {
+            Terminal.writeStatus(socket, terminalName, key, text);
+            run.recorder.note(text);
+        };
+
+        try {
+            let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull", service ], this.path, run.recorder);
+            if (exitCode !== 0) {
+                throw new Error("Failed to pull, please check the terminal output for more information.");
+            }
+
+            if (await SelfStack.isSelfService(this.name, service)) {
+                await this.handOffUpdate(socket, terminalName, run, [ "compose", "up", "-d", "--remove-orphans", service ], pruneAfterUpdate, pruneAllAfterUpdate);
+                return 0;
+            }
+
+            status("statusServiceRedeploying", "Image pulled, redeploying the service...");
 
             await sleep(500); // sleep to wait for terminal output finished
 
-            exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans" ], this.path);
+            exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans", service ], this.path, run.recorder);
             if (exitCode !== 0) {
                 throw new Error("Failed to restart, please check the terminal output for more information.");
             }
-        } else {
-            Terminal.writeStatus(socket, terminalName, "statusStackNotRunning", "Images pulled. The stack is not running, so nothing was redeployed.");
+
+            exitCode = await this.pruneAfterUpdate(socket, terminalName, run, pruneAfterUpdate, pruneAllAfterUpdate, exitCode);
+
+            // See update(): the service is on the current image now
+            status("statusCheckingImageUpdates", "Checking image update status...");
+            await this.refreshImageUpdateStatus();
+            status("statusUpdateFinished", "Update finished.");
+
+            await run.finish();
+            return exitCode;
+        } catch (e) {
+            await run.finish(e);
+            throw e;
+        }
+    }
+
+    /**
+     * The prune step of an update, when it was asked for.
+     * @param socket Client that asked for the update, if any
+     * @param terminalName Terminal the update runs under
+     * @param run The update
+     * @param pruneAfterUpdate Whether to prune at all
+     * @param pruneAllAfterUpdate Prune all unused images, not only dangling ones
+     * @param exitCode The exit code so far, returned when nothing is pruned
+     * @returns The exit code
+     */
+    protected async pruneAfterUpdate(socket : DockgeSocket | undefined, terminalName : string, run : UpdateRun, pruneAfterUpdate : boolean, pruneAllAfterUpdate : boolean, exitCode : number) : Promise<number> {
+        if (!pruneAfterUpdate) {
+            return exitCode;
         }
 
-        if (pruneAfterUpdate) {
-            Terminal.writeStatus(socket, terminalName, "statusPruningImages", "Pruning unused images...");
+        Terminal.writeStatus(socket, terminalName, "statusPruningImages", "Pruning unused images...");
+        run.recorder.note("Pruning unused images...");
 
-            await sleep(500); // sleep to wait for terminal output finished
+        await sleep(500); // sleep to wait for terminal output finished
 
-            const dockerParams = [ "image", "prune", "-f" ];
-            if (pruneAllAfterUpdate) {
-                dockerParams.push("-a");
-            }
-
-            exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", dockerParams, "");
-            if (exitCode !== 0) {
-                throw new Error("Failed to prune images, please check the terminal output for more information.");
-            }
+        const dockerParams = [ "image", "prune", "-f" ];
+        if (pruneAllAfterUpdate) {
+            dockerParams.push("-a");
         }
 
-        // The stack now runs whatever the registry had, so clear the update
-        // indicator instead of leaving it up until the next scheduled check
-        Terminal.writeStatus(socket, terminalName, "statusCheckingImageUpdates", "Checking image update status...");
-        await this.refreshImageUpdateStatus();
-        Terminal.writeStatus(socket, terminalName, "statusUpdateFinished", "Update finished.");
+        exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", dockerParams, "", run.recorder);
+        if (exitCode !== 0) {
+            throw new Error("Failed to prune images, please check the terminal output for more information.");
+        }
 
         return exitCode;
     }
 
-    async updateService(socket: DockgeSocket, service: string, pruneAfterUpdate: boolean, pruneAllAfterUpdate: boolean) {
-        const terminalName = getComposeTerminalName(socket.endpoint, this.name);
-        let exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "pull", service ], this.path);
-        if (exitCode !== 0) {
-            throw new Error("Failed to pull, please check the terminal output for more information.");
+    /**
+     * Whether this is the stack Dockge itself runs in.
+     */
+    async isSelfStack() : Promise<boolean> {
+        return SelfStack.isSelfStack(this.name);
+    }
+
+    /**
+     * Refuse what would stop Dockge itself, with nothing left running to start
+     * it again.
+     * @param action What was asked, for the message
+     * @param command The compose command to run on the host instead
+     * @param service The service it was asked for, when it was only one
+     */
+    protected async refuseIfSelf(action : string, command : string, service? : string) {
+        const self = service === undefined ? await SelfStack.isSelfStack(this.name) : await SelfStack.isSelfService(this.name, service);
+
+        if (self) {
+            const what = service === undefined ? `the stack "${this.name}"` : `the service "${service}"`;
+            throw new SelfStackError(`Dockge runs in ${what}, so it cannot ${action} it: nothing would be left to start it again. Run "docker compose ${command}${service ? " " + service : ""}" in the stack's folder on the host instead.`);
+        }
+    }
+
+    /**
+     * Hand something that would restart Dockge to the helper container, when
+     * this is Dockge's own stack.
+     * @param socket Client that asked for it, if any
+     * @param args The docker command the helper should run
+     * @param service The service it is for, when it is only one: only Dockge's
+     * own service has to be handed over
+     * @returns Whether it was handed over. False means this is any other stack,
+     * and the caller carries on as usual.
+     */
+    protected async handOffIfSelf(socket : DockgeSocket | undefined, args : string[], service? : string) : Promise<boolean> {
+        const self = service === undefined ? await SelfStack.isSelfStack(this.name) : await SelfStack.isSelfService(this.name, service);
+
+        if (!self) {
+            return false;
         }
 
-        Terminal.writeStatus(socket, terminalName, "statusServiceRedeploying", "Image pulled, redeploying the service...");
-
-        await sleep(500); // sleep to wait for terminal output finished
-
-        exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", [ "compose", "up", "-d", "--remove-orphans", service ], this.path);
-        if (exitCode !== 0) {
-            throw new Error("Failed to restart, please check the terminal output for more information.");
+        if (!this.isManagedByDockge) {
+            throw new SelfStackError(`Dockge runs in the stack "${this.name}", which is not in the stacks folder, so it cannot restart it. Run "docker ${args.join(" ")}" in the stack's folder on the host instead.`);
         }
 
-        if (pruneAfterUpdate) {
-            Terminal.writeStatus(socket, terminalName, "statusPruningImages", "Pruning unused images...");
+        const terminalName = getComposeTerminalName(socket?.endpoint ?? "", this.name);
+        Terminal.writeStatus(socket, terminalName, "statusSelfHandOff", SELF_HAND_OFF_NOTE);
 
-            await sleep(500); // sleep to wait for terminal output finished
+        await SelfStack.handOff(this.server.config.dataDir, {
+            stackPath: this.path,
+            args,
+        });
+        return true;
+    }
 
-            const dockerParams = [ "image", "prune", "-f" ];
-            if (pruneAllAfterUpdate) {
-                dockerParams.push("-a");
+    /**
+     * Hand the last step of an update of Dockge's own stack to the helper
+     * container. The images are pulled by then; recreating the containers is
+     * what would stop Dockge.
+     *
+     * The update is written down before the hand-off, while Dockge can still
+     * do it, and completed with the helper's result once Dockge is back.
+     * @param socket Client that asked for the update, if any
+     * @param terminalName Terminal the update runs under
+     * @param run The update
+     * @param args The docker command the helper should run
+     * @param prune Prune unused images afterwards
+     * @param pruneAll Prune all unused images, not only dangling ones
+     */
+    protected async handOffUpdate(socket : DockgeSocket | undefined, terminalName : string, run : UpdateRun, args : string[], prune : boolean, pruneAll : boolean) {
+        Terminal.writeStatus(socket, terminalName, "statusSelfHandOff", SELF_HAND_OFF_NOTE);
+        const historyId = await run.finish(undefined, SELF_HAND_OFF_NOTE);
+
+        try {
+            await SelfStack.handOff(this.server.config.dataDir, {
+                stackPath: this.path,
+                args,
+                prune,
+                pruneAll,
+                historyId,
+            });
+        } catch (e) {
+            if (historyId !== undefined) {
+                const message = e instanceof Error ? e.message : String(e);
+                await UpdateHistory.complete(historyId, false, message, new Date().toISOString(), message)
+                    .catch((err) => log.error("update-history", err));
             }
-
-            exitCode = await Terminal.exec(this.server, socket, terminalName, "docker", dockerParams, "");
-            if (exitCode !== 0) {
-                throw new Error("Failed to prune images, please check the terminal output for more information.");
-            }
+            throw e;
         }
-
-        // See update(): the service is on the current image now
-        Terminal.writeStatus(socket, terminalName, "statusCheckingImageUpdates", "Checking image update status...");
-        await this.refreshImageUpdateStatus();
-        Terminal.writeStatus(socket, terminalName, "statusUpdateFinished", "Update finished.");
-
-        return exitCode;
     }
 
     async joinCombinedTerminal(socket: DockgeSocket) {

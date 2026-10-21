@@ -1,4 +1,5 @@
 import { Socket } from "socket.io";
+import type { IncomingHttpHeaders } from "node:http";
 import { Terminal } from "./terminal";
 import { log } from "./log";
 import { ERROR_TYPE_VALIDATION } from "../common/util-common";
@@ -18,6 +19,41 @@ export interface DockgeSocket extends Socket {
     instanceManager : AgentManager;
     endpoint : string;
     emitAgent : (eventName : string, ...args : unknown[]) => void;
+
+    /**
+     * "api" for the connection another Dockge's REST API makes to this one,
+     * from its `dockge-origin` header. Unset for everything else.
+     */
+    origin? : "api";
+}
+
+/**
+ * The address a client connected from.
+ * @param remoteAddress The address of the connection itself
+ * @param headers The request headers
+ * @param trustProxy Whether to believe X-Forwarded-For and X-Real-IP, as the
+ * trustProxy setting says
+ * @returns The address
+ */
+export function clientIPFrom(remoteAddress : string | undefined, headers : IncomingHttpHeaders, trustProxy : boolean) : string {
+    if (trustProxy) {
+        const forwardedFor = headers["x-forwarded-for"];
+
+        if (typeof forwardedFor === "string") {
+            return forwardedFor.split(",")[0].trim();
+        } else if (typeof headers["x-real-ip"] === "string") {
+            return headers["x-real-ip"];
+        }
+    }
+    return (remoteAddress ?? "").replace(/^::ffff:/, "");
+}
+
+/**
+ * What an update a client asked for counts as in the update history.
+ * @param socket The client
+ */
+export function socketTrigger(socket : DockgeSocket) : "api" | "manual" {
+    return socket.origin === "api" ? "api" : "manual";
 }
 
 // For command line arguments, so they are nullable

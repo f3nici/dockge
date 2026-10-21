@@ -66,7 +66,8 @@ import {
     faBan,
     faFolder,
     faKey,
-    faNoteSticky
+    faNoteSticky,
+    faClockRotateLeft
 } from "@fortawesome/free-solid-svg-icons";
 
 library.add(
@@ -134,7 +135,8 @@ library.add(
     faBan,
     faFolder,
     faKey,
-    faNoteSticky
+    faNoteSticky,
+    faClockRotateLeft
 );
 
 export { FontAwesomeIcon };
