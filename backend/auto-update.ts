@@ -9,6 +9,7 @@ import semver from "semver";
 import { AUTO_UPDATE_DEFAULT, AUTO_UPDATE_DEFAULT_CRON, isDev, resolveAutoUpdate } from "../common/util-common";
 import { AutoUpdateDefault, AutoUpdateRunOptions } from "../common/types";
 import { LooseObject } from "../common/util-common";
+import { SelfStack } from "./self-stack";
 
 export { AUTO_UPDATE_DEFAULT_CRON };
 
@@ -39,6 +40,13 @@ const AGENT_CONNECT_TIMEOUT = 60 * 1000;
  * the run open until it times out.
  */
 const MIN_AGENT_VERSION = "1.8.1";
+
+/**
+ * The first Dockge version whose agents know "Update all". An older one would
+ * take it for an auto update run and only update the stacks taking part in
+ * auto update, so it is not asked at all.
+ */
+const MIN_AGENT_VERSION_UPDATE_ALL = "2.2.0";
 
 /**
  * Schedules and runs automatic stack updates.
@@ -99,7 +107,7 @@ export class AutoUpdateManager {
             this.job = new Cron(cronPattern, {
                 protect: true, // Skip a run if the previous one is still going
             }, () => {
-                this.runNow().catch((e) => log.error("auto-update", e));
+                this.runNow(undefined, { trigger: "scheduled" }).catch((e) => log.error("auto-update", e));
             });
             log.info("auto-update", `Auto update scheduled ("${cronPattern}"), next run: ${this.job.nextRun()}`);
         } catch (e) {
@@ -134,10 +142,14 @@ export class AutoUpdateManager {
      * behalf of another instance, so that the whole fleet uses the same default;
      * omitted when this instance is the one starting the run, in which case the
      * settings are read here and then handed to the agents.
+     * @param start When this instance starts the run: what started it,
+     * whether it is an "Update all" that covers every stack rather than the
+     * ones taking part in auto update, and whether to prune when the setting
+     * should not decide. An agent gets these in its options.
      * @returns The names of the stacks that were updated. Stacks on agents are
      * prefixed with their endpoint.
      */
-    async runNow(options?: AutoUpdateRunOptions): Promise<string[]> {
+    async runNow(options?: AutoUpdateRunOptions, start : Partial<Pick<AutoUpdateRunOptions, "trigger" | "all" | "pruneAfterUpdate">> = {}): Promise<string[]> {
         if (this.running) {
             throw new Error("An auto update is already running, please try again later.");
         }
@@ -147,16 +159,25 @@ export class AutoUpdateManager {
         try {
             const runOptions : AutoUpdateRunOptions = options ?? {
                 defaultBehaviour: await AutoUpdateManager.getDefaultBehaviour(),
-                pruneAfterUpdate: !!(await Settings.get("autoUpdatePrune")),
+                pruneAfterUpdate: start.pruneAfterUpdate ?? !!(await Settings.get("autoUpdatePrune")),
+                trigger: start.trigger ?? "manual",
+                all: !!start.all,
             };
 
-            log.info("auto-update", `Auto update started (default for stacks without a preference: ${runOptions.defaultBehaviour}, prune after update: ${runOptions.pruneAfterUpdate})`);
+            if (runOptions.all) {
+                log.info("auto-update", `Update of all stacks started (prune after update: ${runOptions.pruneAfterUpdate})`);
+            } else {
+                log.info("auto-update", `Auto update started (default for stacks without a preference: ${runOptions.defaultBehaviour}, prune after update: ${runOptions.pruneAfterUpdate})`);
+            }
 
             const updated : string[] = [];
             let localError : unknown;
+            let selfStack : Stack | undefined;
 
             try {
-                updated.push(...await this.updateLocalStacks(runOptions));
+                const local = await this.updateLocalStacks(runOptions);
+                updated.push(...local.updated);
+                selfStack = local.selfStack;
             } catch (e) {
                 // Reading this instance's stacks can fail as a whole, for
                 // instance when docker is unreachable. The agents are separate
@@ -170,6 +191,19 @@ export class AutoUpdateManager {
             // that started the run is the one that fans it out.
             if (!options) {
                 updated.push(...await this.updateAgentStacks(runOptions));
+            }
+
+            // Last of all: updating Dockge's own stack restarts Dockge a few
+            // seconds after it is handed over, which would cut short whatever
+            // was still to come
+            if (selfStack) {
+                try {
+                    log.info("auto-update", `Updating stack "${selfStack.name}", which Dockge runs in, last`);
+                    await selfStack.update(undefined, runOptions.pruneAfterUpdate, false, runOptions.trigger ?? "scheduled");
+                    updated.push(selfStack.name);
+                } catch (e) {
+                    log.error("auto-update", `Failed to update stack "${selfStack.name}": ${e}`);
+                }
             }
 
             // Whoever asked for the run has to hear about it: "Update now" reports
@@ -194,8 +228,9 @@ export class AutoUpdateManager {
      * @param options Settings to run with
      * @returns The names of the stacks that were updated
      */
-    protected async updateLocalStacks(options: AutoUpdateRunOptions): Promise<string[]> {
+    protected async updateLocalStacks(options: AutoUpdateRunOptions): Promise<{ updated : string[], selfStack? : Stack }> {
         const updated: string[] = [];
+        let selfStack : Stack | undefined;
         const skipped: string[] = [];
         const failed: string[] = [];
         const stackList = await Stack.getStackList(this.server, true);
@@ -205,8 +240,9 @@ export class AutoUpdateManager {
                 continue;
             }
 
-            // The stack's own x-dockge.auto-update wins; otherwise the global default
-            if (!resolveAutoUpdate(stack.autoUpdate, options.defaultBehaviour)) {
+            // The stack's own x-dockge.auto-update wins; otherwise the global
+            // default. "Update all" leaves nothing out.
+            if (!options.all && !resolveAutoUpdate(stack.autoUpdate, options.defaultBehaviour)) {
                 skipped.push(`${stack.name} (auto update not enabled)`);
                 continue;
             }
@@ -248,9 +284,15 @@ export class AutoUpdateManager {
                 continue;
             }
 
+            // Updated once everything else is done, see runNow()
+            if (await SelfStack.isSelfStack(stack.name)) {
+                selfStack = stack as Stack;
+                continue;
+            }
+
             try {
                 log.info("auto-update", `Updating stack "${stack.name}"`);
-                await stack.update(undefined, options.pruneAfterUpdate, false);
+                await stack.update(undefined, options.pruneAfterUpdate, false, options.trigger ?? "scheduled");
                 updated.push(stack.name);
             } catch (e) {
                 failed.push(stack.name);
@@ -269,7 +311,10 @@ export class AutoUpdateManager {
         }
 
         this.server.sendStackList(false);
-        return updated;
+        return {
+            updated,
+            selfStack,
+        };
     }
 
     /**
@@ -330,6 +375,13 @@ export class AutoUpdateManager {
         }
 
         const version = agentManager.getAgentVersion(endpoint);
+
+        // semver.lt() throws on a version it cannot read, which would end the
+        // whole run here, every other agent and Dockge's own stack with it
+        if (options.all && !isDev && version && semver.valid(version) && semver.lt(version, MIN_AGENT_VERSION_UPDATE_ALL)) {
+            log.error("auto-update", `Agent "${endpoint}" runs Dockge ${version}, which cannot update all of its stacks. Upgrade it to ${MIN_AGENT_VERSION_UPDATE_ALL} or newer.`);
+            return [];
+        }
 
         if (version && !isDev && semver.satisfies(version, `< ${MIN_AGENT_VERSION}`)) {
             log.error("auto-update", `Agent "${endpoint}" runs Dockge ${version}, which does not take part in scheduled updates. Upgrade it to ${MIN_AGENT_VERSION} or newer, or give it its own auto update schedule.`);

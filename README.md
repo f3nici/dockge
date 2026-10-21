@@ -80,6 +80,41 @@ This fork includes all features from [hamphh/dockge](https://github.com/hamphh/d
 - **A Proper Console** - The console hands every key straight to bash, so it behaves like an ordinary terminal: Tab completion, Ctrl+R, bash's own history on Up and Down, and full-screen programs. `nano` is installed for editing files, `clear` works, and the prompt and `ls`/`grep` output are in colour. Each browser tab has a shell of its own, which keeps running for ten minutes after you leave the page, so you come back to it, and to whatever was open in it, as you left it. Copy and paste work as before, on desktop and mobile; inside a full-screen program such as nano, Ctrl+V goes to the program and Ctrl+Shift+V pastes.
 - **Git in the Image** - `git` is installed for cloning repositories, such as a project that builds its own image and so has to be deployed from its source. In the console, which opens in the stacks folder, `git clone` a repository whose compose file is at the top, then *Scan Stacks Folder*, and Deploy. An SSH client is included for `git@` URLs; mount the keys into `/root/.ssh`, since the container's home directory is not kept across an update.
 - **Host Resource Usage** - Each agent on the dashboard shows the CPU, memory and disk usage of the machine it runs on, next to its status, in the same style as a container's usage on the stack page. CPU is averaged over all cores across the last 5 seconds, and disk is the filesystem holding the stacks directory; hover over a figure for the details. Agents older than 2.2.0 simply show none.
+- **Update History** - Every update of a stack or a service is written down: when it ran, what started it (*Manual*, *Auto update* or *API*), whether it worked, how long it took, and what it printed, kept as the lines a pull finally left on screen rather than every redraw of its progress bars. Open it from the menu under your profile. Each instance keeps the history of its own stacks, the last 500 updates, and the page puts the master and all its agents together, newest first; agents older than 2.2.0 have none to show. Idea from [finder39/dockge](https://github.com/finder39/dockge), whose table layout it shares, so a database carried over from there keeps its history.
+- **REST API** - For Home Assistant, Homepage, scripts and anything else that is not a browser. See [REST API](#rest-api) below.
+- **Updating Dockge's Own Stack** - When Dockge runs in a stack in its own stacks folder, updating, deploying, starting or restarting that stack no longer leaves it stopped halfway. `docker compose up` run from inside Dockge used to stop Dockge, and with it the very command that was meant to start the new container. Dockge now pulls the images itself, then hands the last step to a short-lived helper container, which runs Dockge's own image with Dockge's volumes, so compose sees exactly the paths it sees from Dockge, and outlives the restart. Once Dockge is back, the helper's output is added to the update history. Stopping or taking down that stack, or deleting it, is refused with what to run on the host instead, since nothing would be left to start it again. An auto update run updates Dockge's own stack last, after every other stack and every agent.
+- **Scheduled Work on the Dashboard** - Each agent on the dashboard shows when it next checks for image updates, and when its stacks are next auto updated: for an agent, that is the master's next run, which covers every agent, or the agent's own schedule if it has one that comes first. Agents older than 2.2.0 show neither.
+
+## REST API
+
+The REST API lets other tools list and manage stacks on this instance and on all of its agents. It is off until a key exists: create one under *Settings → API*, or set `DOCKGE_API_KEY` in Dockge's environment. Only a hash of each key is stored, so a key is shown once, when it is created. A key can be made read-only, which allows GET requests only.
+
+Send the key in an `X-API-Key` header, or as `Authorization: Bearer <key>`:
+
+```bash
+curl -H "X-API-Key: dk_..." http://localhost:5001/api/stacks
+```
+
+The endpoints and what they return follow the REST API of [finder39/dockge](https://github.com/finder39/dockge), so its [Home Assistant integration](https://github.com/finder39/ha-dockge) and [Dockge Card](https://github.com/finder39/dockge-card) work with this fork too. Every endpoint about a single instance takes `?endpoint=`, which is an agent's endpoint (`192.168.1.20:5001`) or its name (`Voltorb`); without it, the request is about this instance, or about every instance for the lists. Agents have to run 2.2.0 or newer to be managed through the API.
+
+| Method | Path | What it does |
+|--------|------|--------------|
+| GET | `/api/health` | Whether Dockge is up, and its version. Needs no key. |
+| GET | `/api/agents` | This instance and its agents, with their versions. `/api/agents/status` adds whether each is connected. |
+| GET | `/api/stacks` | Every stack on every instance, with its services, status, and whether it has image updates waiting and takes part in auto update |
+| GET | `/api/stacks/:name/status` | One stack, freshly read |
+| POST | `/api/stacks/:name/start` | Start a stack. Also `stop` and `restart`. |
+| POST | `/api/stacks/:name/update` | Pull a stack's images and recreate it. Body: `{ "prune": true, "pruneAll": false }`, both optional and off by default. |
+| POST | `/api/stacks/:name/check-updates` | Ask the registries whether a stack's images have updates |
+| GET/PUT | `/api/stacks/:name/auto-update` | Read or set the stack's auto update setting. Body: `{ "enabled": true }`, `false`, `null` to follow the default, or `{ "policy": "always" \| "never" \| "inherit" }`. |
+| POST | `/api/update-all` | Update every running stack that is behind, whether it takes part in auto update or not. Answers straight away with 202. |
+| POST | `/api/system/prune` | `docker system prune`. Body: `{ "all": true, "volumes": false }`, the defaults. |
+| GET | `/api/update-history` | The update history of every instance, newest first. Query: `limit`, `offset`, `stack`, `search`, `trigger` (`manual`, `scheduled`, `api`), `success`. |
+| GET | `/api/update-history/:id` | One entry, with its output. Pass `?endpoint=` for an agent's. |
+| GET/PUT | `/api/scheduler` | The auto update schedule: `enabled`, `cronExpression`, `defaultBehaviour` (`none` or `update`) and `pruneAfterUpdate`, plus the next run, the next image check, and whether a run is going on now |
+| POST | `/api/scheduler/trigger` | Run auto update now, like *Update now* in Settings. Answers straight away with 202. |
+
+Errors come back as `{ "ok": false, "error": "..." }` with a matching status: 401 for a missing or wrong key, 403 for a write with a read-only key, 404 for a stack or agent that is not there, 409 for something already running or refused (such as stopping Dockge's own stack), and 502 or 504 when an agent cannot be reached or does not answer in time.
 
 ## 📖 Usage
 

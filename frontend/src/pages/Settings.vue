@@ -84,6 +84,9 @@ export default {
                 registries: {
                     title: this.$t("registries"),
                 },
+                api: {
+                    title: this.$t("api"),
+                },
                 security: {
                     title: this.$t("Security"),
                 },

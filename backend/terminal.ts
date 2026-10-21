@@ -14,6 +14,7 @@ import {
 } from "../common/util-common";
 import { sync as commandExistsSync } from "command-exists";
 import { log } from "./log";
+import type { OutputRecorder } from "./update-history";
 
 const { Terminal: HeadlessTerminal } = xtermHeadless;
 const { SerializeAddon } = xtermSerialize;
@@ -60,6 +61,12 @@ export class Terminal {
 
     protected socketList : Record<string, DockgeSocket> = {};
 
+    /**
+     * Also gets everything written to the clients, for the update history.
+     * Set before the terminal starts, so it misses nothing.
+     */
+    public recorder? : OutputRecorder;
+
     constructor(server : DockgeServer, name : string, file : string, args : string | string[], cwd : string) {
         this.server = server;
         this._name = name;
@@ -94,6 +101,8 @@ export class Terminal {
      * Apply rows and cols to the running process
      */
     protected resize() {
+        this.recorder?.resize(this.cols, this.rows);
+
         try {
             this.ptyProcess?.resize(this.cols, this.rows);
         } catch (e) {
@@ -198,6 +207,7 @@ export class Terminal {
      */
     protected writeToClients(data : string) {
         this.record(data);
+        this.recorder?.write(data);
 
         for (const socketID in this.socketList) {
             const socket = this.socketList[socketID];
@@ -368,7 +378,18 @@ export class Terminal {
         return terminal;
     }
 
-    public static exec(server : DockgeServer, socket : DockgeSocket | undefined, terminalName : string, file : string, args : string | string[], cwd : string) : Promise<number> {
+    /**
+     * Run a command to the end, showing its output to the client that asked.
+     * @param server The server
+     * @param socket Client that started it, if any
+     * @param terminalName Terminal to run it under
+     * @param file Command
+     * @param args Arguments
+     * @param cwd Working directory
+     * @param recorder Also gets the output, for the update history
+     * @returns The exit code
+     */
+    public static exec(server : DockgeServer, socket : DockgeSocket | undefined, terminalName : string, file : string, args : string | string[], cwd : string, recorder? : OutputRecorder) : Promise<number> {
         return new Promise((resolve, reject) => {
             // check if terminal exists
             if (Terminal.terminalMap.has(terminalName)) {
@@ -377,6 +398,7 @@ export class Terminal {
             }
 
             let terminal = new Terminal(server, terminalName, file, args, cwd);
+            terminal.recorder = recorder;
             terminal.rows = PROGRESS_TERMINAL_ROWS;
 
             if (socket) {

@@ -11,6 +11,7 @@ import Compose from "./pages/Compose.vue";
 import ContainerTerminal from "./pages/ContainerTerminal.vue";
 import ContainerLog from "./pages/ContainerLog.vue";
 import ContainerInspect from "./pages/ContainerInspect.vue";
+const UpdateHistory = () => import("./pages/UpdateHistory.vue");
 
 const Settings = () => import("./pages/Settings.vue");
 
@@ -19,6 +20,7 @@ import Appearance from "./components/settings/Appearance.vue";
 import General from "./components/settings/General.vue";
 import Notifications from "./components/settings/Notifications.vue";
 import Registries from "./components/settings/Registries.vue";
+const Api = () => import("./components/settings/Api.vue");
 const Security = () => import("./components/settings/Security.vue");
 import About from "./components/settings/About.vue";
 import MobileStackList from "./pages/MobileStackList.vue";
@@ -102,6 +104,10 @@ const routes = [
                         component: Console,
                     },
                     {
+                        path: "/update-history",
+                        component: UpdateHistory,
+                    },
+                    {
                         path: "/settings",
                         component: Settings,
                         children: [
@@ -120,6 +126,10 @@ const routes = [
                             {
                                 path: "registries",
                                 component: Registries,
+                            },
+                            {
+                                path: "api",
+                                component: Api,
                             },
                             {
                                 path: "security",
